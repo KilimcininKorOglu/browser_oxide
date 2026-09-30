@@ -7,6 +7,10 @@
 ((globalThis) => {
     const ops = Deno.core.ops;
     const _browser_oxide = globalThis.__browser_oxide;
+    // event_bootstrap.js published the trusted-event minter. A worker runs
+    // no page init script that would capture and delete it, so take it here.
+    const _markTrusted = globalThis.__bo_mark_trusted;
+    delete globalThis.__bo_mark_trusted;
 
     // Helper: read from stealth profile or use default
     const _p = (key, fallback) => {
@@ -268,17 +272,9 @@
             const data = deserializer
                 ? deserializer(payload && payload.data)
                 : payload && payload.data;
-            const event = {
-                type: "message",
-                data,
-                origin: "",
-                lastEventId: "",
-                source: null,
-                ports: [],
-                timeStamp: Date.now(),
-            };
-            // Use Event constructor from interfaces_bootstrap
-            const ev = new MessageEvent("message", { data });
+            // A message from the owning document is a trusted event with an
+            // empty origin and a null source, as in Chrome.
+            const ev = _markTrusted(new MessageEvent("message", { data, origin: "", source: null }));
             self.dispatchEvent(ev);
         }
     }

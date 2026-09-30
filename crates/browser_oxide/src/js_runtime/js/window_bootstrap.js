@@ -2056,15 +2056,12 @@
                         const data = deserializer
                             ? deserializer(payload && payload.data)
                             : payload && payload.data;
-                        const event = {
-                            type: 'message',
-                            data,
-                            origin: '',
-                            lastEventId: '',
-                            source: null,
-                            ports: [],
-                            timeStamp: Date.now(),
-                        };
+                        // Chrome delivers a trusted MessageEvent whose
+                        // target is the Worker, with an empty origin and
+                        // a null source.
+                        const event = _frameTrusted(new MessageEvent('message', { data, origin: '', source: null }));
+                        event.target = self;
+                        event.currentTarget = self;
                         try { self._fireEvent('message', event); }
                         catch (_) {}
                         _drainOnce(); // chain next await
