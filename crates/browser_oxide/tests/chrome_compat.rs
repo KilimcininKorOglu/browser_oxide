@@ -7091,6 +7091,31 @@ async fn svg_text_reports_its_characters() {
     );
 }
 
+#[tokio::test]
+async fn string_timer_runs_as_a_global_classic_script() {
+    // Measured in Chrome: the string compiles as an unnamed script of its
+    // own in the global scope, so `var` declares a global, `this` is the
+    // window, `arguments` does not exist, and the frame has no function.
+    let mut page = Page::from_html_with_url(
+        &html(""),
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    let setup = r#"
+        setTimeout('var __tv = 7; window.__ts = [String(new Error("x").stack).split("\\n").slice(0, 3).join(" / "), String(this === window), typeof arguments]', 0);
+    "#;
+    let _ = page
+        .evaluate_async(setup, std::time::Duration::from_millis(300))
+        .await;
+    assert_eq!(
+        page.evaluate("JSON.stringify([window.__ts, window.__tv])")
+            .unwrap_or_default(),
+        r#"[["Error: x /     at <anonymous>:1:37","true","undefined"],7]"#
+    );
+}
+
 /// Run `js` as a parser-inserted script in a document whose CSP requires
 /// Trusted Types for scripts, and return what it evaluated to.
 async fn check_trusted_types(js: &str) -> String {

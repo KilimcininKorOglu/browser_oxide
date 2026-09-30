@@ -1,5 +1,13 @@
 ((globalThis) => {
     const ops = Deno.core.ops;
+    // Chrome runs a string handler as a classic script of its own, unnamed,
+    // in the global scope: `var` declares a global and `return` is a
+    // SyntaxError. A later bootstrap deletes the global.
+    const _runClassicScript = globalThis.__ox_run_classic_script;
+    const _stringHandler = (code) => {
+        const source = String(code);
+        return () => _runClassicScript(source, '');
+    };
     const _cancelledTimers = new Set();
     // Timer generation — bumped by `globalThis.__cancelAllTimers()` so that
     // the warm-reuse path in `Page::navigate_warm` can mass-cancel every
@@ -73,7 +81,7 @@
 
     globalThis.setTimeout = function setTimeout(callback, delay = 0, ...args) {
         if (typeof callback !== "function") {
-            callback = new Function(String(callback));
+            callback = _stringHandler(callback);
         }
         const ms = Math.max(0, delay | 0);
         const id = ops.op_set_timeout(ms);
@@ -102,7 +110,7 @@
     // `setTimeout(...).unref()`.
     globalThis.__bgSetTimeout = function __bgSetTimeout(callback, delay = 0, ...args) {
         if (typeof callback !== "function") {
-            callback = new Function(String(callback));
+            callback = _stringHandler(callback);
         }
         const ms = Math.max(0, delay | 0);
         const id = ops.op_set_timeout(ms);
@@ -120,7 +128,7 @@
 
     globalThis.setInterval = function setInterval(callback, delay = 0, ...args) {
         if (typeof callback !== "function") {
-            callback = new Function(String(callback));
+            callback = _stringHandler(callback);
         }
         const ms = Math.max(4, delay | 0);
         const id = ops.op_set_interval(ms);
