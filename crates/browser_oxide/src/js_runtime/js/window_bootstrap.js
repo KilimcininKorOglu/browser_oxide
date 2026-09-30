@@ -3075,15 +3075,11 @@
         // it as an own property on the instance with a native-code toString.
         const _origNow = globalThis.performance.now && globalThis.performance.now.bind(globalThis.performance);
 
-        // Real Chrome QUANTIZES performance.memory to 100KB buckets (an
-        // anti-fingerprinting measure) and the values are STABLE within a page
-        // load — they do not jitter per call. The prior getter returned an
-        // unbucketed, per-call-varying value (totalJSHeapSize = base +
-        // Date.now()-derived jitter, used = total*0.85), so usedJSHeapSize was
-        // almost never a multiple of 100000 and changed every read — a value no
-        // real Chrome ever reports (a fingerprinting tell). Compute once
-        // per realm (closure cache) and bucket to 100KB.
-        let _perfMemCache = null;
+        // Desktop Chrome locks each renderer to a site, so performance.memory
+        // reports the precise heap sizes (Blink WindowPerformance::memory),
+        // refreshed at most every 50 ms: the figures grow as the page
+        // allocates. op_perf_js_heap_sizes reads this isolate's own heap the
+        // way Blink does. jsHeapSizeLimit is the 64-bit desktop heap limit.
         // Chrome answers every read with a new MemoryInfo, an interface with
         // no global, so its prototype holds three enumerable getters and
         // a toStringTag and inherits Object's constructor. The getters
@@ -3104,20 +3100,9 @@
         }
         Object.defineProperty(_MemoryInfoProto, Symbol.toStringTag, { value: 'MemoryInfo', configurable: true });
         _defProtoGetter(_PerfProto, 'memory', () => {
-            if (!_perfMemCache) {
-                const Q = 100000;
-                const base = 10485760; // 10 MB
-                const jitter = ((Date.now() * 0x9e3779b9) >>> 0) % 5000000;
-                const totalJSHeapSize = Math.round((base + jitter) / Q) * Q;
-                const usedJSHeapSize = Math.round((totalJSHeapSize * 0.85) / Q) * Q;
-                _perfMemCache = {
-                    jsHeapSizeLimit: 4294705152,
-                    totalJSHeapSize,
-                    usedJSHeapSize,
-                };
-            }
+            const [totalJSHeapSize, usedJSHeapSize] = ops.op_perf_js_heap_sizes();
             const info = Object.create(_MemoryInfoProto);
-            _memoryInfoValues.set(info, _perfMemCache);
+            _memoryInfoValues.set(info, { jsHeapSizeLimit: 4294705152, totalJSHeapSize, usedJSHeapSize });
             return info;
         });
         _defProtoGetter(_PerfProto, 'timing', () => {

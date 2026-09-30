@@ -7177,6 +7177,35 @@ async fn performance_memory_is_a_memory_info() {
 }
 
 #[tokio::test]
+async fn performance_memory_reports_the_live_heap() {
+    // Measured in Chrome 146: a site-locked renderer reports precise heap
+    // sizes, two reads in a row agree, and the used and total figures grow
+    // once the page allocates and 50 ms pass.
+    let mut page = Page::from_html(&html(""), None).await.unwrap();
+    let first = page
+        .evaluate(
+            r#"(() => {
+                const a = performance.memory, b = performance.memory;
+                window.__m0 = [a.totalJSHeapSize, a.usedJSHeapSize];
+                window.__junk = [];
+                for (let i = 0; i < 200000; i++) __junk.push({ i, s: 'x' + i });
+                return JSON.stringify([a.usedJSHeapSize === b.usedJSHeapSize, a.totalJSHeapSize === b.totalJSHeapSize,
+                    a.usedJSHeapSize > 0, a.usedJSHeapSize <= a.totalJSHeapSize, a.jsHeapSizeLimit]);
+            })()"#,
+        )
+        .unwrap();
+    assert_eq!(first, "[true,true,true,true,4294705152]");
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let grown = page
+        .evaluate(
+            r#"(() => { const m = performance.memory;
+                return JSON.stringify([m.usedJSHeapSize > __m0[1], m.totalJSHeapSize > __m0[0], __junk.length]); })()"#,
+        )
+        .unwrap();
+    assert_eq!(grown, "[true,true,200000]");
+}
+
+#[tokio::test]
 async fn string_timer_runs_as_a_global_classic_script() {
     // Measured in Chrome: the string compiles as an unnamed script of its
     // own in the global scope, so `var` declares a global, `this` is the

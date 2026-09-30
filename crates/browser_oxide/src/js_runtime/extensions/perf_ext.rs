@@ -14,6 +14,7 @@
 use crate::js_runtime::extensions::stealth_ext::StealthState;
 use crate::js_runtime::state::DomState;
 use deno_core::op2;
+use deno_core::v8;
 use deno_core::OpState;
 use std::time::Instant;
 
@@ -37,7 +38,13 @@ pub struct PerfState {
     origin_unix_ms: f64,
     /// Key of the per-bucket threshold hash.
     key: u64,
+    /// Last `performance.memory` reading and when it was taken.
+    heap: Option<(Instant, [f64; 2])>,
 }
+
+/// Chrome refreshes a site-locked process's precise `performance.memory`
+/// reading at most once per 50 ms (Blink `HeapSizeCache`).
+const HEAP_SIZE_REFRESH: std::time::Duration = std::time::Duration::from_millis(50);
 
 impl PerfState {
     pub fn new() -> Self {
@@ -52,6 +59,20 @@ impl PerfState {
             origin: Instant::now(),
             origin_unix_ms,
             key: seed,
+            heap: None,
+        }
+    }
+
+    /// Returns the cached `[totalJSHeapSize, usedJSHeapSize]`, taking a new
+    /// reading with `read` once the cached one is 50 ms old.
+    fn heap_sizes(&mut self, now: Instant, read: impl FnOnce() -> [f64; 2]) -> [f64; 2] {
+        match self.heap {
+            Some((at, sizes)) if now.duration_since(at) < HEAP_SIZE_REFRESH => sizes,
+            _ => {
+                let sizes = read();
+                self.heap = Some((now, sizes));
+                sizes
+            }
         }
     }
 
@@ -114,6 +135,27 @@ pub fn op_perf_time_origin_ms(s: &mut OpState) -> f64 {
     s.origin_unix_ms
 }
 
+/// `[totalJSHeapSize, usedJSHeapSize]` of this isolate, computed as Blink's
+/// `GetHeapSize` does: physical and used heap size, each plus the external
+/// memory V8 accounts for.
+#[op2]
+#[serde]
+pub fn op_perf_js_heap_sizes(scope: &mut v8::PinScope<'_, '_>) -> Vec<f64> {
+    let state_rc = deno_core::JsRuntime::op_state_from(scope);
+    let mut state = state_rc.borrow_mut();
+    let sizes = state
+        .borrow_mut::<PerfState>()
+        .heap_sizes(Instant::now(), || {
+            let stats = scope.get_heap_statistics();
+            let external = stats.external_memory() as f64;
+            [
+                stats.total_physical_size() as f64 + external,
+                stats.used_heap_size() as f64 + external,
+            ]
+        });
+    sizes.to_vec()
+}
+
 #[derive(serde::Serialize)]
 pub struct JsResourceTiming {
     pub name: String,
@@ -168,6 +210,7 @@ deno_core::extension!(
         op_perf_now_humanized,
         op_perf_get_resource_timings,
         op_perf_time_origin_ms,
+        op_perf_js_heap_sizes,
     ],
 );
 
@@ -219,6 +262,17 @@ mod tests {
             "only {} distinct thresholds",
             fractions.len()
         );
+    }
+
+    #[test]
+    fn heap_sizes_are_read_again_only_after_50_ms() {
+        let mut s = PerfState::new();
+        let t0 = Instant::now();
+        assert_eq!(s.heap_sizes(t0, || [2.0, 1.0]), [2.0, 1.0]);
+        let within = t0 + std::time::Duration::from_millis(49);
+        assert_eq!(s.heap_sizes(within, || [9.0, 9.0]), [2.0, 1.0]);
+        let after = t0 + HEAP_SIZE_REFRESH;
+        assert_eq!(s.heap_sizes(after, || [4.0, 3.0]), [4.0, 3.0]);
     }
 
     #[test]
