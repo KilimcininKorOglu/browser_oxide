@@ -4681,9 +4681,12 @@ mod tests {
     /// constructor; we match that on the macOS UA for fidelity.
     /// Regression-locks the macOS-conditional shim in window_bootstrap.
     #[tokio::test]
-    async fn apple_pay_session_present_on_macos_profile() {
-        // ApplePaySession is gated on isSecureContext so the
-        // page must be loaded over https:// for the macOS shim to install.
+    async fn apple_pay_session_absent_like_real_chrome() {
+        // Ground truth, measured 2026-09-30 on real macOS Chrome headless
+        // over https: `typeof ApplePaySession === "undefined"`. The engine
+        // used to install a macOS-only shim; the chrome_surface_parity
+        // capture and a live check both show real Chrome does not expose
+        // it (Apple Pay needs a payment handler; a bare install is a tell).
         let profile = crate::stealth::presets::chrome_148_macos();
         let mut page = Page::from_html_with_url(
             "<html><head></head><body></body></html>",
@@ -4693,14 +4696,7 @@ mod tests {
         .await
         .unwrap();
         let t = page.evaluate("typeof ApplePaySession").unwrap();
-        assert_eq!(
-            t, "function",
-            "macOS profile must expose ApplePaySession constructor"
-        );
-        let cmp = page.evaluate("ApplePaySession.canMakePayments()").unwrap();
-        assert_eq!(cmp, "true");
-        let v = page.evaluate("ApplePaySession.supportsVersion(3)").unwrap();
-        assert_eq!(v, "true");
+        assert_eq!(t, "undefined", "real macOS Chrome has no ApplePaySession");
     }
 
     #[tokio::test]

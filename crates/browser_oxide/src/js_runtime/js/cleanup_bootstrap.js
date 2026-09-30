@@ -83,6 +83,20 @@
             }
         }
     } catch (_e) { /* secure-context cleanup is best-effort */ }
+    // Chrome 153 capture ground truth (chrome_surface_parity): these do NOT
+    // exist on a secure page's window, but the engine used to define them
+    // (engine-internal interfaces and old WebKit aliases). Unconditional —
+    // the parity gap showed them surviving the secure-context gate.
+    for (const k of ['ApplePaySession', 'DedicatedWorkerGlobalScope',
+        'WorkerGlobalScope', 'Magnetometer', 'SharedStorage',
+        'SharedStorageWorklet', 'SpeechRecognitionAlternative',
+        'USBIsochronousOutPacket', 'webkitAudioContext', 'defaultStatus']) {
+        try { delete globalThis[k]; } catch (_e) {}
+    }
+    // bootstrap handoff names that must not outlive bootstrap
+    for (const k of ['__bo_mark_trusted', '__bo_define_event_handler']) {
+        try { delete globalThis[k]; } catch (_e) {}
+    }
 
     // -- Profile-conditional installs --------------------------------
     // These run AFTER the V8 startup snapshot is restored, so the
@@ -93,54 +107,6 @@
         const _osName = (_hasProfile && ops.op_get_profile_value)
             ? (ops.op_get_profile_value("os_name") || "Linux")
             : "Linux";
-
-        // ApplePaySession — present only on macOS Chrome AND only on
-        // secure contexts (Apple Pay requires https). A missing constructor
-        // on a macOS UA is a strong inconsistency versus a real browser.
-        // Constructor + statics shaped to match
-        // Chrome 147's ApplePaySession surface.
-        const _ops2 = Deno && Deno.core && Deno.core.ops;
-        const _isSecureForAP = _ops2 && _ops2.op_is_secure_context && _ops2.op_is_secure_context();
-        if (_osName === "macOS" && _isSecureForAP && typeof globalThis.ApplePaySession === "undefined") {
-            const _APP = function ApplePaySession(_version, _paymentRequest) {
-                this.onvalidatemerchant = null;
-                this.onpaymentauthorized = null;
-                this.onpaymentmethodselected = null;
-                this.onshippingcontactselected = null;
-                this.onshippingmethodselected = null;
-                this.oncouponcodechanged = null;
-                this.oncancel = null;
-            };
-            _APP.prototype = {
-                begin() {},
-                abort() {},
-                completeMerchantValidation() {},
-                completePayment() {},
-                completePaymentMethodSelection() {},
-                completeShippingContactSelection() {},
-                completeShippingMethodSelection() {},
-                completeCouponCodeChange() {},
-                addEventListener() {},
-                removeEventListener() {},
-            };
-            _APP.STATUS_SUCCESS = 0;
-            _APP.STATUS_FAILURE = 1;
-            _APP.STATUS_INVALID_BILLING_POSTAL_ADDRESS = 2;
-            _APP.STATUS_INVALID_SHIPPING_POSTAL_ADDRESS = 3;
-            _APP.STATUS_INVALID_SHIPPING_CONTACT = 4;
-            _APP.STATUS_PIN_REQUIRED = 5;
-            _APP.STATUS_PIN_INCORRECT = 6;
-            _APP.STATUS_PIN_LOCKOUT = 7;
-            _APP.canMakePayments = function canMakePayments() { return true; };
-            _APP.canMakePaymentsWithActiveCard = function canMakePaymentsWithActiveCard(_id) { return Promise.resolve(false); };
-            _APP.openPaymentSetup = function openPaymentSetup(_id) { return Promise.resolve(false); };
-            _APP.supportsVersion = function supportsVersion(version) { return version >= 1 && version <= 14; };
-            Object.defineProperty(globalThis, 'ApplePaySession', {
-                value: _APP,
-                configurable: true,
-                writable: true,
-            });
-        }
 
         // -- iOS Safari profile: strip 16 declined APIs + add iOS globals --
         // Per Apple's "16 web APIs declined for privacy" policy. The

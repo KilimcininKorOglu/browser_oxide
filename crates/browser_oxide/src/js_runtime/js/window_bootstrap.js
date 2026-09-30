@@ -3284,7 +3284,7 @@
     // HMAC and raw-key paths — real implementations over the Rust ops.
     // Key material lives in a JS-side map; a CryptoKey carries only its
     // handle, matching the spec's opaque-key shape.
-    if (!globalThis.__oxCryptoKeys) globalThis.__oxCryptoKeys = new Map();
+    if (typeof __oxCryptoKeys === "undefined") { var __oxCryptoKeys = new Map(); }
     let _keySeq = 0;
     const _hashName = (alg) => {
         const name = typeof alg === 'string' ? alg : (alg && alg.name) || "";
@@ -3337,7 +3337,7 @@
                     : _hashName(algObj.hash.name || '');
             }
             const handle = ++_keySeq;
-            globalThis.__oxCryptoKeys.set(handle, { raw, algName, hashName });
+            __oxCryptoKeys.set(handle, { raw, algName, hashName });
             const usages = Array.from(keyUsages || []);
             const algExposed = algName === 'HMAC'
                 ? { name: 'HMAC', hash: { name: hashName === 'SHA1' ? 'SHA-1' : hashName === 'SHA384' ? 'SHA-384' : hashName === 'SHA512' ? 'SHA-512' : 'SHA-256' } }
@@ -3347,7 +3347,7 @@
     });
     _defProtoMethod(_SubtleProto, 'exportKey', function exportKey(format, key) {
         try {
-            const entry = globalThis.__oxCryptoKeys.get(key && key.__oxHandle);
+            const entry = __oxCryptoKeys.get(key && key.__oxHandle);
             if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
             if (String(format).toLowerCase() !== 'raw') {
                 return Promise.reject(new DOMException(`unsupported export format ${format}`, "NotSupportedError"));
@@ -3360,7 +3360,7 @@
     _defProtoMethod(_SubtleProto, 'sign', function sign(algorithm, key, data) {
         try {
             const algName = _algoName(algorithm);
-            const entry = globalThis.__oxCryptoKeys.get(key && key.__oxHandle);
+            const entry = __oxCryptoKeys.get(key && key.__oxHandle);
             if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
             if (algName === 'HMAC') {
                 const hash = entry.hashName
@@ -7257,21 +7257,33 @@ const CHROME_COMPUTED_STYLE_PROPS = (
     globalThis.name = "";
     globalThis.status = "";
     
-    // (Phase J) Iframe indexing parity: define window[0], window[1] etc.
-    // Real Chrome has numeric own-properties for each child frame.
-    const _defineIframeGetter = (index) => {
-        Object.defineProperty(globalThis, index, {
-            get: () => {
-                // If we have iframes, return the contentWindow of the i-th one.
-                // Our Page layer manages the children.
-                const iframes = document.querySelectorAll('iframe');
-                return iframes[index] ? iframes[index].contentWindow : undefined;
-            },
-            configurable: true, enumerable: true
-        });
+    // (Phase J) Iframe indexing parity: window[0], window[1] … exist in
+    // real Chrome ONLY while child frames exist — a frame-less page has no
+    // numeric own-properties at all. Pre-defining indices 0..4 leaked five
+    // undefined accessors on every page (chrome_surface_parity caught it).
+    // Sync on demand: dom_bootstrap calls this whenever an iframe enters or
+    // leaves the document.
+    globalThis.__oxSyncFrameIndices = function __oxSyncFrameIndices() {
+        const iframes = document.querySelectorAll('iframe');
+        const count = iframes.length;
+        for (let i = 0; ; i++) {
+            const has = i < count;
+            const desc = Object.getOwnPropertyDescriptor(globalThis, String(i));
+            if (!has && !desc) break;
+            if (has && !desc) {
+                const idx = i;
+                Object.defineProperty(globalThis, String(idx), {
+                    get: () => {
+                        const frames = document.querySelectorAll('iframe');
+                        return frames[idx] ? frames[idx].contentWindow : undefined;
+                    },
+                    configurable: true, enumerable: true
+                });
+            } else if (!has && desc) {
+                try { delete globalThis[String(i)]; } catch (_e) {}
+            }
+        }
     };
-    // Pre-define for common counts.
-    for (let i = 0; i < 5; i++) _defineIframeGetter(i);
 
     Object.defineProperty(globalThis, Symbol.toStringTag, { value: "Window", configurable: true });
 
@@ -7291,4 +7303,121 @@ const CHROME_COMPUTED_STYLE_PROPS = (
         configurable: true,
         enumerable: false,
     });
+
+    // ================================================================
+    // Chrome window surface — functions and accessors real Chrome 148
+    // exposes that the engine previously lacked. Captured from
+    // chrome_surface.json parity (see tests/chrome_surface_parity.rs).
+    // ================================================================
+    const _winNoop = function noop() {};
+
+    // Legacy no-ops (Chrome keeps them for compat).
+    globalThis.captureEvents = _winNoop;
+    globalThis.releaseEvents = _winNoop;
+
+    // Window focus/geometry: no real window in headless — Chrome-shaped
+    // no-ops (they return undefined and never throw).
+    globalThis.focus = function focus() {};
+    globalThis.blur = function blur() {};
+    globalThis.moveTo = function moveTo(/* x, y */) {};
+    globalThis.moveBy = function moveBy(/* dx, dy */) {};
+    globalThis.resizeTo = function resizeTo(/* w, h */) {};
+    globalThis.resizeBy = function resizeBy(/* dw, dh */) {};
+
+    // window.find — Chrome returns whether a match was found.
+    globalThis.find = function find(/* text */) {
+        try { return String(arguments[0] ?? "").length === 0 ? false : false; } catch (_e) { return false; }
+    };
+
+    // [SecureContext] APIs that need user activation or permission —
+    // present as functions, rejecting exactly like an activation-less call.
+    const _rejectNotAllowed = (name) => function () {
+        return Promise.reject(new DOMException(
+            name + " requires a user gesture", "NotAllowedError"));
+    };
+    globalThis.getScreenDetails = _rejectNotAllowed("getScreenDetails");
+    globalThis.queryLocalFonts = _rejectNotAllowed("queryLocalFonts");
+    globalThis.showDirectoryPicker = _rejectNotAllowed("showDirectoryPicker");
+    globalThis.showOpenFilePicker = _rejectNotAllowed("showOpenFilePicker");
+    globalThis.showSaveFilePicker = _rejectNotAllowed("showSaveFilePicker");
+
+    globalThis.fetchLater = function fetchLater(url /*, options */) {
+        // Starts a deferred fetch; the result object's shape matters more
+        // than delivery (no deferred delivery in a headless engine).
+        try { fetch(String(url)); } catch (_e) {}
+        return { consumed: false, invoked: false };
+    };
+
+    globalThis.webkitRequestFileSystem = function webkitRequestFileSystem(/* type, size, sc, ec */) {
+        if (typeof arguments[3] === "function") arguments[3](new DOMException("NotSupportedError", "NotSupportedError"));
+    };
+    globalThis.webkitResolveLocalFileSystemURL = function webkitResolveLocalFileSystemURL(/* url, sc, ec */) {
+        if (typeof arguments[2] === "function") arguments[2](new DOMException("NotSupportedError", "NotSupportedError"));
+    };
+
+    // WebKit-alias speech interfaces: constructible, Chrome-shaped shells.
+    class WebKitSpeechGrammar {
+        constructor() { this.src = ""; this.weight = 1; }
+    }
+    class WebKitSpeechGrammarList {
+        constructor() { this.length = 0; }
+        item(i) { return this[i] || null; }
+        addFromGrammar(_g) {}
+        addFromString(_s, _w) {}
+    }
+    class WebKitSpeechRecognition {
+        constructor() { this.lang = ""; this.continuous = false; this.interimResults = false; }
+        start() {} stop() {} abort() {}
+    }
+    globalThis.webkitSpeechGrammar = WebKitSpeechGrammar;
+    globalThis.webkitSpeechGrammarList = WebKitSpeechGrammarList;
+    globalThis.webkitSpeechRecognition = WebKitSpeechRecognition;
+    globalThis.webkitSpeechRecognitionError = class WebKitSpeechRecognitionError extends Error {};
+    globalThis.webkitSpeechRecognitionEvent = class WebKitSpeechRecognitionEvent extends Event {};
+
+    // Accessor pairs (capture kind "g"/"gs").
+    Object.defineProperty(globalThis, "event", {
+        get() { return null; }, configurable: true, enumerable: true,
+    });
+    let _navigationSingleton = null;
+    Object.defineProperty(globalThis, "navigation", {
+        get() {
+            if (!_navigationSingleton) {
+                _navigationSingleton = {
+                    currentEntry: null,
+                    entries() { return []; },
+                    transitionWhile() { return Promise.resolve(); },
+                    updateCurrentEntry() {},
+                };
+                Object.defineProperty(_navigationSingleton, Symbol.toStringTag, { value: "Navigation" });
+            }
+            return _navigationSingleton;
+        },
+        configurable: true, enumerable: true,
+    });
+    Object.defineProperty(globalThis, "documentPictureInPicture", {
+        get() {
+            return { window: null };
+        },
+        configurable: true, enumerable: true,
+    });
+
+    // Window on* accessors that were absent (Chrome kind "gs"; unset reads
+    // null, not undefined).
+    const _winHandlers = new WeakMap();
+    for (const _name of ["ondevicemotion", "ondeviceorientation", "ondeviceorientationabsolute", "onerror"]) {
+        Object.defineProperty(globalThis, _name, {
+            get() {
+                const m = _winHandlers.get(globalThis);
+                return (m && m.get(_name)) || null;
+            },
+            set(v) {
+                let m = _winHandlers.get(globalThis);
+                if (!m) { m = new Map(); _winHandlers.set(globalThis, m); }
+                m.set(_name, typeof v === "function" ? v : null);
+            },
+            configurable: true,
+            enumerable: true,
+        });
+    }
 })(globalThis);

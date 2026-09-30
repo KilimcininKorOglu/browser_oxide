@@ -178,6 +178,11 @@
     function _onNodeInsertedInner(child, sync = true) {
         // 1. Dynamic script loading
         const childTag = (child.tagName || child.nodeName || "").toLowerCase();
+        // Frame indices: window[0..n] exist only while frames do (Chrome
+        // parity — see __oxSyncFrameIndices in window_bootstrap).
+        if (childTag === 'iframe' || childTag === 'frame') {
+            try { globalThis.__oxSyncFrameIndices && globalThis.__oxSyncFrameIndices(); } catch (_e) {}
+        }
         const type = (child.getAttribute?.('type') || '').toLowerCase();
         const isJs = !type || type === 'text/javascript' || type === 'application/javascript' || type === 'module';
         

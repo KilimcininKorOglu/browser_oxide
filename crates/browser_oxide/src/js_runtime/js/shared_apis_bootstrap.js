@@ -119,7 +119,7 @@
     });
     // HMAC and raw-key paths — real implementations over the Rust ops,
     // identical to the window bootstrap's (workers get the same surface).
-    if (!globalThis.__oxCryptoKeys) globalThis.__oxCryptoKeys = new Map();
+    if (typeof __oxCryptoKeys === "undefined") { var __oxCryptoKeys = new Map(); }
     let _keySeq = 0;
     const _hashName = (alg) => {
         const name = typeof alg === 'string' ? alg : (alg && alg.name) || "";
@@ -172,7 +172,7 @@
                     : _hashName(algObj.hash.name || '');
             }
             const handle = ++_keySeq;
-            globalThis.__oxCryptoKeys.set(handle, { raw, algName, hashName });
+            __oxCryptoKeys.set(handle, { raw, algName, hashName });
             const usages = Array.from(keyUsages || []);
             const algExposed = algName === 'HMAC'
                 ? { name: 'HMAC', hash: { name: hashName === 'SHA1' ? 'SHA-1' : hashName === 'SHA384' ? 'SHA-384' : hashName === 'SHA512' ? 'SHA-512' : 'SHA-256' } }
@@ -182,7 +182,7 @@
     });
     _defProtoMethod(_SubtleProto, 'exportKey', function exportKey(format, key) {
         try {
-            const entry = globalThis.__oxCryptoKeys.get(key && key.__oxHandle);
+            const entry = __oxCryptoKeys.get(key && key.__oxHandle);
             if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
             if (String(format).toLowerCase() !== 'raw') {
                 return Promise.reject(new DOMException(`unsupported export format ${format}`, "NotSupportedError"));
@@ -195,7 +195,7 @@
     _defProtoMethod(_SubtleProto, 'sign', function sign(algorithm, key, data) {
         try {
             const algName = _algoName(algorithm);
-            const entry = globalThis.__oxCryptoKeys.get(key && key.__oxHandle);
+            const entry = __oxCryptoKeys.get(key && key.__oxHandle);
             if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
             if (algName === 'HMAC') {
                 const hash = entry.hashName
