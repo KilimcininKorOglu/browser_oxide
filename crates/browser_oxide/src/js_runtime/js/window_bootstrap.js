@@ -6354,44 +6354,7 @@
     // top of window_bootstrap.js (search for op_cross_origin_isolated).
     // No fallback needed — defineProperty above runs before any user JS.
 
-    // ================================================================
-    // Trusted Types API (Chrome 83+)
-    // Some scripts and CSP policies check window.trustedTypes presence.
-    // ================================================================
-    if (!globalThis.trustedTypes) {
-        const _ttPolicies = new Map();
-        const _TrustedHTML = function TrustedHTML(v) { this._v = v; };
-        _TrustedHTML.prototype.toString = function() { return this._v; };
-        const _TrustedScript = function TrustedScript(v) { this._v = v; };
-        _TrustedScript.prototype.toString = function() { return this._v; };
-        const _TrustedScriptURL = function TrustedScriptURL(v) { this._v = v; };
-        _TrustedScriptURL.prototype.toString = function() { return this._v; };
-        globalThis.trustedTypes = {
-            createPolicy(name, rules) {
-                const p = {
-                    name,
-                    createHTML: (s) => typeof rules.createHTML === 'function' ? new _TrustedHTML(rules.createHTML(s)) : new _TrustedHTML(s),
-                    createScript: (s) => typeof rules.createScript === 'function' ? new _TrustedScript(rules.createScript(s)) : new _TrustedScript(s),
-                    createScriptURL: (s) => typeof rules.createScriptURL === 'function' ? new _TrustedScriptURL(rules.createScriptURL(s)) : new _TrustedScriptURL(s),
-                };
-                _ttPolicies.set(name, p);
-                if (name === 'default') globalThis.trustedTypes.defaultPolicy = p;
-                return p;
-            },
-            isHTML(v) { return v instanceof _TrustedHTML; },
-            isScript(v) { return v instanceof _TrustedScript; },
-            isScriptURL(v) { return v instanceof _TrustedScriptURL; },
-            getAttributeType() { return null; },
-            getPropertyType() { return null; },
-            defaultPolicy: null,
-            emptyHTML: new _TrustedHTML(''),
-            emptyScript: new _TrustedScript(''),
-        };
-        globalThis.TrustedHTML = _TrustedHTML;
-        globalThis.TrustedScript = _TrustedScript;
-        globalThis.TrustedScriptURL = _TrustedScriptURL;
-        _maskAsNative(globalThis.trustedTypes, 'createPolicy', 'isHTML', 'isScript', 'isScriptURL', 'getAttributeType', 'getPropertyType');
-    }
+    // Trusted Types live in trusted_types_bootstrap.js, shared with workers.
 
     // ================================================================
     // Scheduler API (Chrome 104+)

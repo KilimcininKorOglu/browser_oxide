@@ -328,6 +328,98 @@ pub fn install_native_fp_tostring(
     true
 }
 
+extern "C" {
+    // `v8::ObjectTemplate::SetCodeLike()`, which the rusty_v8 bindings do
+    // not wrap. A rusty_v8 `&ObjectTemplate` is the handle slot address,
+    // the same pointer a C++ `Local<ObjectTemplate>` dereferences to, so it
+    // is a valid `this` (rusty_v8's own shims rely on the same identity).
+    #[link_name = "_ZN2v814ObjectTemplate11SetCodeLikeEv"]
+    fn v8_object_template_set_code_like(this: *const v8::ObjectTemplate);
+}
+
+thread_local! {
+    /// Set only while the `make` factory constructs an instance, so a
+    /// script-level `new TrustedScript()` still throws like Chrome.
+    static TRUSTED_SCRIPT_CONSTRUCTING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn trusted_script_ctor_cb<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    _args: v8::FunctionCallbackArguments<'s>,
+    _rv: v8::ReturnValue,
+) {
+    if TRUSTED_SCRIPT_CONSTRUCTING.with(|c| c.get()) {
+        return;
+    }
+    if let Some(msg) = v8::String::new(scope, "Illegal constructor") {
+        let err = v8::Exception::type_error(scope, msg);
+        scope.throw_exception(err);
+    }
+}
+
+fn trusted_script_make_cb<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    args: v8::FunctionCallbackArguments<'s>,
+    mut rv: v8::ReturnValue,
+) {
+    let Ok(ctor) = v8::Local::<v8::Function>::try_from(args.data()) else {
+        return;
+    };
+    TRUSTED_SCRIPT_CONSTRUCTING.with(|c| c.set(true));
+    let obj = ctor.new_instance(scope, &[]);
+    TRUSTED_SCRIPT_CONSTRUCTING.with(|c| c.set(false));
+    if let Some(obj) = obj {
+        rv.set(obj.into());
+    }
+}
+
+/// Install the native half of `TrustedScript` as the one-shot global
+/// `__ox_trusted_script = { ctor, make }`, which window_bootstrap.js reads
+/// and deletes.
+///
+/// Chrome marks a TrustedScript's instance template code-like, so V8's
+/// `eval` and `Function` compile the object's string value instead of
+/// returning the object untouched. V8 only treats an object as code-like
+/// when its constructor is an API function whose instance template carries
+/// that flag, so a JS-level class cannot provide this. Run before bootstrap.
+pub fn install_trusted_script_native(scope: &mut v8::PinScope) -> bool {
+    let tmpl = v8::FunctionTemplate::builder(trusted_script_ctor_cb)
+        .length(0)
+        .build(scope);
+    let Some(class_name) = v8::String::new(scope, "TrustedScript") else {
+        return false;
+    };
+    tmpl.set_class_name(class_name);
+    let instance = tmpl.instance_template(scope);
+    // SAFETY: `instance` is a live handle in `scope`; see the extern block.
+    unsafe { v8_object_template_set_code_like(&*instance) };
+    let Some(ctor) = tmpl.get_function(scope) else {
+        return false;
+    };
+    ctor.set_name(class_name);
+    let make = v8::FunctionTemplate::builder(trusted_script_make_cb)
+        .data(ctor.into())
+        .constructor_behavior(v8::ConstructorBehavior::Throw)
+        .build(scope);
+    let Some(make) = make.get_function(scope) else {
+        return false;
+    };
+    let holder = v8::Object::new(scope);
+    let (Some(k_ctor), Some(k_make), Some(k_global)) = (
+        v8::String::new(scope, "ctor"),
+        v8::String::new(scope, "make"),
+        v8::String::new(scope, "__ox_trusted_script"),
+    ) else {
+        return false;
+    };
+    holder.set(scope, k_ctor.into(), ctor.into());
+    holder.set(scope, k_make.into(), make.into());
+    let global = scope.get_current_context().global(scope);
+    global
+        .set(scope, k_global.into(), holder.into())
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

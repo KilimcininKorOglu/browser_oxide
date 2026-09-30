@@ -340,11 +340,20 @@ pub fn create_runtime_with_signals(
             "\n",
             include_str!("js/window_bootstrap.js"),
             "\n",
+            include_str!("js/trusted_types_bootstrap.js"),
+            "\n",
             include_str!("js/streams_bootstrap.js"),
             "\n",
             include_str!("js/structured_clone.js"),
         );
 
+        {
+            let __ctx = runtime.main_context();
+            v8::scope_with_context!(scope, runtime.v8_isolate(), __ctx);
+            if !crate::js_runtime::native_fns::install_trusted_script_native(scope) {
+                eprintln!("[runtime] native TrustedScript install failed");
+            }
+        }
         if let Some(origin) = &options.frame_parent_origin {
             // window_bootstrap.js reads and deletes this marker.
             let marker = format!(
@@ -562,6 +571,17 @@ pub fn create_worker_runtime(
     runtime
         .execute_script("<anonymous>", include_str!("js/worker_bootstrap.js"))
         .expect("worker: worker bootstrap failed");
+
+    {
+        let __ctx = runtime.main_context();
+        v8::scope_with_context!(scope, runtime.v8_isolate(), __ctx);
+        if !crate::js_runtime::native_fns::install_trusted_script_native(scope) {
+            eprintln!("[runtime] worker: native TrustedScript install failed");
+        }
+    }
+    runtime
+        .execute_script("<anonymous>", include_str!("js/trusted_types_bootstrap.js"))
+        .expect("worker: trusted types bootstrap failed");
 
     // canvas_bootstrap installs CanvasRenderingContext2D and the real
     // OffscreenCanvas backed by canvas_ext ops. Safe in workers
