@@ -381,6 +381,28 @@
         }
     }
 
+    // HTMLCollection (DOM Standard §4.2.10.2): the element-only list behind
+    // children and getElementsBy*. It has item and namedItem but none of
+    // NodeList's forEach, entries, keys or values.
+    class HTMLCollection {
+        constructor(data, isTyped = false) {
+            const list = new NodeList(data, isTyped);
+            this._ids = list._ids;
+            for (let i = 0; i < list.length; i++) this[i] = list[i];
+        }
+        get length() { return this._ids.length; }
+        item(index) { return index < this._ids.length ? _wrapNode(this._ids[index]) : null; }
+        namedItem(name) {
+            const key = String(name);
+            if (key === "") return null;
+            for (let i = 0; i < this.length; i++) {
+                if (this[i].id === key || this[i].getAttribute("name") === key) return this[i];
+            }
+            return null;
+        }
+        [Symbol.iterator]() { return NodeList.prototype[Symbol.iterator].call(this); }
+    }
+
     // DOMTokenList (DOM Standard §7.1) over an element's class attribute:
     // an ordered set of tokens, one list per element, indexable like an
     // array. The element is kept in a WeakMap because the list is a Proxy
@@ -809,17 +831,9 @@
         get innerHTML() { return ops.op_dom_get_inner_html(_getNodeId(this)); }
         set innerHTML(val) { ops.op_dom_set_inner_html(_getNodeId(this), String(val)); }
         get outerHTML() { return ops.op_dom_get_outer_html(_getNodeId(this)); }
-        get children() {
-            return new NodeList(ops.op_dom_get_child_elements_with_types(_getNodeId(this)), true);
-        }
-        get firstElementChild() {
-            const els = ops.op_dom_get_child_elements(_getNodeId(this));
-            return els.length > 0 ? _wrapNode(els[0]) : null;
-        }
-        get lastElementChild() {
-            const els = ops.op_dom_get_child_elements(_getNodeId(this));
-            return els.length > 0 ? _wrapNode(els[els.length - 1]) : null;
-        }
+        get children() { return _parentNodeElementChildren(this); }
+        get firstElementChild() { return _parentNodeElementAt(this, false); }
+        get lastElementChild() { return _parentNodeElementAt(this, true); }
         getAttribute(name) { return ops.op_dom_get_attribute(_getNodeId(this), name); }
         setAttribute(name, value) { ops.op_dom_set_attribute(_getNodeId(this), name, String(value)); }
         removeAttribute(name) { ops.op_dom_remove_attribute(_getNodeId(this), name); }
@@ -847,10 +861,10 @@
             return null;
         }
         getElementsByTagName(tag) {
-            return new NodeList(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
+            return new HTMLCollection(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
         }
         getElementsByClassName(cls) {
-            return new NodeList(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
+            return new HTMLCollection(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
         }
         // Layout APIs (wired to taffy via layout_ext ops)
         getBoundingClientRect() {
@@ -910,34 +924,12 @@
         get offsetParent() { return this.parentElement; }
         // --- Modern DOM manipulation ---
         remove() { _childNodeRemove(this); }
-        append(...nodes) {
-            for (const node of nodes) {
-                if (typeof node === "string") {
-                    this.appendChild(_document.createTextNode(node));
-                } else {
-                    this.appendChild(node);
-                }
-            }
-        }
-        prepend(...nodes) {
-            const first = this.firstChild;
-            for (const node of nodes) {
-                const n = typeof node === "string" ? _document.createTextNode(node) : node;
-                if (first) {
-                    this.insertBefore(n, first);
-                } else {
-                    this.appendChild(n);
-                }
-            }
-        }
+        append(...nodes) { _parentNodeAppend(this, nodes); }
+        prepend(...nodes) { _parentNodePrepend(this, nodes); }
         after(...nodes) { _childNodeAfter(this, nodes); }
         before(...nodes) { _childNodeBefore(this, nodes); }
         replaceWith(...nodes) { _childNodeReplaceWith(this, nodes); }
-        replaceChildren(...nodes) {
-            // Remove all existing children
-            while (this.firstChild) this.removeChild(this.firstChild);
-            this.append(...nodes);
-        }
+        replaceChildren(...nodes) { _parentNodeReplaceChildren(this, nodes); }
         // --- insertAdjacent family ---
         insertAdjacentHTML(position, html) {
             ops.op_dom_insert_adjacent_html(_getNodeId(this), position, html);
@@ -1886,6 +1878,31 @@
         return n || null;
     }
 
+    // ParentNode mixin (DOM Standard §4.2.6), shared by Element, DocumentFragment
+    // and Document.
+    function _parentNodeAppend(self, nodes) { self.appendChild(_childNodeConvert(nodes)); }
+
+    function _parentNodePrepend(self, nodes) {
+        const node = _childNodeConvert(nodes);
+        self.insertBefore(node, self.firstChild);
+    }
+
+    function _parentNodeReplaceChildren(self, nodes) {
+        const node = _childNodeConvert(nodes);
+        while (self.firstChild) self.removeChild(self.firstChild);
+        self.appendChild(node);
+    }
+
+    function _parentNodeElementChildren(self) {
+        return new HTMLCollection(ops.op_dom_get_child_elements_with_types(_getNodeId(self)), true);
+    }
+
+    function _parentNodeElementAt(self, last) {
+        const els = ops.op_dom_get_child_elements(_getNodeId(self));
+        if (els.length === 0) return null;
+        return _wrapNode(last ? els[els.length - 1] : els[0]);
+    }
+
     class CharacterData extends Node {
         before(...nodes) { _childNodeBefore(this, nodes); }
         after(...nodes) { _childNodeAfter(this, nodes); }
@@ -1947,18 +1964,13 @@
         getElementById(id) {
             return this.querySelector('[id="' + CSS.escape(String(id)) + '"]');
         }
-        get children() {
-            return new NodeList(ops.op_dom_get_child_elements(_getNodeId(this)));
-        }
+        get children() { return _parentNodeElementChildren(this); }
         get childElementCount() { return ops.op_dom_get_child_elements(_getNodeId(this)).length; }
-        get firstElementChild() {
-            const els = ops.op_dom_get_child_elements(_getNodeId(this));
-            return els.length > 0 ? _wrapNode(els[0]) : null;
-        }
-        get lastElementChild() {
-            const els = ops.op_dom_get_child_elements(_getNodeId(this));
-            return els.length > 0 ? _wrapNode(els[els.length - 1]) : null;
-        }
+        get firstElementChild() { return _parentNodeElementAt(this, false); }
+        get lastElementChild() { return _parentNodeElementAt(this, true); }
+        append(...nodes) { _parentNodeAppend(this, nodes); }
+        prepend(...nodes) { _parentNodePrepend(this, nodes); }
+        replaceChildren(...nodes) { _parentNodeReplaceChildren(this, nodes); }
     }
     class ShadowRoot extends DocumentFragment {}
 
@@ -1989,6 +2001,13 @@
     }
 
     class Document extends Node {
+        get children() { return _parentNodeElementChildren(this); }
+        get childElementCount() { return ops.op_dom_get_child_elements(_getNodeId(this)).length; }
+        get firstElementChild() { return _parentNodeElementAt(this, false); }
+        get lastElementChild() { return _parentNodeElementAt(this, true); }
+        append(...nodes) { _parentNodeAppend(this, nodes); }
+        prepend(...nodes) { _parentNodePrepend(this, nodes); }
+        replaceChildren(...nodes) { _parentNodeReplaceChildren(this, nodes); }
         constructor(nodeId) {
             // Forward the document node id to Node so _getNodeId returns
             // the real Rust-side Document. Without this, document.nodeType
@@ -2044,10 +2063,10 @@
             return nodeId !== null ? _wrapNode(nodeId) : null;
         }
         getElementsByTagName(tag) {
-            return new NodeList(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
+            return new HTMLCollection(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
         }
         getElementsByClassName(cls) {
-            return new NodeList(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
+            return new HTMLCollection(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
         }
         querySelector(sel) {
             const id = ops.op_dom_query_selector(_getNodeId(this), sel);
@@ -2952,6 +2971,7 @@
     globalThis.DocumentFragment = DocumentFragment;
     globalThis.Document = Document;
     globalThis.NodeList = NodeList;
+    globalThis.HTMLCollection = HTMLCollection;
     globalThis.DOMTokenList = DOMTokenList;
     globalThis.Range = Range;
     globalThis.Selection = Selection;

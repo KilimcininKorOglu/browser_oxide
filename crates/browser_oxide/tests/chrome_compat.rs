@@ -7676,3 +7676,55 @@ async fn character_data_has_the_child_node_mixin() {
         r#"["b","i","<b></b>x<u></u>Ty<i></i>","<b></b>x<u></u>zTy<i></i>","<b></b>x<u></u>zy<i></i>",null,"<b></b>x<u></u>zy<i></i><!--c--><s></s>","s"]"#
     );
 }
+
+// Document and DocumentFragment carry the ParentNode mixin. Expected values
+// follow the DOM Standard's ParentNode algorithms.
+#[tokio::test]
+async fn document_and_fragment_have_the_parent_node_mixin() {
+    let js = r#"(() => {
+        const out = [document.children.length, document.firstElementChild.localName,
+            document.lastElementChild.localName, document.childElementCount,
+            document.children instanceof HTMLCollection];
+        const f = document.createDocumentFragment();
+        f.append('a', document.createElement('b'));
+        f.prepend('c');
+        out.push(f.childNodes.length, f.children.length, f.firstElementChild.localName,
+            f.children instanceof HTMLCollection);
+        f.replaceChildren(document.createElement('i'), 'd');
+        out.push(f.childNodes.length, f.lastElementChild.localName);
+        const d = document.createElement('div');
+        d.append(f);
+        d.prepend('p', document.createElement('u'));
+        out.push(d.innerHTML, f.childNodes.length);
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r#"[1,"html","html",1,true,3,1,"b",true,2,"i","p<u></u><i></i>d",0]"#
+    );
+}
+
+// children and getElementsBy* return an HTMLCollection: it has item and
+// namedItem, and none of NodeList's forEach, entries, keys or values.
+// Expected values follow the DOM Standard.
+#[tokio::test]
+async fn element_lists_are_html_collections() {
+    let js = r#"(() => {
+        const d = document.createElement('div');
+        d.innerHTML = '<b id="k"></b><i name="n" class="c"></i>';
+        const kids = d.children;
+        return JSON.stringify([
+            typeof HTMLCollection, kids instanceof HTMLCollection, kids instanceof NodeList,
+            d.getElementsByTagName('i') instanceof HTMLCollection,
+            d.getElementsByClassName('c') instanceof HTMLCollection,
+            typeof kids.forEach, typeof kids.entries,
+            kids.namedItem('k').localName, kids.namedItem('n').localName,
+            kids.namedItem('x'), kids.item(1).localName, kids.item(2),
+            [...kids].map(e => e.localName).join('')
+        ]);
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r#"["function",true,false,true,true,"undefined","undefined","b","i",null,"i",null,"bi"]"#
+    );
+}
