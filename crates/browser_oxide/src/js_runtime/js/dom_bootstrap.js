@@ -1348,19 +1348,56 @@
         } catch {}
     }
 
-    class Text extends Node {
-        get data() { return ops.op_dom_get_text_content(_getNodeId(this)); }
-        set data(val) { ops.op_dom_set_text_content(_getNodeId(this), String(val)); }
-        get length() { return this.data.length; }
-        get wholeText() { return this.data; }
+    // CharacterData (DOM Standard §4.10): the shared base of Text and Comment.
+    // Offsets and counts are UTF-16 code units, which is what JS strings index.
+    function _charDataRangeError(node, method, offset, length) {
+        return new DOMException("Failed to execute '" + method + "' on '" + node.constructor.name +
+            "': The offset " + offset + " is greater than the node's length (" + length + ").", "IndexSizeError");
     }
 
-    class Comment extends Node {
+    class CharacterData extends Node {
         get data() { return ops.op_dom_get_text_content(_getNodeId(this)); }
-        set data(val) { ops.op_dom_set_text_content(_getNodeId(this), String(val)); }
+        set data(val) { ops.op_dom_set_text_content(_getNodeId(this), val === null ? "" : String(val)); }
+        get length() { return this.data.length; }
+        substringData(offset, count) {
+            const data = this.data;
+            offset >>>= 0;
+            count >>>= 0;
+            if (offset > data.length) throw _charDataRangeError(this, 'substringData', offset, data.length);
+            return data.substring(offset, offset + count);
+        }
+        appendData(data) { this.data = this.data + String(data); }
+        insertData(offset, data) { _charDataReplace(this, 'insertData', offset, 0, data); }
+        deleteData(offset, count) { _charDataReplace(this, 'deleteData', offset, count, ""); }
+        replaceData(offset, count, data) { _charDataReplace(this, 'replaceData', offset, count, data); }
+    }
+
+    function _charDataReplace(node, method, offset, count, data) {
+        const cur = node.data;
+        offset >>>= 0;
+        count >>>= 0;
+        if (offset > cur.length) throw _charDataRangeError(node, method, offset, cur.length);
+        const end = Math.min(offset + count, cur.length);
+        node.data = cur.slice(0, offset) + String(data) + cur.slice(end);
+    }
+
+    class Text extends CharacterData {
+        get wholeText() { return this.data; }
+        splitText(offset) {
+            const cur = this.data;
+            offset >>>= 0;
+            if (offset > cur.length) throw _charDataRangeError(this, 'splitText', offset, cur.length);
+            const tail = _document.createTextNode(cur.substring(offset));
+            const parent = this.parentNode;
+            if (parent) parent.insertBefore(tail, this.nextSibling);
+            this.data = cur.substring(0, offset);
+            return tail;
+        }
     }
 
     class DocumentFragment extends Node {}
+    class Comment extends CharacterData {}
+
 
     let _currentScript = null;
     function _setCurrentScript(el) { _currentScript = el; }
@@ -1487,9 +1524,7 @@
             return _wrapNode(ops.op_dom_create_document_fragment());
         }
         createComment(text) {
-            // Comment nodes have nodeType 8 in the DOM; use text node with special handling
-            const id = ops.op_dom_create_text_node(""); // TODO: proper comment op
-            return _wrapNode(id);
+            return _wrapNode(ops.op_dom_create_comment(String(text)));
         }
         createEvent(type) {
             // Legacy event factory
@@ -1883,6 +1918,7 @@
     globalThis.HTMLPreElement = HTMLPreElement;
     globalThis.HTMLQuoteElement = HTMLQuoteElement;
     globalThis.SVGElement = Element;
+    globalThis.CharacterData = CharacterData;
     globalThis.Text = Text;
     globalThis.Comment = Comment;
     globalThis.DocumentFragment = DocumentFragment;

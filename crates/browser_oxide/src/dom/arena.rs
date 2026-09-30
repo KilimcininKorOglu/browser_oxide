@@ -300,6 +300,14 @@ impl Dom {
 
     /// Get text content of a subtree.
     pub fn text_content(&self, id: NodeId) -> String {
+        // A Comment or ProcessingInstruction answers with its own data; only
+        // a parent node concatenates its descendant Text nodes.
+        match self.get(id).map(|n| &n.data) {
+            Some(NodeData::Comment(d)) | Some(NodeData::ProcessingInstruction { data: d, .. }) => {
+                return d.clone()
+            }
+            _ => {}
+        }
         let mut result = String::new();
         self.collect_text(id, &mut result);
         result
@@ -343,8 +351,20 @@ impl Dom {
 
     // --- Phase 2: Methods for JS integration ---
 
-    /// Set text content: remove all children, add a single text node.
+    /// Set text content: replace a character-data node's own data, or remove
+    /// all children of any other node and add a single text node.
     pub fn set_text_content(&mut self, id: NodeId, text: &str) {
+        if let Some(node) = self.get_mut(id) {
+            match &mut node.data {
+                NodeData::Text(d)
+                | NodeData::Comment(d)
+                | NodeData::ProcessingInstruction { data: d, .. } => {
+                    *d = text.to_string();
+                    return;
+                }
+                _ => {}
+            }
+        }
         // Remove all children
         let children: Vec<NodeId> = self.children(id);
         for child in children {
@@ -836,6 +856,28 @@ mod tests {
         dom.set_text_content(div, "new text");
         assert_eq!(dom.text_content(div), "new text");
         assert_eq!(dom.child_elements(div).len(), 0); // span removed
+    }
+
+    #[test]
+    fn set_text_content_on_character_data_replaces_own_data() {
+        let mut dom = Dom::new();
+        let div = dom.create_element(QualName::new("div"), vec![]);
+        let text = dom.create_text("old".to_string());
+        let comment = dom.create_comment("x".to_string());
+        dom.append_child(NodeId::DOCUMENT, div);
+        dom.append_child(div, text);
+        dom.append_child(div, comment);
+
+        dom.set_text_content(text, "new");
+        dom.set_text_content(comment, "xy");
+
+        // CharacterData nodes never gain children; their data changes in place.
+        assert!(dom.children(text).is_empty());
+        assert!(dom.children(comment).is_empty());
+        assert_eq!(dom.text_content(text), "new");
+        assert_eq!(dom.text_content(comment), "xy");
+        // A parent's text content skips comment data.
+        assert_eq!(dom.text_content(div), "new");
     }
 
     #[test]

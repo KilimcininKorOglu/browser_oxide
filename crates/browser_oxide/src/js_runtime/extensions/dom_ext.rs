@@ -378,6 +378,13 @@ pub fn op_dom_create_text_node(state: &mut OpState, #[string] text: &str) -> i32
 
 #[op2(fast)]
 #[smi]
+pub fn op_dom_create_comment(state: &mut OpState, #[string] text: &str) -> i32 {
+    let state = state.borrow_mut::<DomState>();
+    state.dom.create_comment(text.to_string()).to_raw() as i32
+}
+
+#[op2(fast)]
+#[smi]
 pub fn op_dom_create_document_fragment(state: &mut OpState) -> i32 {
     let state = state.borrow_mut::<DomState>();
     state.dom.create_document_fragment().to_raw() as i32
@@ -1436,6 +1443,7 @@ deno_core::extension!(
         op_dom_get_elements_by_class_name,
         op_dom_create_element,
         op_dom_create_text_node,
+        op_dom_create_comment,
         op_dom_create_document_fragment,
         op_dom_append_child,
         op_dom_insert_before,
