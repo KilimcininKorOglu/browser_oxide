@@ -2466,9 +2466,80 @@
         }
     }
     class SVGGeometryElement extends SVGGraphicsElement {}
+    // SVGPoint is its own interface in Chrome, not a DOMPoint.
+    const _svgPointData = new WeakMap();
+    class SVGPoint {
+        constructor() { throw new TypeError("Failed to construct 'SVGPoint': Illegal constructor"); }
+        get x() { return _svgPointData.get(this).x; }
+        set x(v) { _svgPointData.get(this).x = Number(v); }
+        get y() { return _svgPointData.get(this).y; }
+        set y(v) { _svgPointData.get(this).y = Number(v); }
+        // The engine has no SVGMatrix, so no argument can be one.
+        matrixTransform(matrix) {
+            throw new TypeError("Failed to execute 'matrixTransform' on 'SVGPoint': parameter 1 is not of type 'SVGMatrix'.");
+        }
+    }
+    const _svgPoint = (x, y) => {
+        const point = Object.create(SVGPoint.prototype);
+        _svgPointData.set(point, { x, y });
+        return point;
+    };
+
+    // Characters of a text element. Only a rendered text has characters,
+    // and each one advances by the measured width it adds to the line.
+    const _svgRendered = (el) => _rootOf(el) === _document;
+    const _svgCharCount = (el) => (_svgRendered(el) ? (el.textContent || "").length : 0);
+    const _svgCharStart = (el, i) => _svgNum(el, "x") + _svgMeasure(el, (el.textContent || "").slice(0, i));
+    function _svgCheckChar(method, el, charnum) {
+        const n = _svgCharCount(el);
+        const c = charnum >>> 0;
+        if (c < n) return c;
+        const bound = c > n ? "is greater than" : "is greater than or equal to";
+        throw new DOMException("Failed to execute '" + method + "' on 'SVGTextContentElement': The charnum provided (" + c + ") " + bound + " the maximum bound (" + n + ").", "IndexSizeError");
+    }
+
     class SVGTextContentElement extends SVGGraphicsElement {
-        getComputedTextLength() { return _rootOf(this) === _document ? _svgTextWidth(this) : 0; }
-        getNumberOfChars() { return (this.textContent || "").length; }
+        getComputedTextLength() { return _svgRendered(this) ? _svgTextWidth(this) : 0; }
+        getNumberOfChars() { return _svgCharCount(this); }
+        getSubStringLength(charnum, nchars) {
+            const start = _svgCheckChar("getSubStringLength", this, charnum);
+            const end = Math.min(start + (nchars >>> 0), _svgCharCount(this));
+            return _svgCharStart(this, end) - _svgCharStart(this, start);
+        }
+        getStartPositionOfChar(charnum) {
+            const c = _svgCheckChar("getStartPositionOfChar", this, charnum);
+            return _svgPoint(_svgCharStart(this, c), _svgNum(this, "y"));
+        }
+        getEndPositionOfChar(charnum) {
+            const c = _svgCheckChar("getEndPositionOfChar", this, charnum);
+            return _svgPoint(_svgCharStart(this, c + 1), _svgNum(this, "y"));
+        }
+        getExtentOfChar(charnum) {
+            const c = _svgCheckChar("getExtentOfChar", this, charnum);
+            const x = _svgCharStart(this, c);
+            const line = _svgTextLine(this);
+            return _svgRect({ x, y: line.top, width: _svgCharStart(this, c + 1) - x, height: line.height });
+        }
+        getRotationOfChar(charnum) {
+            _svgCheckChar("getRotationOfChar", this, charnum);
+            return 0;
+        }
+        getCharNumAtPosition(point = undefined) {
+            const line = _svgTextLine(this);
+            const y = point ? Number(point.y) : 0, x = point ? Number(point.x) : 0;
+            if (y < line.top || y > line.top + line.height) return -1;
+            for (let i = 0; i < _svgCharCount(this); i++) {
+                if (x >= _svgCharStart(this, i) && x < _svgCharStart(this, i + 1)) return i;
+            }
+            return -1;
+        }
+        selectSubString(charnum, nchars) {
+            _svgCheckChar("selectSubString", this, charnum);
+        }
+    }
+    for (const [name, value] of [["LENGTHADJUST_UNKNOWN", 0], ["LENGTHADJUST_SPACING", 1], ["LENGTHADJUST_SPACINGANDGLYPHS", 2]]) {
+        Object.defineProperty(SVGTextContentElement, name, { value, enumerable: true });
+        Object.defineProperty(SVGTextContentElement.prototype, name, { value, enumerable: true });
     }
     class SVGTextPositioningElement extends SVGTextContentElement {}
 
@@ -2512,6 +2583,10 @@
         _svgClasses[name] = cls;
         _svgTagToClass[tags] = cls;
     }
+    Object.defineProperties(_svgClasses.SVGSVGElement.prototype, Object.getOwnPropertyDescriptors({
+        createSVGPoint() { return _svgPoint(0, 0); },
+        createSVGRect() { return _svgRect(null); },
+    }));
 
     // Create the global document
     const _document = new HTMLDocument(ops.op_dom_document_node());
@@ -2577,6 +2652,7 @@
     _tag(HTMLDocument, "HTMLDocument");
     for (const name in _svgClasses) _tag(_svgClasses[name], name);
     _tag(SVGRect, "SVGRect");
+    _tag(SVGPoint, "SVGPoint");
     _tag(DOMRectReadOnly, "DOMRectReadOnly");
     _tag(DOMRect, "DOMRect");
     _tag(DOMPointReadOnly, "DOMPointReadOnly");
@@ -2647,6 +2723,7 @@
     globalThis.HTMLQuoteElement = HTMLQuoteElement;
     for (const name in _svgClasses) globalThis[name] = _svgClasses[name];
     globalThis.SVGRect = SVGRect;
+    globalThis.SVGPoint = SVGPoint;
     globalThis.Attr = Attr;
     globalThis.CharacterData = CharacterData;
     globalThis.Text = Text;

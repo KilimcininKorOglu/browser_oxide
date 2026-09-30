@@ -7037,6 +7037,61 @@ async fn an_empty_string_measures_zero_wide_in_every_font() {
 }
 
 #[tokio::test]
+async fn svg_text_reports_its_characters() {
+    // Measured in Chrome 147: a rendered text reports each character's
+    // start, end and extent on its line, a text outside the document has no
+    // characters, a charnum out of range throws IndexSizeError, and points
+    // are SVGPoint objects.
+    let js = r#"
+        (() => {
+            const out = [];
+            const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.name + ':' + e.message); } };
+            const NS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(NS, 'svg');
+            const text = document.createElementNS(NS, 'text');
+            text.setAttribute('x', '10'); text.setAttribute('y', '40'); text.setAttribute('font-size', '20');
+            text.textContent = 'Wij ab';
+            const near = (a, b) => Math.abs(a - b) < 0.01;
+            t('detached', () => [text.getNumberOfChars(), text.getComputedTextLength()]);
+            t('detachedSub', () => text.getSubStringLength(0, 1));
+            t('detachedStart', () => text.getStartPositionOfChar(1));
+            svg.appendChild(text);
+            t('inSvgOnly', () => text.getNumberOfChars());
+            document.body.appendChild(svg);
+            t('proto', () => Object.getOwnPropertyNames(SVGTextContentElement.prototype).filter((n) => n !== 'textLength' && n !== 'lengthAdjust').sort());
+            t('count', () => text.getNumberOfChars());
+            t('consistent', () => {
+                const total = text.getComputedTextLength();
+                const r = [];
+                for (let i = 0; i < 6; i++) {
+                    const e = text.getExtentOfChar(i);
+                    r.push(near(e.x, text.getStartPositionOfChar(i).x), near(e.x + e.width, text.getEndPositionOfChar(i).x), e.y, e.height, text.getStartPositionOfChar(i).y);
+                }
+                r.push(text.getStartPositionOfChar(0).x, near(text.getSubStringLength(0, 6), total), near(text.getSubStringLength(2, 10), total - text.getSubStringLength(0, 2)));
+                return r;
+            });
+            t('rot', () => text.getRotationOfChar(1));
+            t('charAt', () => { const P = svg.createSVGPoint(); P.x = 15; P.y = 35; const r = [text.getCharNumAtPosition(P)]; P.x = 500; r.push(text.getCharNumAtPosition(P)); return r; });
+            t('bad', () => text.getExtentOfChar(6));
+            t('bad2', () => text.getSubStringLength(7, 1));
+            t('bad3', () => text.getSubStringLength(6, 1));
+            t('neg', () => text.getExtentOfChar(-1));
+            t('types', () => [Object.prototype.toString.call(text.getExtentOfChar(0)), Object.prototype.toString.call(text.getStartPositionOfChar(0))]);
+            t('selectSub', () => String(text.selectSubString(0, 1)));
+            t('lens', () => [SVGTextContentElement.prototype.getExtentOfChar.length, SVGTextContentElement.prototype.getSubStringLength.length, SVGTextContentElement.prototype.getCharNumAtPosition.length, SVGTextContentElement.prototype.selectSubString.length]);
+            t('consts', () => [SVGTextContentElement.LENGTHADJUST_SPACING, SVGTextContentElement.LENGTHADJUST_SPACINGANDGLYPHS, SVGTextContentElement.LENGTHADJUST_UNKNOWN, text.LENGTHADJUST_SPACING]);
+            t('point', () => { const p = svg.createSVGPoint(); p.x = 3; p.y = '4'; const r = [Object.prototype.toString.call(p), p.x, p.y, Object.getOwnPropertyNames(SVGPoint.prototype).sort(), p instanceof DOMPoint, Object.prototype.toString.call(svg.createSVGRect())]; try { new SVGPoint(); } catch (x) { r.push(x.message); } try { p.matrixTransform(new DOMMatrix()); } catch (x) { r.push(x.message); } r.push(SVGPoint.prototype.matrixTransform.length); return r; });
+            svg.remove();
+            return out.join(' ;; ');
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"detached=[0,0] ;; detachedSub!IndexSizeError:Failed to execute 'getSubStringLength' on 'SVGTextContentElement': The charnum provided (0) is greater than or equal to the maximum bound (0). ;; detachedStart!IndexSizeError:Failed to execute 'getStartPositionOfChar' on 'SVGTextContentElement': The charnum provided (1) is greater than the maximum bound (0). ;; inSvgOnly=0 ;; proto=["LENGTHADJUST_SPACING","LENGTHADJUST_SPACINGANDGLYPHS","LENGTHADJUST_UNKNOWN","constructor","getCharNumAtPosition","getComputedTextLength","getEndPositionOfChar","getExtentOfChar","getNumberOfChars","getRotationOfChar","getStartPositionOfChar","getSubStringLength","selectSubString"] ;; count=6 ;; consistent=[true,true,21,25,40,true,true,21,25,40,true,true,21,25,40,true,true,21,25,40,true,true,21,25,40,true,true,21,25,40,10,true,true] ;; rot=0 ;; charAt=[0,-1] ;; bad!IndexSizeError:Failed to execute 'getExtentOfChar' on 'SVGTextContentElement': The charnum provided (6) is greater than or equal to the maximum bound (6). ;; bad2!IndexSizeError:Failed to execute 'getSubStringLength' on 'SVGTextContentElement': The charnum provided (7) is greater than the maximum bound (6). ;; bad3!IndexSizeError:Failed to execute 'getSubStringLength' on 'SVGTextContentElement': The charnum provided (6) is greater than or equal to the maximum bound (6). ;; neg!IndexSizeError:Failed to execute 'getExtentOfChar' on 'SVGTextContentElement': The charnum provided (4294967295) is greater than the maximum bound (6). ;; types=["[object SVGRect]","[object SVGPoint]"] ;; selectSub="undefined" ;; lens=[1,2,0,2] ;; consts=[1,2,0,1] ;; point=["[object SVGPoint]",3,4,["constructor","matrixTransform","x","y"],false,"[object SVGRect]","Failed to construct 'SVGPoint': Illegal constructor","Failed to execute 'matrixTransform' on 'SVGPoint': parameter 1 is not of type 'SVGMatrix'.",1]"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
