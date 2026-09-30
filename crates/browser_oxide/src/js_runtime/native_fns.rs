@@ -328,6 +328,112 @@ pub fn install_native_fp_tostring(
     true
 }
 
+/// Engine-internal scripts whose frames never reach a page-visible stack:
+/// deno_core's `ext:` / `deno:` modules and bootstrap scripts named `<...>`.
+/// V8's own `<anonymous>` stays.
+fn is_internal_script(name: &str) -> bool {
+    name.starts_with("ext:")
+        || name.starts_with("deno:")
+        || name.contains("core/")
+        || (name.starts_with('<') && name.ends_with('>') && name != "<anonymous>")
+}
+
+fn call_method<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    obj: v8::Local<'s, v8::Object>,
+    name: &str,
+) -> Option<v8::Local<'s, v8::Value>> {
+    let key = v8::String::new(scope, name)?;
+    let method = v8::Local::<v8::Function>::try_from(obj.get(scope, key.into())?).ok()?;
+    method.call(scope, obj.into(), &[])
+}
+
+fn page_frames<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    callsites: v8::Local<'s, v8::Array>,
+) -> Vec<v8::Local<'s, v8::Object>> {
+    let mut frames = Vec::new();
+    for i in 0..callsites.length() {
+        let Some(site) = callsites
+            .get_index(scope, i)
+            .and_then(|v| v.to_object(scope))
+        else {
+            continue;
+        };
+        let file = call_method(scope, site, "getFileName")
+            .filter(|v| v.is_string())
+            .map(|v| v.to_rust_string_lossy(scope))
+            .unwrap_or_default();
+        if !is_internal_script(&file) {
+            frames.push(site);
+        }
+    }
+    frames
+}
+
+/// `ErrorUtils::ToString`: the `name: message` line V8 heads a stack with.
+fn error_header<'s>(scope: &mut v8::PinScope<'s, '_>, error: v8::Local<'s, v8::Value>) -> String {
+    let Some(obj) = error.to_object(scope) else {
+        return error.to_rust_string_lossy(scope);
+    };
+    let read = |key: &str, default: &str| -> String {
+        v8::String::new(scope, key)
+            .and_then(|k| obj.get(scope, k.into()))
+            .filter(|v| !v.is_undefined())
+            .map(|v| v.to_rust_string_lossy(scope))
+            .unwrap_or_else(|| default.to_string())
+    };
+    let name = read("name", "Error");
+    let message = read("message", "");
+    match (name.is_empty(), message.is_empty()) {
+        (true, _) => message,
+        (false, true) => name,
+        (false, false) => format!("{name}: {message}"),
+    }
+}
+
+/// The page's own `Error.prepareStackTrace`, with `Error` as its receiver.
+fn page_prepare_stack_trace<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+) -> Option<(v8::Local<'s, v8::Object>, v8::Local<'s, v8::Function>)> {
+    let global = scope.get_current_context().global(scope);
+    let error_key = v8::String::new(scope, "Error")?;
+    let error_ctor = global.get(scope, error_key.into())?.to_object(scope)?;
+    let key = v8::String::new(scope, "prepareStackTrace")?;
+    let prepare = v8::Local::<v8::Function>::try_from(error_ctor.get(scope, key.into())?).ok()?;
+    Some((error_ctor, prepare))
+}
+
+/// Builds `error.stack` the way Chrome does, without a JS-visible
+/// `Error.prepareStackTrace` of our own: frames from engine-internal scripts
+/// are dropped, a page-installed `Error.prepareStackTrace` receives the rest,
+/// and otherwise each frame is V8's own `CallSite.prototype.toString`
+/// (`at String.fromCodePoint (<anonymous>)`, `at new K (...)`, eval origins).
+pub fn chrome_prepare_stack_trace<'s, 'i>(
+    scope: &mut v8::PinScope<'s, 'i>,
+    error: v8::Local<'s, v8::Value>,
+    callsites: v8::Local<'s, v8::Array>,
+) -> v8::Local<'s, v8::Value> {
+    let frames = page_frames(scope, callsites);
+    if let Some((error_ctor, prepare)) = page_prepare_stack_trace(scope) {
+        let sites: Vec<v8::Local<v8::Value>> = frames.iter().map(|f| (*f).into()).collect();
+        let sites = v8::Array::new_with_elements(scope, &sites);
+        return prepare
+            .call(scope, error_ctor.into(), &[error, sites.into()])
+            .unwrap_or_else(|| v8::undefined(scope).into());
+    }
+    let mut stack = error_header(scope, error);
+    for frame in frames {
+        if let Some(line) = call_method(scope, frame, "toString") {
+            stack.push_str("\n    at ");
+            stack.push_str(&line.to_rust_string_lossy(scope));
+        }
+    }
+    v8::String::new(scope, &stack)
+        .map(Into::into)
+        .unwrap_or_else(|| v8::undefined(scope).into())
+}
+
 extern "C" {
     // `v8::ObjectTemplate::SetCodeLike()`, which the rusty_v8 bindings do
     // not wrap. A rusty_v8 `&ObjectTemplate` is the handle slot address,

@@ -431,6 +431,12 @@ pub fn create_runtime_with_signals(
         );
     }
 
+    // Replace deno_core's stack callback, which defers to a JS
+    // `Error.prepareStackTrace`, with one that formats like Chrome.
+    runtime.v8_isolate().set_prepare_stack_trace_callback(
+        crate::js_runtime::native_fns::chrome_prepare_stack_trace,
+    );
+
     // Run caller-provided init scripts after built-in cleanup.
     // These run in order before any <script> tags parsed from HTML.
     //
@@ -595,6 +601,10 @@ pub fn create_worker_runtime(
     runtime
         .execute_script("<anonymous>", include_str!("js/cleanup_bootstrap.js"))
         .expect("worker: cleanup bootstrap failed");
+
+    runtime.v8_isolate().set_prepare_stack_trace_callback(
+        crate::js_runtime::native_fns::chrome_prepare_stack_trace,
+    );
 
     runtime
 }

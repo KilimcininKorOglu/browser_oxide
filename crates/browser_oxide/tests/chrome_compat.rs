@@ -3435,6 +3435,25 @@ async fn perf_now_hot_loop_stays_on_the_100us_grid() {
 }
 
 #[tokio::test]
+async fn error_stacks_use_v8_frame_format_without_a_visible_prepare_stack_trace() {
+    // Chrome 148: Error.prepareStackTrace is undefined, a builtin frame reads
+    // "at String.fromCodePoint (<anonymous>)" and a constructor frame
+    // "at new K (...)".
+    assert_eq!(
+        check(
+            "(() => { \
+              const st = (f) => { try { f(); } catch (e) { return e.stack; } }; \
+              const native = st(() => String.fromCodePoint(-1)).split('\\n'); \
+              const ctor = st(() => { class K { constructor() { throw new Error('k'); } } new K(); }).split('\\n'); \
+              return [typeof Error.prepareStackTrace, native[0], native[1], ctor[1].startsWith('    at new K (')].join('|'); \
+             })()"
+        )
+        .await,
+        "undefined|RangeError: Invalid code point -1|    at String.fromCodePoint (<anonymous>)|true"
+    );
+}
+
+#[tokio::test]
 async fn perf_now_is_strictly_monotonic() {
     // HRT spec requires monotonic non-decreasing. PerfState's clamp is a
     // non-decreasing map of the monotonic clock, so 1000 samples must have

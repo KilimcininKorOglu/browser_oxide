@@ -3759,9 +3759,6 @@ impl Page {
         // Generic request log, equivalent to DevTools' Network tab.
         event_loop
             .execute_script(r#"Object.defineProperty(window, '__scriptErrors', { value: [], enumerable: false, configurable: true });
-            // Temporarily disable the stack filter so we can see the real
-            // call sites when a TypeError fires inside a challenge VM.
-            delete Error.prepareStackTrace;
             window.onerror = function(msg, src, line, col, err) {
                 window.__scriptErrors.push(msg + ' @' + (src||'?') + ':' + line + '\n' + (err && err.stack || '').substring(0, 800));
             };
