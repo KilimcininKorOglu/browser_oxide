@@ -102,7 +102,7 @@ pub fn op_dom_get_attribute(
     state: &mut OpState,
     #[smi] node_id: i32,
     #[string] name: &str,
-) -> String {
+) -> Option<String> {
     let state = state.borrow::<DomState>();
     let id = NodeId::from_raw(node_id as u32);
     state
@@ -113,9 +113,8 @@ pub fn op_dom_get_attribute(
             e.attrs
                 .iter()
                 .find(|a| a.name.local.eq_ignore_ascii_case(name))
-                .map(|a| a.value.clone())
+                .map(|a| a.value.to_string())
         })
-        .unwrap_or_default()
 }
 
 #[op2(fast)]

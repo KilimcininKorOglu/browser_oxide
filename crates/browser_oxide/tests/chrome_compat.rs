@@ -6849,6 +6849,26 @@ async fn attributes_are_live_attr_nodes() {
 }
 
 #[tokio::test]
+async fn get_attribute_returns_null_for_a_missing_attribute() {
+    // Measured in Chrome 147: a missing attribute reads as null, an empty
+    // one as "", and a reflected property falls back to its default.
+    let js = r#"
+        (() => {
+            const i = document.createElement('input');
+            const d = document.createElement('div');
+            d.setAttribute('data-e', '');
+            const a = document.createElement('a');
+            const f = document.createElement('form');
+            return JSON.stringify([d.getAttribute('nope'), d.getAttribute('data-e'), i.getAttribute('type'), i.type, i.value, a.getAttribute('href'), f.method, f.enctype, document.documentElement.getAttribute('nope')]);
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"[null,"",null,"text","",null,"get","application/x-www-form-urlencoded",null]"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
