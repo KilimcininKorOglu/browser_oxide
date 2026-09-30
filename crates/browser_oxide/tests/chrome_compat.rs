@@ -1036,6 +1036,23 @@ async fn computed_display_follows_the_ua_stylesheet() {
     );
 }
 
+// The declaration getComputedStyle returns is live: it reports the
+// element's style after a later change, and every call returns a new
+// declaration. Measured in Chrome 146.
+#[tokio::test]
+async fn computed_style_is_live() {
+    let js = r#"(() => {
+        const d = document.createElement('div'); document.body.appendChild(d);
+        const cs = getComputedStyle(d);
+        const before = cs.height;
+        d.style.height = '13px';
+        const s = document.createElement('style'); s.textContent = 'div { width: 7px }';
+        document.head.appendChild(s);
+        return JSON.stringify([before === cs.height, cs.height, cs.width, getComputedStyle(d) === cs]);
+    })()"#;
+    assert_eq!(check(js).await, r#"[false,"13px","7px",false]"#);
+}
+
 // A <style> element in the document owns a CSSStyleSheet whose rules
 // script can edit, and the rules it adds reach getComputedStyle and the
 // layout. Every expected value was measured in Chrome 146.

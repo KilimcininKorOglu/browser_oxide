@@ -3700,25 +3700,28 @@
     // nodeId=0 (same bug that broke event_stop_propagation). This was why
     // every getComputedStyle() call returned the same root-element defaults
     // regardless of which element was passed.
-    const _compStyleCache = new WeakMap();
     const _getNodeIdForCompStyle = (globalThis.__browser_oxide && globalThis.__browser_oxide._getNodeId)
         ? globalThis.__browser_oxide._getNodeId
         : (() => 0);
     globalThis.getComputedStyle = ({
         getComputedStyle(element, pseudoElt) {
             if (!element) return null;
-            let styleProxy = _compStyleCache.get(element);
-            if (styleProxy) return styleProxy;
+            // Chrome returns a new live declaration on every call.
+            let styleProxy;
 
             const nodeId = _getNodeIdForCompStyle(element);
             // Create an instance of CSSStyleDeclaration.
             const style = Object.create(globalThis.CSSStyleDeclaration.prototype || Object.prototype);
         let cache = null;
         let keys = null;
+        let generation = -1;
+        // The declaration is live: read again once the DOM changed.
         function ensureCache() {
-            if (cache === null) {
+            const now = ops.op_dom_style_generation();
+            if (cache === null || now !== generation) {
                 cache = ops.op_dom_get_all_computed_styles(nodeId);
                 keys = Object.keys(cache);
+                generation = now;
             }
             return cache;
         }
@@ -3752,7 +3755,6 @@
                 return undefined;
             }
         });
-        _compStyleCache.set(element, styleProxy);
         return styleProxy;
         }
     }).getComputedStyle;

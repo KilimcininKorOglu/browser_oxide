@@ -1053,6 +1053,12 @@ pub fn op_dom_get_shadow_root(state: &mut OpState, #[smi] node_id: i32) -> i32 {
 
 // --- CSSOM ops ---
 
+/// A counter the DOM changes move; a computed style reads again when it moved.
+#[op2(fast)]
+pub fn op_dom_style_generation(state: &mut OpState) -> u32 {
+    state.borrow::<DomState>().style_generation
+}
+
 /// The `<style>` elements that own a sheet, in document order.
 #[op2]
 #[serde]
@@ -1575,6 +1581,7 @@ deno_core::extension!(
         op_dom_class_list_remove,
         op_dom_get_computed_style,
         op_dom_get_all_computed_styles,
+        op_dom_style_generation,
         op_cssom_style_owners,
         op_cssom_external_count,
         op_cssom_external_css,

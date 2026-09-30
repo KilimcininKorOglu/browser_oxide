@@ -26,6 +26,8 @@ pub struct DomState {
     pub cached_rules: Vec<CachedRule>,
     /// Set by a DOM mutation; `refresh_styles` then rebuilds the sheets.
     pub styles_dirty: bool,
+    /// Counts DOM changes, so a live computed style knows to read again.
+    pub style_generation: u32,
     pub stealth_profile: Option<crate::stealth::StealthProfile>,
     /// Active Content Security Policy. Built from the response
     /// `Content-Security-Policy` header(s) plus any
@@ -89,6 +91,7 @@ impl DomState {
             stylesheets: Vec::new(),
             cached_rules: Vec::new(),
             styles_dirty: true,
+            style_generation: 0,
             stealth_profile: None,
             csp_policy: None,
             csp_origin: None,
@@ -100,6 +103,7 @@ impl DomState {
     /// next read.
     pub fn invalidate_styles(&mut self) {
         self.styles_dirty = true;
+        self.style_generation = self.style_generation.wrapping_add(1);
         self.layout_engine.mark_dirty();
     }
 
