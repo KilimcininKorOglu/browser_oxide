@@ -466,9 +466,145 @@ fn trusted_script_make_cb<'s>(
     }
 }
 
+extern "C" {
+    // `v8::Isolate::SetModifyCodeGenerationFromStringsCallback()` and
+    // `v8::Context::SetErrorMessageForCodeGenerationFromStrings()`, which the
+    // rusty_v8 bindings do not wrap. A `Local<T>` is passed as the address of
+    // its handle slot, the same identity the SetCodeLike shim relies on.
+    #[link_name = "_ZN2v87Isolate42SetModifyCodeGenerationFromStringsCallbackEPFNS_37ModifyCodeGenerationFromStringsResultENS_5LocalINS_7ContextEEENS2_INS_5ValueEEEbE"]
+    fn v8_isolate_set_modify_codegen_callback(
+        this: *mut std::ffi::c_void,
+        callback: ModifyCodegenCallback,
+    );
+    #[link_name = "_ZN2v87Context43SetErrorMessageForCodeGenerationFromStringsENS_5LocalINS_6StringEEE"]
+    fn v8_context_set_codegen_error_message(this: *const v8::Context, message: *const v8::String);
+    #[link_name = "_ZNK2v86Object10IsCodeLikeEPNS_7IsolateE"]
+    fn v8_object_is_code_like(this: *const v8::Object, isolate: *mut std::ffi::c_void) -> bool;
+}
+
+/// The C++ isolate behind a rusty_v8 `Isolate`, which is
+/// `#[repr(transparent)]` over exactly that pointer.
+fn raw_isolate(isolate: &v8::Isolate) -> *mut std::ffi::c_void {
+    // SAFETY: see above; the read copies the wrapped pointer.
+    unsafe { *(isolate as *const v8::Isolate as *const *mut std::ffi::c_void) }
+}
+
+/// `v8::ModifyCodeGenerationFromStringsResult`: a bool and a
+/// `MaybeLocal<String>`, which is one handle-slot pointer or null.
+#[repr(C)]
+struct ModifyCodegenResult {
+    codegen_allowed: bool,
+    modified_source: *const v8::String,
+}
+
+type ModifyCodegenCallback = for<'s> extern "C" fn(
+    v8::Local<'s, v8::Context>,
+    v8::Local<'s, v8::Value>,
+    bool,
+) -> ModifyCodegenResult;
+
+/// The EvalError message Chrome gives when Trusted Types refuse a string.
+const TRUSTED_TYPES_EVAL_MESSAGE: &str =
+    "Evaluating a string as JavaScript violates this document's Trusted Type assignment requirements.";
+
+/// The realm's default-policy check, registered by trusted_types_bootstrap.js:
+/// `(source) => boolean`, true when the default policy passes `source`
+/// through unchanged.
+struct TrustedScriptCheck(v8::Global<v8::Function>);
+
+fn trusted_script_check_cb<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    args: v8::FunctionCallbackArguments<'s>,
+    _rv: v8::ReturnValue,
+) {
+    if let Ok(hook) = v8::Local::<v8::Function>::try_from(args.get(0)) {
+        let hook = v8::Global::new(scope, hook);
+        scope
+            .get_current_context()
+            .set_slot(std::rc::Rc::new(TrustedScriptCheck(hook)));
+    }
+}
+
+fn default_policy_accepts<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    context: v8::Local<'s, v8::Context>,
+    source: v8::Local<'s, v8::String>,
+) -> bool {
+    let Some(check) = context.get_slot::<TrustedScriptCheck>() else {
+        return false;
+    };
+    let hook = v8::Local::new(scope, &check.0);
+    // Chrome refuses the string when the default policy throws, so the
+    // exception stops here and V8 raises the EvalError instead.
+    v8::tc_scope!(let tc, scope);
+    let receiver = v8::undefined(tc).into();
+    hook.call(tc, receiver, &[source.into()])
+        .is_some_and(|v| v.is_true())
+}
+
+/// Chrome's code-generation check under `require-trusted-types-for 'script'`:
+/// a TrustedScript handed to `eval` compiles as its text, and a string
+/// (what `Function` always passes) compiles only when the default policy
+/// returns it unchanged. V8's `eval` does not report a code-like argument
+/// as such, so the object is tested here, as Chrome tests for a
+/// TrustedScript.
+extern "C" fn trusted_types_codegen_cb<'s>(
+    context: v8::Local<'s, v8::Context>,
+    source: v8::Local<'s, v8::Value>,
+    _is_code_like: bool,
+) -> ModifyCodegenResult {
+    let blocked = ModifyCodegenResult {
+        codegen_allowed: false,
+        modified_source: std::ptr::null(),
+    };
+    // No handle scope of its own: the returned source must outlive this call.
+    v8::callback_scope!(unsafe scope, context);
+    if let Ok(text) = v8::Local::<v8::String>::try_from(source) {
+        if default_policy_accepts(scope, context, text) {
+            return ModifyCodegenResult {
+                codegen_allowed: true,
+                modified_source: &*text,
+            };
+        }
+        return blocked;
+    }
+    let code_like = v8::Local::<v8::Object>::try_from(source).is_ok_and(|obj| {
+        // SAFETY: `obj` is a live handle and the isolate is the one running.
+        unsafe { v8_object_is_code_like(&*obj, raw_isolate(scope)) }
+    });
+    if !code_like {
+        // Neither a string nor a TrustedScript: eval returns it unchanged.
+        return ModifyCodegenResult {
+            codegen_allowed: true,
+            modified_source: std::ptr::null(),
+        };
+    }
+    v8::tc_scope!(let tc, scope);
+    match source.to_string(tc) {
+        Some(text) => ModifyCodegenResult {
+            codegen_allowed: true,
+            modified_source: &*text,
+        },
+        None => blocked,
+    }
+}
+
+/// Enforce `require-trusted-types-for 'script'` on `eval` and `Function` in
+/// the current context, as Chrome does for a document whose CSP carries it.
+pub fn enforce_trusted_types_for_script(scope: &mut v8::PinScope) {
+    let context = scope.get_current_context();
+    context.set_allow_generation_from_strings(false);
+    if let Some(message) = v8::String::new(scope, TRUSTED_TYPES_EVAL_MESSAGE) {
+        // SAFETY: both handles are live in `scope`; see the extern block.
+        unsafe { v8_context_set_codegen_error_message(&*context, &*message) };
+    }
+    // SAFETY: the pointer is the running isolate; see `raw_isolate`.
+    unsafe { v8_isolate_set_modify_codegen_callback(raw_isolate(scope), trusted_types_codegen_cb) };
+}
+
 /// Install the native half of `TrustedScript` as the one-shot global
-/// `__ox_trusted_script = { ctor, make }`, which window_bootstrap.js reads
-/// and deletes.
+/// `__ox_trusted_script = { ctor, make, check }`, which
+/// trusted_types_bootstrap.js reads and deletes.
 ///
 /// Chrome marks a TrustedScript's instance template code-like, so V8's
 /// `eval` and `Function` compile the object's string value instead of
@@ -505,8 +641,16 @@ pub fn install_trusted_script_native(scope: &mut v8::PinScope) -> bool {
     ) else {
         return false;
     };
+    let check = v8::FunctionTemplate::builder(trusted_script_check_cb)
+        .constructor_behavior(v8::ConstructorBehavior::Throw)
+        .build(scope);
+    let (Some(check), Some(k_check)) = (check.get_function(scope), v8::String::new(scope, "check"))
+    else {
+        return false;
+    };
     holder.set(scope, k_ctor.into(), ctor.into());
     holder.set(scope, k_make.into(), make.into());
+    holder.set(scope, k_check.into(), check.into());
     let global = scope.get_current_context().global(scope);
     global
         .set(scope, k_global.into(), holder.into())

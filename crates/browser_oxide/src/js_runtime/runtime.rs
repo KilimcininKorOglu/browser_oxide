@@ -56,6 +56,9 @@ pub struct BrowserRuntimeOptions {
     /// WindowProxy whose `postMessage` the host Page routes to that
     /// document. `None` for a top-level document.
     pub frame_parent_origin: Option<String>,
+    /// The document's CSP carries `require-trusted-types-for 'script'`, so
+    /// `eval` and `Function` accept only what Trusted Types let through.
+    pub require_trusted_types: bool,
 }
 
 /// Create a deno_core JsRuntime configured with browser extensions.
@@ -380,6 +383,12 @@ pub fn create_runtime_with_signals(
             include_str!("js/cleanup_bootstrap.js"),
         )
         .expect("cleanup failed");
+
+    if options.require_trusted_types {
+        let __ctx = runtime.main_context();
+        v8::scope_with_context!(scope, runtime.v8_isolate(), __ctx);
+        crate::js_runtime::native_fns::enforce_trusted_types_for_script(scope);
+    }
 
     // Capture Symbol.for('__browser_oxide_native__') from the JS global registry
     // AFTER bootstrap runs (stealth_bootstrap.js creates it at startup).

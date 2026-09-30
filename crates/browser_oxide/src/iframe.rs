@@ -139,6 +139,17 @@ impl ChildIframe {
         let dom = crate::html_parser::parse_html(&html);
         let scripts = crate::script_runner::find_scripts(&dom);
         let stylesheet_entries = crate::stylesheet_collector::find_stylesheets(&dom);
+        // The frame document's own CSP, from its response and its meta tags.
+        let csp_headers: Vec<&str> = resp
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("content-security-policy"))
+            .map(|(_, v)| v.as_str())
+            .collect();
+        let require_trusted_types = crate::csp_collector::collect_csp(&csp_headers, &dom)
+            .requires_trusted_types_for_script()
+            && stealth_profile.is_none_or(|p| p.enforce_csp)
+            && std::env::var("BROWSER_OXIDE_CSP_BYPASS").is_err();
 
         // Fetch external stylesheets
         let mut stylesheets = Vec::new();
@@ -183,6 +194,7 @@ impl ChildIframe {
             // The document URL comes from the runtime state; assigning
             // location.href after start-up would queue a navigation instead.
             base_url: url::Url::parse(url).ok(),
+            require_trusted_types,
             ..Default::default()
         };
         if let Some(profile) = stealth_profile {

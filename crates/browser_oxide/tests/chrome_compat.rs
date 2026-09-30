@@ -7091,6 +7091,64 @@ async fn svg_text_reports_its_characters() {
     );
 }
 
+/// Run `js` as a parser-inserted script in a document whose CSP requires
+/// Trusted Types for scripts, and return what it evaluated to.
+async fn check_trusted_types(js: &str) -> String {
+    let doc = format!(
+        "<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" \
+         content=\"require-trusted-types-for 'script'\"></head><body>\
+         <script>window.__r = {js};</script></body></html>"
+    );
+    let mut page = Page::from_html_with_url(
+        &doc,
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    page.evaluate("String(window.__r)")
+        .unwrap_or_else(|e| format!("ERROR: {e}"))
+}
+
+#[tokio::test]
+async fn trusted_types_gate_eval_and_function_strings() {
+    // Measured in Chrome with `require-trusted-types-for 'script'`: a string
+    // reaches eval or Function only when the default policy returns it
+    // unchanged, a TrustedScript compiles under eval but not under Function,
+    // and the policy sees `Function` for the source V8 builds there.
+    let js = r#"(() => {
+        const out = [];
+        const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.name + (e.message.includes('Trusted Type assignment') ? '' : ':' + e.message)); } };
+        t('msg', () => { try { eval('1'); } catch (e) { return [e instanceof EvalError, e.message]; } });
+        t('evalStr', () => eval('1+1'));
+        t('indirect', () => (0, eval)('1+2'));
+        t('fn', () => new Function('return 1')());
+        t('fnArgs', () => new Function('a', 'return a')(3));
+        t('evalNum', () => eval(5));
+        t('evalObj', () => typeof eval({}));
+        const p = trustedTypes.createPolicy('a', { createScript: (s) => s });
+        t('evalTS', () => eval(p.createScript('2+3')));
+        t('indirectTS', () => (0, eval)(p.createScript('2+4')));
+        t('fnTS', () => new Function(p.createScript('return 7'))());
+        t('fnAllTS', () => new Function(p.createScript('a'), p.createScript('return a'))(9));
+        const calls = [];
+        let mode = 'pass';
+        trustedTypes.createPolicy('default', { createScript: (s, type, sink) => { calls.push([s, type, sink]); if (mode === 'throw') throw new RangeError('boom'); return mode === 'pass' ? s : mode === 'obj' ? { toString: () => s } : mode === 'null' ? null : mode === 'undef' ? undefined : mode === 'num' ? 42 : '6*7'; } });
+        t('defEval', () => eval('4+4'));
+        t('defIndirect', () => (0, eval)('4+5'));
+        t('defFn', () => new Function('a', 'return a')(10));
+        t('anonEval', () => typeof eval('(function anonymous(\n) {\n})'));
+        t('nested', () => eval('eval("13")'));
+        for (mode of ['null', 'undef', 'num', 'rewrite', 'throw', 'obj']) t(mode, () => eval('11'));
+        t('calls', () => calls);
+        return out.join(' ;; ');
+    })()"#;
+    assert_eq!(
+        check_trusted_types(js).await,
+        r#"msg=[true,"Evaluating a string as JavaScript violates this document's Trusted Type assignment requirements."] ;; evalStr!EvalError ;; indirect!EvalError ;; fn!EvalError ;; fnArgs!EvalError ;; evalNum=5 ;; evalObj="object" ;; evalTS=5 ;; indirectTS=6 ;; fnTS!EvalError ;; fnAllTS!EvalError ;; defEval=8 ;; defIndirect=9 ;; defFn=10 ;; anonEval="function" ;; nested=13 ;; null!EvalError ;; undef!EvalError ;; num!EvalError ;; rewrite!EvalError ;; throw!EvalError ;; obj=11 ;; calls=[["4+4","TrustedScript","eval"],["4+5","TrustedScript","eval"],["(function anonymous(a\n) {\nreturn a\n})","TrustedScript","Function"],["(function anonymous(\n) {\n})","TrustedScript","Function"],["eval(\"13\")","TrustedScript","eval"],["13","TrustedScript","eval"],["11","TrustedScript","eval"],["11","TrustedScript","eval"],["11","TrustedScript","eval"],["11","TrustedScript","eval"],["11","TrustedScript","eval"],["11","TrustedScript","eval"]]"#
+    );
+}
+
 #[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global

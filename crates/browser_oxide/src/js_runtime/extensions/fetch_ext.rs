@@ -98,6 +98,16 @@ pub fn set_csp_policy(
     });
 }
 
+/// Whether the enforced CSP of the current navigation carries
+/// `require-trusted-types-for 'script'`.
+pub fn active_csp_requires_trusted_types() -> bool {
+    ACTIVE_CSP.with(|c| {
+        c.borrow()
+            .as_ref()
+            .is_some_and(|a| a.enforce && a.policy.requires_trusted_types_for_script())
+    })
+}
+
 /// Clear any active CSP. Called between top-level navigations so a
 /// strict policy from site A doesn't leak into site B. Also drains
 /// any queued violations — they belong to the previous document.

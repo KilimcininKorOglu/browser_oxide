@@ -719,6 +719,8 @@ impl Page {
                 stealth_profile: profile.clone(),
                 stylesheets,
                 is_secure_context: is_secure_url(url),
+                require_trusted_types:
+                    crate::js_runtime::extensions::fetch_ext::active_csp_requires_trusted_types(),
                 ..Default::default()
             },
         );
@@ -3662,6 +3664,8 @@ impl Page {
                 init_scripts: init_scripts.to_vec(),
                 storage,
                 is_secure_context: is_secure_url(url),
+                require_trusted_types:
+                    crate::js_runtime::extensions::fetch_ext::active_csp_requires_trusted_types(),
                 ..Default::default()
             },
         );

@@ -17,10 +17,11 @@
 //! - `'strict-dynamic'` semantics on script-src: when present, host
 //!   allowlist is ignored; only nonce/hash-trusted scripts and their
 //!   non-parser-inserted descendants are allowed
+//! - `require-trusted-types-for 'script'`, parsed here and enforced on
+//!   `eval` and `Function` by the runtime
 //!
 //! Out of scope (deferred): `frame-ancestors`, `form-action`,
-//! `base-uri`, `report-uri`/`report-to`, `require-trusted-types-for`,
-//! upgrade-insecure-requests.
+//! `base-uri`, `report-uri`/`report-to`, upgrade-insecure-requests.
 
 use std::collections::HashMap;
 
@@ -217,6 +218,15 @@ pub struct Policy {
     /// True if this came from `Content-Security-Policy-Report-Only` —
     /// then violations are reported but NOT enforced.
     pub report_only: bool,
+    /// `require-trusted-types-for 'script'`: script sinks, `eval` and
+    /// `Function` among them, accept only a TrustedScript.
+    pub require_trusted_types_for_script: bool,
+}
+
+impl Policy {
+    fn is_empty(&self) -> bool {
+        self.directives.is_empty() && !self.require_trusted_types_for_script
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -226,7 +236,14 @@ pub struct PolicySet {
 
 impl PolicySet {
     pub fn is_empty(&self) -> bool {
-        self.policies.iter().all(|p| p.directives.is_empty())
+        self.policies.iter().all(Policy::is_empty)
+    }
+
+    /// Whether an enforced policy requires Trusted Types for scripts.
+    pub fn requires_trusted_types_for_script(&self) -> bool {
+        self.policies
+            .iter()
+            .any(|p| !p.report_only && p.require_trusted_types_for_script)
     }
 
     /// Add policies parsed from one or more response headers. Headers
@@ -235,7 +252,7 @@ impl PolicySet {
     pub fn push_header(&mut self, value: &str, report_only: bool) {
         for piece in split_top_level(value, ',') {
             let policy = Policy::parse_serialized(piece, report_only);
-            if !policy.directives.is_empty() {
+            if !policy.is_empty() {
                 self.policies.push(policy);
             }
         }
@@ -247,7 +264,7 @@ impl PolicySet {
     pub fn push_meta(&mut self, content: &str) {
         for piece in split_top_level(content, ',') {
             let policy = Policy::parse_serialized(piece, false);
-            if !policy.directives.is_empty() {
+            if !policy.is_empty() {
                 self.policies.push(policy);
             }
         }
@@ -267,6 +284,7 @@ impl Policy {
         let mut policy = Policy {
             directives: HashMap::new(),
             report_only,
+            require_trusted_types_for_script: false,
         };
         for raw in s.split(';') {
             let raw = raw.trim();
@@ -278,6 +296,11 @@ impl Policy {
                 Some(t) => t,
                 None => continue,
             };
+            if dir_token.eq_ignore_ascii_case("require-trusted-types-for") {
+                policy.require_trusted_types_for_script |=
+                    tokens.any(|t| t.eq_ignore_ascii_case("'script'"));
+                continue;
+            }
             let Some(directive) = Directive::from_token(dir_token) else {
                 continue;
             };
