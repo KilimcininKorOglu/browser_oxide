@@ -7000,6 +7000,31 @@ async fn native_functions_are_never_async_functions() {
 }
 
 #[tokio::test]
+async fn svg_text_box_spans_the_rounded_line() {
+    // Measured in Chrome 147 on text with its baseline at y=100: the box
+    // rises round(0.9667 * size) and drops round(0.3 * size).
+    let js = r#"
+        (() => {
+            const NS = 'http://www.w3.org/2000/svg';
+            return JSON.stringify([10, 13, 16, 20, 27, 40].map((size) => {
+                const svg = document.createElementNS(NS, 'svg');
+                const text = document.createElementNS(NS, 'text');
+                text.setAttribute('y', '100'); text.setAttribute('font-size', String(size));
+                text.textContent = 'Wij ab';
+                svg.appendChild(text); document.body.appendChild(svg);
+                const b = text.getBBox();
+                svg.remove();
+                return [b.y, b.height];
+            }));
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        "[[90,13],[87,17],[85,20],[81,25],[74,34],[61,51]]"
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.

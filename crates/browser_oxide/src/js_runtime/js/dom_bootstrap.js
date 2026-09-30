@@ -2366,9 +2366,8 @@
 
     // The engine lays out no SVG, so a box is computed from the element's
     // own geometry attributes, and text is measured with the canvas text
-    // metrics. Measured in Chrome 147: a text's box starts at its x, its
-    // top sits 0.96 font sizes above the baseline, and it is 1.28 font
-    // sizes tall; a detached element's box is empty.
+    // metrics. Measured in Chrome 147: a text's box starts at its x and
+    // spans the line (see _svgTextLine); a detached element's box is empty.
     const _svgNum = (el, name) => Number.parseFloat(el.getAttribute(name)) || 0;
     const _svgFontSize = (el) => {
         for (let n = el; n && n.nodeType === 1; n = n.parentNode) {
@@ -2379,12 +2378,13 @@
         return computed > 0 ? computed : 16;
     };
     let _svgMeasureCtx = null;
-    const _svgTextWidth = (el) => {
+    const _svgMeasure = (el, text) => {
         _svgMeasureCtx ||= _document.createElement("canvas").getContext("2d");
         const family = globalThis.getComputedStyle?.(el)?.fontFamily || "sans-serif";
         _svgMeasureCtx.font = _svgFontSize(el) + "px " + family;
-        return _svgMeasureCtx.measureText(el.textContent || "").width;
+        return _svgMeasureCtx.measureText(text).width;
     };
+    const _svgTextWidth = (el) => _svgMeasure(el, el.textContent || "");
     const _svgUnion = (boxes) => {
         const real = boxes.filter(Boolean);
         if (!real.length) return null;
@@ -2433,10 +2433,16 @@
         for (let i = 0; i + 1 < nums.length; i += 2) points.push([nums[i], nums[i + 1]]);
         return _svgPoints(points);
     };
-    const _svgTextBox = (el) => {
+    // A line of text rises 0.9667 font sizes above the baseline and drops
+    // 0.3 below it, each rounded to whole pixels on its own.
+    const _svgTextLine = (el) => {
         const size = _svgFontSize(el);
-        return { x: _svgNum(el, "x"), y: _svgNum(el, "y") - Math.round(0.96 * size),
-            width: _svgTextWidth(el), height: Math.round(1.28 * size) };
+        const ascent = Math.round(0.9667 * size);
+        return { top: _svgNum(el, "y") - ascent, height: ascent + Math.round(0.3 * size) };
+    };
+    const _svgTextBox = (el) => {
+        const line = _svgTextLine(el);
+        return { x: _svgNum(el, "x"), y: line.top, width: _svgTextWidth(el), height: line.height };
     };
     const _svgBoxByTag = {
         rect: _svgBoxAttrs, image: _svgBoxAttrs, foreignObject: _svgBoxAttrs, use: _svgBoxAttrs,
