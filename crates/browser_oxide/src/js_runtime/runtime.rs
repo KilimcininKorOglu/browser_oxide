@@ -353,6 +353,9 @@ pub fn create_runtime_with_signals(
             if !crate::js_runtime::native_fns::install_trusted_script_native(scope) {
                 eprintln!("[runtime] native TrustedScript install failed");
             }
+            if !crate::js_runtime::native_fns::install_classic_script_runner(scope) {
+                eprintln!("[runtime] classic script runner install failed");
+            }
         }
         if let Some(origin) = &options.frame_parent_origin {
             // window_bootstrap.js reads and deletes this marker.
@@ -517,6 +520,14 @@ pub fn create_worker_runtime(
             false,
             is_secure_context,
         ));
+
+    {
+        let __ctx = runtime.main_context();
+        v8::scope_with_context!(scope, runtime.v8_isolate(), __ctx);
+        if !crate::js_runtime::native_fns::install_classic_script_runner(scope) {
+            eprintln!("[runtime] worker: classic script runner install failed");
+        }
+    }
 
     // Every worker bootstrap script runs with name "<anonymous>"
     // (V8's eval-default) so Error.stack frames don't leak our internal

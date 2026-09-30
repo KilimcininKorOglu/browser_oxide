@@ -11,6 +11,10 @@
     // no page init script that would capture and delete it, so take it here.
     const _markTrusted = globalThis.__bo_mark_trusted;
     delete globalThis.__bo_mark_trusted;
+    // Native: compiles an importScripts file as its own script, named by
+    // its URL (see install_classic_script_runner).
+    const _runClassicScript = globalThis.__ox_run_classic_script;
+    delete globalThis.__ox_run_classic_script;
 
     // Helper: read from stealth profile or use default
     const _p = (key, fallback) => {
@@ -307,7 +311,7 @@
             } else {
                 throw new Error("importScripts: unsupported URL scheme: " + url);
             }
-            (0, eval)(source);
+            _runClassicScript(source, url);
         }
     };
 

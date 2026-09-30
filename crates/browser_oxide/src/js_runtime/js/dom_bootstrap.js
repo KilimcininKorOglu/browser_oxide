@@ -1,6 +1,10 @@
 ((globalThis) => {
     const core = Deno.core;
     const ops = core.ops;
+    // Native: compiles a script-inserted <script> as its own script, named
+    // by its URL, the way Chrome does (see install_classic_script_runner).
+    const _runClassicScript = globalThis.__ox_run_classic_script;
+    delete globalThis.__ox_run_classic_script;
     const _nodeIds = new WeakMap();
     const _nodeCache = new Map();
     const _scrollState = new Map(); // nodeId -> {top, left}
@@ -155,8 +159,8 @@
             const code = child.textContent || child.innerText || '';
             if (code && code.trim()) {
                 console.log(`[DOM] executing inline script (${code.length} bytes)`);
-                try { (0, eval)(code); } catch (e) {
-                    console.log(`[DOM] inline eval error: ${e.message}`);
+                try { _runClassicScript(code, ''); } catch (e) {
+                    console.log(`[DOM] inline script error: ${e.message}`);
                 }
             }
         }
@@ -214,7 +218,7 @@
                             const resp = await globalThis.fetch(fullUrl);
                             if (resp.ok) {
                                 const code = await resp.text();
-                                try { (0, eval)(code); } catch(_) {}
+                                try { _runClassicScript(code, fullUrl); } catch(_) {}
                                 if (scriptEl.onload) scriptEl.onload(new Event('load'));
                                 scriptEl.dispatchEvent && scriptEl.dispatchEvent(new Event('load'));
                             }
@@ -233,7 +237,7 @@
                     if (code) {
                         console.log(`[DOM] sync executing script (${code.length} bytes): ${fullUrl}`);
                         try {
-                            (0, eval)(code);
+                            _runClassicScript(code, fullUrl);
                             console.log(`[DOM] sync execution SUCCESS: ${fullUrl}`);
                         } catch(e) {
                             console.log(`[DOM] sync eval ERROR for ${fullUrl}: ${e.message}\n${e.stack}`);
@@ -264,7 +268,7 @@
                             const code = await resp.text();
                             console.log(`[DOM] async executing script (${code.length} bytes): ${fullUrl}`);
                             try {
-                                (0, eval)(code);
+                                _runClassicScript(code, fullUrl);
                                 console.log(`[DOM] async execution SUCCESS: ${fullUrl}`);
                                 if (scriptEl.onload) scriptEl.onload(new Event('load'));
                                 scriptEl.dispatchEvent && scriptEl.dispatchEvent(new Event('load'));

@@ -526,6 +526,57 @@ pub fn install_trusted_script_native(scope: &mut v8::PinScope) -> bool {
         .unwrap_or(false)
 }
 
+fn run_classic_script_cb<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    args: v8::FunctionCallbackArguments<'s>,
+    _rv: v8::ReturnValue,
+) {
+    let (Some(source), Some(name)) = (args.get(0).to_string(scope), args.get(1).to_string(scope))
+    else {
+        return;
+    };
+    let origin = v8::ScriptOrigin::new(
+        scope,
+        name.into(),
+        0,
+        0,
+        false,
+        0,
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
+    // A compile or run failure leaves V8's exception pending, so it reaches
+    // the JS caller as a throw.
+    if let Some(script) = v8::Script::compile(scope, source, Some(&origin)) {
+        script.run(scope);
+    }
+}
+
+/// Install `__ox_run_classic_script(source, name)` as a one-shot global,
+/// which dom_bootstrap.js and worker_bootstrap.js read and delete.
+///
+/// Chrome compiles a script-inserted `<script>` and an `importScripts` file
+/// as a script of its own, named by its URL (an inline one by the empty
+/// string). Running them through `eval` instead gives every frame an
+/// `eval at ...` origin that points into the bootstrap. Run before bootstrap.
+pub fn install_classic_script_runner(scope: &mut v8::PinScope) -> bool {
+    let tmpl = v8::FunctionTemplate::builder(run_classic_script_cb)
+        .length(2)
+        .constructor_behavior(v8::ConstructorBehavior::Throw)
+        .build(scope);
+    let (Some(func), Some(key)) = (
+        tmpl.get_function(scope),
+        v8::String::new(scope, "__ox_run_classic_script"),
+    ) else {
+        return false;
+    };
+    let global = scope.get_current_context().global(scope);
+    global.set(scope, key.into(), func.into()).unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

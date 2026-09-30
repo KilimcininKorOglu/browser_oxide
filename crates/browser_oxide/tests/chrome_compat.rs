@@ -3454,6 +3454,26 @@ async fn error_stacks_use_v8_frame_format_without_a_visible_prepare_stack_trace(
 }
 
 #[tokio::test]
+async fn script_inserted_inline_script_runs_as_its_own_script() {
+    // Chrome 148: an inline <script> added with appendChild is a script of
+    // its own with an empty name, so its frame is "at <anonymous>:1:C" and
+    // an eval inside it names "<anonymous> (:1:C)" as its origin.
+    assert_eq!(
+        check(
+            "(() => { \
+              const s = document.createElement('script'); \
+              s.textContent = \"try { null.x; } catch (e) { window.__f1 = e.stack.split('\\\\n')[1]; } \
+                try { eval('throw new Error(1)'); } catch (e) { window.__f2 = e.stack.split('\\\\n')[1]; }\"; \
+              document.head.appendChild(s); \
+              return [window.__f1, window.__f2].join('|'); \
+             })()"
+        )
+        .await,
+        "    at <anonymous>:1:12|    at eval (eval at <anonymous> (:1:75), <anonymous>:1:7)"
+    );
+}
+
+#[tokio::test]
 async fn perf_now_is_strictly_monotonic() {
     // HRT spec requires monotonic non-decreasing. PerfState's clamp is a
     // non-decreasing map of the monotonic clock, so 1000 samples must have

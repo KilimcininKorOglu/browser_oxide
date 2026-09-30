@@ -1196,6 +1196,35 @@ async fn worker_import_scripts_from_data_url() {
 }
 
 #[tokio::test]
+async fn worker_imported_script_frames_carry_its_url() {
+    // Chrome compiles an importScripts file as a script named by its URL,
+    // so a frame inside it reads "at <url>:line:col", not "at eval (...)".
+    let mut page = Page::from_html(
+        r#"<html><body><div id="out"></div><script>
+            (async () => {
+                const dataURL = "data:application/javascript;base64," + btoa("null.x;");
+                const workerSrc = `
+                    let frame = 'none';
+                    try { importScripts(${JSON.stringify(dataURL)}); }
+                    catch (e) { frame = e.stack.split('\\n')[1]; }
+                    self.postMessage(frame === '    at ' + ${JSON.stringify(dataURL)} + ':1:6' ? 'url' : frame);
+                `;
+                const w = new Worker(URL.createObjectURL(new Blob([workerSrc])));
+                const result = await new Promise((resolve) => {
+                    w.onmessage = (e) => resolve(e.data);
+                });
+                w.terminate();
+                document.getElementById('out').textContent = result;
+            })();
+        </script></body></html>"#,
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.text_of("#out"), Some("url".to_string()));
+}
+
+#[tokio::test]
 async fn worker_import_scripts_unknown_blob_throws() {
     let mut page = Page::from_html(
         r#"<html><body><div id="out"></div><script>
