@@ -3517,6 +3517,30 @@ async fn template_keeps_its_children_in_content() {
 }
 
 #[tokio::test]
+async fn inserting_a_fragment_moves_its_children() {
+    // Chrome 148: appendChild, insertBefore and replaceChild with a
+    // DocumentFragment insert its children in order and empty it; the
+    // fragment itself never becomes a child.
+    assert_eq!(
+        check(
+            "(() => { \
+              const mk = (...tags) => { const f = document.createDocumentFragment(); \
+                for (const t of tags) f.appendChild(document.createElement(t)); return f; }; \
+              const d = document.createElement('div'); \
+              const a = mk('i', 'b'); d.appendChild(a); \
+              d.insertBefore(mk('u'), d.lastChild); \
+              d.replaceChild(mk('s', 'q'), d.firstChild); \
+              const outer = mk(); outer.appendChild(mk('em')); \
+              return [d.innerHTML, a.childNodes.length, outer.firstChild.nodeName, \
+                [...d.childNodes].every(n => n.nodeType === 1)].join('|'); \
+             })()"
+        )
+        .await,
+        "<s></s><q></q><u></u><b></b>|0|EM|true"
+    );
+}
+
+#[tokio::test]
 async fn perf_now_is_strictly_monotonic() {
     // HRT spec requires monotonic non-decreasing. PerfState's clamp is a
     // non-decreasing map of the monotonic clock, so 1000 samples must have

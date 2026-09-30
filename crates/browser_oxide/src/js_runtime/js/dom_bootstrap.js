@@ -9,6 +9,13 @@
     const _nodeCache = new Map();
     const _scrollState = new Map(); // nodeId -> {top, left}
 
+    // Inserting a DocumentFragment inserts its children, in order, and leaves
+    // the fragment empty. Null for any other node.
+    function _fragmentChildren(node) {
+        if (!node || node.nodeType !== 11) return null;
+        return Array.from(node.childNodes);
+    }
+
     function _getNodeId(node) {
         if (node === null || node === undefined) return -1;
         if (node === globalThis || node === globalThis.window) return -999;
@@ -489,6 +496,11 @@
         get textContent() { return ops.op_dom_get_text_content(_getNodeId(this)); }
         set textContent(val) { ops.op_dom_set_text_content(_getNodeId(this), String(val)); }
         appendChild(child) {
+            const moved = _fragmentChildren(child);
+            if (moved) {
+                for (const node of moved) this.appendChild(node);
+                return child;
+            }
             ops.op_dom_append_child(_getNodeId(this), _getNodeId(child));
             _onNodeInserted(child);
             return child;
@@ -499,6 +511,10 @@
             return child;
         }
         replaceChild(newChild, oldChild) {
+            if (_fragmentChildren(newChild)) {
+                this.insertBefore(newChild, oldChild);
+                return this.removeChild(oldChild);
+            }
             const parent = _getNodeId(this);
             const oldId = _getNodeId(oldChild);
             const newId = _getNodeId(newChild);
@@ -510,6 +526,11 @@
         }
         insertBefore(newChild, refChild) {
             if (refChild === null || refChild === undefined) return this.appendChild(newChild);
+            const moved = _fragmentChildren(newChild);
+            if (moved) {
+                for (const node of moved) this.insertBefore(node, refChild);
+                return newChild;
+            }
             ops.op_dom_insert_before(_getNodeId(this), _getNodeId(newChild), _getNodeId(refChild));
             _onNodeInserted(newChild);
             return newChild;
