@@ -3471,6 +3471,15 @@ async fn event_interfaces_carry_their_to_string_tag() {
 }
 
 #[tokio::test]
+async fn close_event_init_defaults_match_chrome() {
+    assert_eq!(
+        check("(() => { const e = new CloseEvent('close'); return [e.code, e.reason, e.wasClean].join('|'); })()")
+            .await,
+        "0||false"
+    );
+}
+
+#[tokio::test]
 async fn fetch_network_errors_read_failed_to_fetch() {
     // Chrome 148 rejects an unsupported scheme, an unknown blob URL and a
     // DNS failure alike with `TypeError: Failed to fetch`, no cause attached.

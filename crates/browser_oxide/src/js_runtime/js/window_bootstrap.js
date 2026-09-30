@@ -4083,7 +4083,7 @@
                     if (!msg && msg !== "") {
                         // Connection closed
                         this.readyState = WebSocket.CLOSED;
-                        if (this.onclose) this.onclose(new CloseEvent("close", { code: 1000 }));
+                        if (this.onclose) this.onclose(new CloseEvent("close", { code: 1000, wasClean: true }));
                         break;
                     }
                     if (msg !== "" && this.onmessage) {
@@ -4107,7 +4107,7 @@
                 this._wsId = -1;
             }
             this.readyState = WebSocket.CLOSED;
-            if (this.onclose) this.onclose(new CloseEvent("close", { code: code || 1000, reason: reason || "" }));
+            if (this.onclose) this.onclose(new CloseEvent("close", { code: code || 1000, reason: reason || "", wasClean: true }));
         }
         get bufferedAmount() { return 0; }
         get extensions() { return ""; }
@@ -4118,12 +4118,13 @@
 
     // CloseEvent for WebSocket
     if (!globalThis.CloseEvent) {
+        // CloseEventInit defaults: code 0, reason "", wasClean false.
         globalThis.CloseEvent = class CloseEvent extends Event {
             constructor(type, options = {}) {
                 super(type, options);
-                this.code = options.code || 1000;
+                this.code = options.code || 0;
                 this.reason = options.reason || "";
-                this.wasClean = options.wasClean !== undefined ? options.wasClean : true;
+                this.wasClean = !!options.wasClean;
             }
         };
         Object.defineProperty(globalThis.CloseEvent.prototype, Symbol.toStringTag, { value: "CloseEvent", configurable: true });
