@@ -1023,7 +1023,7 @@
             return new Proxy({}, {
                 get(target, prop) {
                     if (typeof prop !== "string") return undefined;
-                    return ops.op_dom_get_attribute(id, toKebab(prop)) || undefined;
+                    return ops.op_dom_get_attribute(id, toKebab(prop)) ?? undefined;
                 },
                 set(target, prop, value) {
                     el.setAttribute(toKebab(prop), String(value));
@@ -1045,7 +1045,7 @@
                     const attr = toKebab(prop);
                     if (ops.op_dom_has_attribute(id, attr)) {
                         return {
-                            value: ops.op_dom_get_attribute(id, attr) || "",
+                            value: ops.op_dom_get_attribute(id, attr),
                             enumerable: true, configurable: true, writable: true,
                         };
                     }

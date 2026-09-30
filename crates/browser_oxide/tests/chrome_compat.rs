@@ -6869,6 +6869,23 @@ async fn get_attribute_returns_null_for_a_missing_attribute() {
 }
 
 #[tokio::test]
+async fn dataset_reads_an_empty_data_attribute_as_an_empty_string() {
+    // Measured in Chrome 147: data-empty="" reads as "", not undefined.
+    let js = r#"
+        (() => {
+            const d = document.createElement('div');
+            d.setAttribute('data-empty', '');
+            d.setAttribute('data-full-name', 'x');
+            return JSON.stringify([d.dataset.empty, d.dataset.missing, d.dataset.fullName, 'empty' in d.dataset, Object.keys(d.dataset), JSON.stringify(Object.getOwnPropertyDescriptor(d.dataset, 'empty')), { ...d.dataset }]);
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"["",null,"x",true,["empty","fullName"],"{\"value\":\"\",\"writable\":true,\"enumerable\":true,\"configurable\":true}",{"empty":"","fullName":"x"}]"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
