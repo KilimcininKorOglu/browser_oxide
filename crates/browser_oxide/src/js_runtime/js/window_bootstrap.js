@@ -4137,13 +4137,42 @@
     _defProtoGetter(_HistoryProto, 'length', () => _historyStack.length);
     _defProtoGetter(_HistoryProto, 'state', () => _historyStack[_historyIndex]?.state || null);
     _defProtoGetter(_HistoryProto, 'scrollRestoration', () => "auto");
+    // Resolve a pushState/replaceState URL against the document URL. HTML's
+    // "can have its URL rewritten" refuses a different scheme, credentials,
+    // host or port, and Chrome reports an unparsable URL the same way, with
+    // an empty URL in the message (e.g. '/x' in an about:blank document).
+    function _historyTargetUrl(method, url) {
+        const docUrl = _locationData.href;
+        const refuse = (shown) => new DOMException("Failed to execute '" + method +
+            "' on 'History': A history state object with URL '" + shown +
+            "' cannot be created in a document with origin '" + _locationData.origin +
+            "' and URL '" + docUrl + "'.", "SecurityError");
+        let target, doc;
+        try {
+            target = new URL(String(url), docUrl);
+            doc = new URL(docUrl);
+        } catch (_) {
+            throw refuse("");
+        }
+        const same = ["protocol", "username", "password", "host"].every((k) => target[k] === doc[k]);
+        if (!same) throw refuse(target.href);
+        return target.href;
+    }
+    // A successful call moves location to the new URL without loading it.
+    function _historyEntry(method, state, title, url) {
+        if (url === undefined || url === null) return { state, title, url: _locationData.href };
+        const href = _historyTargetUrl(method, url);
+        _parseLocationUrl(href);
+        return { state, title, url: href };
+    }
     _defProtoMethod(_HistoryProto, 'pushState', function pushState(state, title, url) {
+        const entry = _historyEntry('pushState', state, title, url);
         _historyStack.splice(_historyIndex + 1);
-        _historyStack.push({ state, title, url: url || "" });
+        _historyStack.push(entry);
         _historyIndex = _historyStack.length - 1;
     });
     _defProtoMethod(_HistoryProto, 'replaceState', function replaceState(state, title, url) {
-        _historyStack[_historyIndex] = { state, title, url: url || "" };
+        _historyStack[_historyIndex] = _historyEntry('replaceState', state, title, url);
     });
     _defProtoMethod(_HistoryProto, 'back', function back() { if (_historyIndex > 0) _historyIndex--; });
     _defProtoMethod(_HistoryProto, 'forward', function forward() { if (_historyIndex < _historyStack.length - 1) _historyIndex++; });

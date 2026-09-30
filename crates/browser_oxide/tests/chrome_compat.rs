@@ -3471,6 +3471,26 @@ async fn event_interfaces_carry_their_to_string_tag() {
 }
 
 #[tokio::test]
+async fn history_state_url_follows_chrome_rewrite_rules() {
+    // Chrome 148: a cross-origin URL throws SecurityError; a same-origin one
+    // moves location without loading anything.
+    assert_eq!(
+        check_secure(
+            "(() => { \
+              let err = ''; \
+              try { history.replaceState(null, '', 'https://other.example/'); } catch (e) { err = e.name + ': ' + e.message; } \
+              history.pushState({ a: 1 }, '', 'sub/page?q=1#h'); \
+              return [err, location.href, JSON.stringify(globalThis.__pendingNavigation || null)].join('|'); \
+             })()"
+        )
+        .await,
+        "SecurityError: Failed to execute 'replaceState' on 'History': A history state object \
+         with URL 'https://other.example/' cannot be created in a document with origin \
+         'https://example.com' and URL 'https://example.com/'.|https://example.com/sub/page?q=1#h|null"
+    );
+}
+
+#[tokio::test]
 async fn close_event_init_defaults_match_chrome() {
     assert_eq!(
         check("(() => { const e = new CloseEvent('close'); return [e.code, e.reason, e.wasClean].join('|'); })()")

@@ -23,6 +23,18 @@ async fn page_with(body: &str) -> Page {
         .unwrap()
 }
 
+/// A page with an http(s) document URL, for APIs that resolve a relative
+/// URL against it. Chrome refuses pushState('/x') in an about:blank document.
+async fn page_at_origin() -> Page {
+    Page::from_html_with_url(
+        &html(""),
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap()
+}
+
 // ================================================================
 // Node properties
 // ================================================================
@@ -704,7 +716,7 @@ async fn keyboard_event_has_properties() {
 
 #[tokio::test]
 async fn history_push_state() {
-    let mut page = page_with("").await;
+    let mut page = page_at_origin().await;
     page.evaluate("history.pushState({ page: 1 }, '', '/page1')")
         .unwrap();
     assert_eq!(page.evaluate("history.state.page").unwrap(), "1");
@@ -718,7 +730,7 @@ async fn history_push_state() {
 
 #[tokio::test]
 async fn history_replace_state() {
-    let mut page = page_with("").await;
+    let mut page = page_at_origin().await;
     page.evaluate("history.replaceState({ replaced: true }, '', '/new')")
         .unwrap();
     assert_eq!(page.evaluate("history.state.replaced").unwrap(), "true");

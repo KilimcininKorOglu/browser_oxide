@@ -711,7 +711,9 @@ async fn layout_returns_dimensions() {
 
 #[tokio::test]
 async fn history_navigation() {
-    let mut page = Page::from_html(
+    // A relative URL needs a real document URL: Chrome refuses pushState
+    // with '/page1' in an about:blank document.
+    let mut page = Page::from_html_with_url(
         &html(
             r#"
         <script>
@@ -723,6 +725,7 @@ async fn history_navigation() {
         </script>
     "#,
         ),
+        "https://example.com/",
         None::<browser_oxide::stealth::StealthProfile>,
     )
     .await
