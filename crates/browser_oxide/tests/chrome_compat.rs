@@ -3474,6 +3474,28 @@ async fn script_inserted_inline_script_runs_as_its_own_script() {
 }
 
 #[tokio::test]
+async fn error_stacks_hide_engine_bootstrap_frames() {
+    // Chrome 148: a stack taken inside a listener run by dispatchEvent, or
+    // inside a script run by appendChild, holds the page's frames only. The
+    // engine's JS implementation of those APIs never appears.
+    assert_eq!(
+        check(
+            "(() => { \
+              const d = document.createElement('div'); let viaEvent = ''; \
+              d.addEventListener('x', () => { viaEvent = new Error('e').stack; }); \
+              d.dispatchEvent(new Event('x')); \
+              const s = document.createElement('script'); \
+              s.textContent = 'window.__viaScript = new Error(1).stack;'; \
+              document.head.appendChild(s); \
+              return [viaEvent.split('\\n').length, window.__viaScript.split('\\n').length].join('|'); \
+             })()"
+        )
+        .await,
+        "4|4"
+    );
+}
+
+#[tokio::test]
 async fn perf_now_is_strictly_monotonic() {
     // HRT spec requires monotonic non-decreasing. PerfState's clamp is a
     // non-decreasing map of the monotonic clock, so 1000 samples must have

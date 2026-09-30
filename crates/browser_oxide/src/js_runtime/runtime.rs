@@ -15,6 +15,7 @@ use crate::js_runtime::extensions::timer_ext::{timer_extension, TimerState};
 use crate::js_runtime::extensions::webgl_ext::{webgl_extension, WebGLState};
 use crate::js_runtime::extensions::websocket_ext::{websocket_extension, WebSocketState};
 use crate::js_runtime::extensions::worker_ext::worker_extension;
+use crate::js_runtime::native_fns::INTERNAL_SCRIPT_NAME;
 use crate::js_runtime::state::DomState;
 use crate::stealth::StealthProfile;
 use deno_core::{v8, JsRuntime, RuntimeOptions, SharedArrayBufferStore};
@@ -364,20 +365,20 @@ pub fn create_runtime_with_signals(
                 serde_json::to_string(origin).unwrap_or_else(|_| "\"null\"".into())
             );
             runtime
-                .execute_script("<anonymous>", marker)
+                .execute_script(INTERNAL_SCRIPT_NAME, marker)
                 .expect("frame marker failed");
         }
         runtime
-            .execute_script("<anonymous>", BOOTSTRAP_JS)
+            .execute_script(INTERNAL_SCRIPT_NAME, BOOTSTRAP_JS)
             .expect("bootstrap failed");
     }
 
-    // All bootstrap scripts run with name "<anonymous>" so V8 stack
-    // frames don't leak browser_oxide-specific tags — real Chrome's
-    // Error.stack does not reference internal bootstrap scripts.
     // Always run cleanup to hide internals, even when restoring from snapshot.
     runtime
-        .execute_script("<anonymous>", include_str!("js/cleanup_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/cleanup_bootstrap.js"),
+        )
         .expect("cleanup failed");
 
     // Capture Symbol.for('__browser_oxide_native__') from the JS global registry
@@ -529,39 +530,50 @@ pub fn create_worker_runtime(
         }
     }
 
-    // Every worker bootstrap script runs with name "<anonymous>"
-    // (V8's eval-default) so Error.stack frames don't leak our internal
-    // tags — matching real Chrome, whose stacks don't reference them.
-    //
     // stealth_bootstrap must run first: installs Function.prototype.toString
     // patch and the _nativeTag/_maskFunction/_maskAsNative helpers that
     // worker_bootstrap uses.
     runtime
-        .execute_script("<anonymous>", include_str!("js/stealth_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/stealth_bootstrap.js"),
+        )
         .expect("worker: stealth bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/console_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/console_bootstrap.js"),
+        )
         .expect("worker: console bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/interfaces_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/interfaces_bootstrap.js"),
+        )
         .expect("worker: interfaces bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/shared_apis_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/shared_apis_bootstrap.js"),
+        )
         .expect("worker: shared_apis bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/timer_bootstrap.js"))
+        .execute_script(INTERNAL_SCRIPT_NAME, include_str!("js/timer_bootstrap.js"))
         .expect("worker: timer bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/fetch_bootstrap.js"))
+        .execute_script(INTERNAL_SCRIPT_NAME, include_str!("js/fetch_bootstrap.js"))
         .expect("worker: fetch bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/streams_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/streams_bootstrap.js"),
+        )
         .expect("worker: streams bootstrap failed");
 
     // event_bootstrap defines Event, MessageEvent, EventTarget, and wires
@@ -574,7 +586,7 @@ pub fn create_worker_runtime(
     // parent→worker traffic. (Caught by
     // `crates/js_runtime/tests/worker.rs::worker_echo_round_trip`.)
     runtime
-        .execute_script("<anonymous>", include_str!("js/event_bootstrap.js"))
+        .execute_script(INTERNAL_SCRIPT_NAME, include_str!("js/event_bootstrap.js"))
         .expect("worker: event bootstrap failed");
 
     // structuredClone is useful inside workers too — worker code that
@@ -582,11 +594,11 @@ pub fn create_worker_runtime(
     // impl is self-contained (it gracefully handles the absence of
     // DOMException / Blob via typeof checks).
     runtime
-        .execute_script("<anonymous>", include_str!("js/structured_clone.js"))
+        .execute_script(INTERNAL_SCRIPT_NAME, include_str!("js/structured_clone.js"))
         .expect("worker: structured_clone bootstrap failed");
 
     runtime
-        .execute_script("<anonymous>", include_str!("js/worker_bootstrap.js"))
+        .execute_script(INTERNAL_SCRIPT_NAME, include_str!("js/worker_bootstrap.js"))
         .expect("worker: worker bootstrap failed");
 
     {
@@ -597,7 +609,10 @@ pub fn create_worker_runtime(
         }
     }
     runtime
-        .execute_script("<anonymous>", include_str!("js/trusted_types_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/trusted_types_bootstrap.js"),
+        )
         .expect("worker: trusted types bootstrap failed");
 
     // canvas_bootstrap installs CanvasRenderingContext2D and the real
@@ -605,12 +620,15 @@ pub fn create_worker_runtime(
     // because its DOM-patch blocks all gate on `globalThis.document?`
     // / `globalThis.Element?` which are undefined in the worker scope.
     runtime
-        .execute_script("<anonymous>", include_str!("js/canvas_bootstrap.js"))
+        .execute_script(INTERNAL_SCRIPT_NAME, include_str!("js/canvas_bootstrap.js"))
         .expect("worker: canvas bootstrap failed");
 
     // Final cleanup in worker
     runtime
-        .execute_script("<anonymous>", include_str!("js/cleanup_bootstrap.js"))
+        .execute_script(
+            INTERNAL_SCRIPT_NAME,
+            include_str!("js/cleanup_bootstrap.js"),
+        )
         .expect("worker: cleanup bootstrap failed");
 
     runtime.v8_isolate().set_prepare_stack_trace_callback(

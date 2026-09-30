@@ -328,9 +328,13 @@ pub fn install_native_fp_tostring(
     true
 }
 
+/// The script name of every engine bootstrap script. Its frames are dropped
+/// from page-visible stacks, as Chrome's stacks never show browser internals.
+pub const INTERNAL_SCRIPT_NAME: &str = "<internal>";
+
 /// Engine-internal scripts whose frames never reach a page-visible stack:
-/// deno_core's `ext:` / `deno:` modules and bootstrap scripts named `<...>`.
-/// V8's own `<anonymous>` stays.
+/// deno_core's `ext:` / `deno:` modules and bootstrap scripts named `<...>`
+/// such as [`INTERNAL_SCRIPT_NAME`]. V8's own `<anonymous>` stays.
 fn is_internal_script(name: &str) -> bool {
     name.starts_with("ext:")
         || name.starts_with("deno:")

@@ -160,12 +160,11 @@ pub fn get_snapshot() -> &'static [u8] {
             include_str!("js/structured_clone.js"),
         );
 
-        // Script name "<anonymous>" matches V8's eval-default so
-        // Error.stack frames from inside the bootstrap don't leak
-        // `<bootstrap>` (a non-Chrome filename) — real Chrome's stacks
-        // don't reference internal bootstrap scripts.
         runtime
-            .execute_script("<anonymous>", BOOTSTRAP_JS)
+            .execute_script(
+                crate::js_runtime::native_fns::INTERNAL_SCRIPT_NAME,
+                BOOTSTRAP_JS,
+            )
             .expect("snapshot bootstrap failed");
 
         let snapshot = runtime.snapshot();
