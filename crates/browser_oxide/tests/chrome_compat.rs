@@ -6917,6 +6917,42 @@ async fn form_controls_keep_a_dirty_value_apart_from_the_attribute() {
 }
 
 #[tokio::test]
+async fn select_and_option_track_selectedness() {
+    // Measured in Chrome 147: a single select shows the last selected option
+    // or the first enabled one, options is one live HTMLOptionsCollection,
+    // an option's text collapses whitespace, and a clone does not keep a
+    // selection made by script.
+    let js = r#"
+        (() => {
+            const out = [];
+            const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.message); } };
+            const mk = (html, attrs) => { const s = document.createElement('select'); for (const k in attrs || {}) s.setAttribute(k, attrs[k]); s.innerHTML = html; return s; };
+            t('lone', () => { const o = document.createElement('option'); return [o.selected, o.defaultSelected, o.index, o.text, o.value, o.label, o.form]; });
+            t('appended', () => { const s = document.createElement('select'); const o = s.appendChild(document.createElement('option')); return [o.selected, s.selectedIndex, s.value, s.length]; });
+            t('props', () => { const s = mk('<option value=a>A</option><option selected>  B  x </option>'); return [s.type, s.value, s.selectedIndex, s.options.length, s.options[1].text, s.length, s.selectedOptions.length, s.options[0].value, s.item(1).value, s.size, Object.prototype.toString.call(s.options), s.options === s.options, 0 in s.options, 2 in s.options, Object.keys(s.options)]; });
+            t('setIndex', () => { const s = mk('<option>a</option><option>b</option><option>c</option>'); s.selectedIndex = 2; const r = [s.value, s.options[2].selected, s.options[0].selected]; s.value = 'b'; r.push(s.selectedIndex, s.options[1].selected, s.options[2].selected); s.options[0].selected = true; r.push(s.selectedIndex, s.options[1].selected); return r; });
+            t('multiple', () => { const s = mk('<option>a</option><option selected>b</option><option selected>c</option>', { multiple: '' }); const r = [s.type, s.selectedIndex, s.value, s.selectedOptions.length]; s.options[0].selected = true; r.push(s.selectedIndex, s.selectedOptions.length); return r; });
+            t('multipleNone', () => { const s = mk('<option>a</option><option>b</option>', { multiple: '' }); return [s.selectedIndex, s.value, s.options[0].selected]; });
+            t('disabledFirst', () => { const s = mk('<option disabled>a</option><option>b</option>'); return [s.selectedIndex, s.value]; });
+            t('twoSelected', () => { const s = mk('<option selected>a</option><option selected>b</option>'); return [s.selectedIndex, s.options[0].selected]; });
+            t('optgroup', () => { const s = mk('<optgroup label=g><option>a</option><option>b</option></optgroup><option>c</option>'); return [s.length, s.options[2].index, s.options[1].index, s.options[1].value]; });
+            t('addRemove', () => { const s = mk('<option>a</option><option>b</option>'); const o = document.createElement('option'); o.text = 'z'; s.add(o, 0); const r = [s.options[0].text, s.length]; s.remove(1); r.push(s.length, s.options[1].text); s.options.add(document.createElement('option')); r.push(s.length); return r; });
+            t('namedItem', () => { const s = mk('<option id=q>a</option><option name=w>b</option>'); return [s.namedItem('q').text, s.namedItem('w').text, s.namedItem('x'), s.options.namedItem('q').text]; });
+            t('size', () => { const s = mk('<option>a</option>', { size: '3' }); return [s.size, s.selectedIndex]; });
+            t('label', () => { const o = document.createElement('option'); o.textContent = ' x  y '; o.setAttribute('label', 'L'); return [o.label, o.text, o.value]; });
+            t('clone', () => { const s = mk('<option>a</option><option>b</option>'); s.selectedIndex = 1; const c = s.cloneNode(true); return [c.selectedIndex, c.value]; });
+            t('minusOne', () => { const s = mk('<option>a</option><option>b</option>'); s.selectedIndex = -1; const r = [s.selectedIndex, s.value, s.options[0].selected]; s.value = 'zz'; r.push(s.selectedIndex); s.appendChild(document.createElement('option')); r.push(s.selectedIndex); return r; });
+            t('deselect', () => { const s = mk('<option>a</option><option selected>b</option>'); s.options[0].selected = false; const r = [s.selectedIndex]; s.options[1].selected = false; r.push(s.selectedIndex, s.value); s.options[1].remove(); r.push(s.selectedIndex); return r; });
+            return out.join(' ;; ');
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"lone=[false,false,0,"","","",null] ;; appended=[true,0,"",1] ;; props=["select-one","B x",1,2,"B x",2,1,"a","B x",0,"[object HTMLOptionsCollection]",true,true,false,["0","1"]] ;; setIndex=["c",true,false,1,true,false,0,false] ;; multiple=["select-multiple",1,"b",2,0,3] ;; multipleNone=[-1,"",false] ;; disabledFirst=[1,"b"] ;; twoSelected=[1,false] ;; optgroup=[3,2,1,"b"] ;; addRemove=["z",3,2,"b",3] ;; namedItem=["a","b",null,"a"] ;; size=[3,-1] ;; label=["L","x y","x y"] ;; clone=[0,"a"] ;; minusOne=[-1,"",false,-1,0] ;; deselect=[1,0,"a",0]"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.

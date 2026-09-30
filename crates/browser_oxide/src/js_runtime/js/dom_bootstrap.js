@@ -1253,9 +1253,11 @@
     };
     // Cloning copies a control's value and checkedness with it, for the
     // clone's own controls as well when the copy is deep.
+    // An option has no cloning steps, so its clone starts from the selected
+    // attribute again.
     function _copyControlState(src, dst) {
         if (!_anyControlState) return;
-        const own = _controlState.get(src);
+        const own = src instanceof HTMLOptionElement ? null : _controlState.get(src);
         if (own) _controlState.set(dst, { ...own });
         if (typeof src.querySelectorAll !== 'function') return;
         const from = src.querySelectorAll('input, textarea');
@@ -1454,6 +1456,148 @@
     class HTMLTableSectionElement extends HTMLElement {}
     class HTMLLabelElement extends HTMLElement {}
     class HTMLOptionElement extends HTMLElement {}
+
+    // Option and select (HTML §4.10.7, §4.10.10). An option's selectedness
+    // follows its selected attribute until a script sets it. A single select
+    // shows one option selected: the last selected one, or the first enabled
+    // option when none is.
+    const _optionText = (o) => o.textContent.replace(/[\t\n\f\r ]+/g, ' ').trim();
+    const _ownerSelect = (o) => {
+        let p = o.parentNode;
+        if (p && p.localName === 'optgroup') p = p.parentNode;
+        return p instanceof HTMLSelectElement ? p : null;
+    };
+    const _groupOptions = (g) => Array.from(g.children).filter((c) => c instanceof HTMLOptionElement);
+    const _selectOptions = (sel) => Array.from(sel.children).flatMap((c) => {
+        if (c instanceof HTMLOptionElement) return [c];
+        return c.localName === 'optgroup' ? _groupOptions(c) : [];
+    });
+    const _selectedness = (o) => {
+        const s = _controlState.get(o);
+        return s && 'selected' in s ? s.selected : o.hasAttribute('selected');
+    };
+    // A script that deselects every option of a single select leaves it with
+    // none until an option is inserted or removed, which resets the select.
+    // The option count stands in for that insertion or removal.
+    const _isCleared = (sel, opts) => {
+        const s = _controlState.get(sel);
+        return !!s && s.clearedAt === opts.length;
+    };
+    function _selectedIndex(sel) {
+        const opts = _selectOptions(sel);
+        if (sel.multiple) return opts.findIndex(_selectedness);
+        const last = opts.findLastIndex(_selectedness);
+        if (last >= 0 || sel.size > 1 || _isCleared(sel, opts)) return last;
+        return opts.findIndex((o) => !o.disabled);
+    }
+    const _selectOnly = (sel, index) => {
+        const opts = _selectOptions(sel);
+        opts.forEach((o, i) => { _controlStateOf(o).selected = i === index; });
+        const s = _controlStateOf(sel);
+        if (index >= 0 && index < opts.length) delete s.clearedAt;
+        else s.clearedAt = opts.length;
+    };
+    Object.defineProperties(HTMLOptionElement.prototype, Object.getOwnPropertyDescriptors({
+        get text() { return _optionText(this); },
+        set text(v) { this.textContent = String(v); },
+        get value() { return this.getAttribute('value') ?? _optionText(this); },
+        set value(v) { this.setAttribute('value', String(v)); },
+        get label() { return this.getAttribute('label') ?? _optionText(this); },
+        set label(v) { this.setAttribute('label', String(v)); },
+        get index() {
+            const sel = _ownerSelect(this);
+            return sel ? _selectOptions(sel).indexOf(this) : 0;
+        },
+        get form() {
+            const sel = _ownerSelect(this);
+            return sel ? sel.form : null;
+        },
+        get selected() {
+            const sel = _ownerSelect(this);
+            if (!sel || sel.multiple) return _selectedness(this);
+            return _selectOptions(sel)[_selectedIndex(sel)] === this;
+        },
+        set selected(v) {
+            const sel = _ownerSelect(this);
+            if (v && sel && !sel.multiple) _selectOnly(sel, _selectOptions(sel).indexOf(this));
+            else _controlStateOf(this).selected = !!v;
+        },
+    }));
+    _reflectBool(HTMLOptionElement.prototype, 'disabled');
+
+    // select.options: one live HTMLOptionsCollection per select.
+    const _optionsOwner = new WeakMap();
+    const _optionsCollections = new WeakMap();
+    const _isIndex = (p) => typeof p === 'string' && /^(0|[1-9]\d*)$/.test(p);
+    function _optionsCollection(sel) {
+        let coll = _optionsCollections.get(sel);
+        if (coll) return coll;
+        coll = new Proxy(Object.create(globalThis.HTMLOptionsCollection.prototype), {
+            get: (t, p, r) => (_isIndex(p) ? _selectOptions(sel)[+p] : Reflect.get(t, p, r)),
+            has: (t, p) => (_isIndex(p) ? +p < _selectOptions(sel).length : Reflect.has(t, p)),
+            ownKeys: (t) => _selectOptions(sel).map((_, i) => String(i)).concat(Reflect.ownKeys(t)),
+            getOwnPropertyDescriptor: (t, p) => {
+                if (!_isIndex(p)) return Reflect.getOwnPropertyDescriptor(t, p);
+                const o = _selectOptions(sel)[+p];
+                return o ? { value: o, writable: false, enumerable: true, configurable: true } : undefined;
+            },
+        });
+        _optionsOwner.set(coll, sel);
+        _optionsCollections.set(sel, coll);
+        return coll;
+    }
+    const _collSelect = (c) => _optionsOwner.get(c);
+    Object.defineProperties(globalThis.HTMLOptionsCollection.prototype, Object.getOwnPropertyDescriptors({
+        get length() { return _selectOptions(_collSelect(this)).length; },
+        get selectedIndex() { return _collSelect(this).selectedIndex; },
+        set selectedIndex(v) { _collSelect(this).selectedIndex = v; },
+        item(i) { return _collSelect(this).item(i); },
+        namedItem(n) { return _collSelect(this).namedItem(n); },
+        add(el, before) { return _collSelect(this).add(el, before); },
+        remove(i) { return _collSelect(this).remove(i); },
+        [Symbol.iterator]() { return _selectOptions(_collSelect(this))[Symbol.iterator](); },
+    }));
+
+    Object.defineProperties(HTMLSelectElement.prototype, Object.getOwnPropertyDescriptors({
+        get type() { return this.multiple ? 'select-multiple' : 'select-one'; },
+        get options() { return _optionsCollection(this); },
+        get length() { return _selectOptions(this).length; },
+        get selectedIndex() { return _selectedIndex(this); },
+        set selectedIndex(v) { _selectOnly(this, Number(v) | 0); },
+        get value() {
+            const o = _selectOptions(this)[_selectedIndex(this)];
+            return o ? o.value : '';
+        },
+        set value(v) {
+            _selectOnly(this, _selectOptions(this).findIndex((o) => o.value === String(v)));
+        },
+        get selectedOptions() {
+            return new NodeList(_selectOptions(this).filter((o) => o.selected).map(_getNodeId));
+        },
+        get size() {
+            const n = Number.parseInt(this.getAttribute('size') ?? '', 10);
+            return n >= 0 ? n : 0;
+        },
+        set size(v) { this.setAttribute('size', String(Number(v) >>> 0)); },
+        item(i) { return _selectOptions(this)[Number(i) >>> 0] ?? null; },
+        namedItem(name) {
+            return _selectOptions(this).find((o) => o.id === name || o.getAttribute('name') === name) ?? null;
+        },
+        add(el, before) {
+            const ref = typeof before === 'number' ? _selectOptions(this)[before] : before;
+            if (ref) ref.parentNode.insertBefore(el, ref);
+            else this.appendChild(el);
+        },
+        remove(...args) {
+            if (args.length === 0) return Element.prototype.remove.call(this);
+            const o = _selectOptions(this)[Number(args[0]) | 0];
+            if (o) o.remove();
+        },
+    }));
+    _reflectBool(HTMLSelectElement.prototype, 'multiple');
+    _reflectBool(HTMLSelectElement.prototype, 'disabled');
+    _reflectBool(HTMLSelectElement.prototype, 'required');
+    _reflectStr(HTMLSelectElement.prototype, 'name');
     // The parser and the innerHTML setter put a template's children under
     // the element itself; Chrome keeps them in a separate DocumentFragment,
     // `content`, and leaves the element without children. The first read of
