@@ -119,6 +119,30 @@ pub fn capture_original_fp_tostring(scope: &mut v8::PinScope) -> Option<v8::Glob
     Some(v8::Global::new(scope, ts))
 }
 
+/// The masked name of `obj`, read from its OWN tag property only: read
+/// through the prototype chain, `class Foo extends EventTarget {}` would
+/// print as EventTarget's native.
+fn own_native_tag(
+    scope: &mut v8::PinScope,
+    obj: v8::Local<v8::Object>,
+    sym: v8::Local<v8::Symbol>,
+) -> Option<String> {
+    if !obj.has_own_property(scope, sym.into())? {
+        return None;
+    }
+    let tag = obj.get(scope, sym.into())?;
+    tag.is_string().then(|| tag.to_rust_string_lossy(scope))
+}
+
+/// Whether a Proxy (possibly wrapping further Proxies) ends at a function.
+fn is_callable_proxy(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) -> bool {
+    let mut current = value;
+    while let Ok(proxy) = v8::Local::<v8::Proxy>::try_from(current) {
+        current = proxy.get_target(scope);
+    }
+    current.is_function()
+}
+
 /// The genuine-native `Function.prototype.toString` callback.
 ///
 /// `args.data()` is an Array `[orig, sym]` where:
@@ -159,69 +183,28 @@ fn fp_to_string_cb<'s>(
         tag_sym = None;
     }
 
-    // Masked host fn? Check via the JS-global-registry Symbol before the
-    // is_function() guard, so Proxy-wrapped tagged objects also stringify.
-    // stealth_bootstrap.js sets `fn[Symbol.for('__browser_oxide_native__')] = name`.
-    if let Ok(this_obj) = v8::Local::<v8::Object>::try_from(this) {
-        // Resolve which symbol to use for the tag lookup.
-        // Primary path: the JS-registry symbol from Array data.
-        // Fallback: v8::Symbol::for_global (V8 API registry, won't find
-        // JS-tagged symbols but avoids hard failure in no-sym contexts).
-        let maybe_tag: Option<String> = if let Some(sym) = tag_sym {
-            if let Some(tagv) = this_obj.get(scope, sym.into()) {
-                if tagv.is_string() {
-                    Some(tagv.to_rust_string_lossy(scope))
-                } else {
-                    None
-                }
-            } else {
-                None
+    // Chrome prints every callable Proxy as an anonymous native, whatever
+    // it wraps, and runs none of its traps. A tag lookup through the Proxy
+    // would hand the page's `get` trap our tag symbol.
+    if this.is_proxy() {
+        if is_callable_proxy(scope, this) {
+            if let Some(out) = v8::String::new(scope, "function () { [native code] }") {
+                rv.set(out.into());
             }
-        } else if let Some(key) = v8::String::new(scope, NATIVE_TAG) {
-            let sym = v8::Symbol::for_api(scope, key);
-            if let Some(tagv) = this_obj.get(scope, sym.into()) {
-                if tagv.is_string() {
-                    Some(tagv.to_rust_string_lossy(scope))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if let Some(tag) = maybe_tag {
+            return;
+        }
+    } else if let Ok(this_obj) = v8::Local::<v8::Object>::try_from(this) {
+        // Masked host fn: stealth_bootstrap.js sets
+        // `fn[Symbol.for('__browser_oxide_native__')] = name`. The primary
+        // path uses the JS-registry symbol from the data Array; the V8 API
+        // registry symbol is a documented fallback for no-sym contexts.
+        let sym = tag_sym.or_else(|| {
+            v8::String::new(scope, NATIVE_TAG).map(|key| v8::Symbol::for_api(scope, key))
+        });
+        if let Some(tag) = sym.and_then(|sym| own_native_tag(scope, this_obj, sym)) {
             let s = format!("function {tag}() {{ [native code] }}");
             if let Some(out) = v8::String::new(scope, &s) {
                 rv.set(out.into());
-                return;
-            }
-        }
-    }
-
-    // Some scripts wrap DOM functions in Proxies and call
-    // Function.prototype.toString on them. V8's original FP.toString throws
-    // "requires that 'this' be a Function" for Proxy objects even when the
-    // Proxy wraps a function (V8 checks the JSReceiver type directly, not
-    // [[Call]]). Real Chrome returns a native string here; pre-detect
-    // callable Proxies and do the same.
-    if this.is_proxy() {
-        if let Ok(proxy) = v8::Local::<v8::Proxy>::try_from(this) {
-            let target = proxy.get_target(scope);
-            if target.is_function() {
-                let name = v8::Local::<v8::Object>::try_from(target)
-                    .ok()
-                    .and_then(|to| {
-                        v8::String::new(scope, "name")
-                            .and_then(|k| to.get(scope, k.into()))
-                            .map(|nv| nv.to_rust_string_lossy(scope))
-                    })
-                    .unwrap_or_default();
-                let s = format!("function {name}() {{ [native code] }}");
-                if let Some(out) = v8::String::new(scope, &s) {
-                    rv.set(out.into());
-                }
                 return;
             }
         }

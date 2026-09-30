@@ -6573,3 +6573,41 @@ async fn file_reader_read_as_text_decodes_utf8() {
     "#;
     assert_eq!(check(js).await, "héllo");
 }
+
+#[tokio::test]
+async fn subclass_of_a_native_constructor_prints_its_own_source() {
+    // Chrome prints a page class's own source even when it extends a
+    // native; the native tag must not be inherited through the chain.
+    assert_eq!(
+        check("String(class Foo extends EventTarget {})").await,
+        "class Foo extends EventTarget {}"
+    );
+}
+
+#[tokio::test]
+async fn callable_proxy_prints_as_an_anonymous_native_without_traps() {
+    // Measured in Chrome 147: both print `function () { [native code] }`
+    // and neither trap runs.
+    let js = r#"
+        (() => {
+            const log = [];
+            const traps = {
+                get(t, k) { log.push(String(k)); return Reflect.get(t, k); },
+                getOwnPropertyDescriptor(t, k) {
+                    log.push('gopd ' + String(k));
+                    return Reflect.getOwnPropertyDescriptor(t, k);
+                },
+            };
+            const ts = Function.prototype.toString;
+            return JSON.stringify([
+                ts.call(new Proxy(function foo() {}, {})),
+                ts.call(new Proxy(fetch, traps)),
+                log,
+            ]);
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"["function () { [native code] }","function () { [native code] }",[]]"#
+    );
+}

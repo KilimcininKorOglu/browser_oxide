@@ -16,6 +16,11 @@
     // Re-entrant guard: prevents infinite recursion when this[_nativeTag] access
     // triggers a Proxy get trap that itself calls Function.prototype.toString.
     let _inPatchedToStr = false;
+    // The tag must be the function's OWN property. Read through the
+    // prototype chain, `class Foo extends EventTarget {}` inherited
+    // EventTarget's tag and printed `function EventTarget() { [native
+    // code] }`; Chrome prints the class source.
+    const _hasOwn = Function.prototype.call.bind(Object.prototype.hasOwnProperty);
     // Method-shorthand → NO [[Construct]] / no own `.prototype`, exactly
     // like the real native Function.prototype.toString. A plain
     // `function toString(){}` IS constructable, so
@@ -28,7 +33,7 @@
         try {
             if (this !== null && this !== undefined) {
                 try {
-                    const tag = this[_nativeTag];
+                    const tag = _hasOwn(this, _nativeTag) && this[_nativeTag];
                     if (tag) return `function ${tag}() { [native code] }`;
                 } catch (_) {}
             }
