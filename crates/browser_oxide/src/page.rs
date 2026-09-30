@@ -2341,22 +2341,30 @@ impl Page {
             )
             .await?;
 
-            // Install the V8 deadline watcher for the remainder of the
-            // wall-clock budget — but always with a minimum 5s floor so
-            // even iterations past the nominal budget have a safety net.
-            // Without the floor, a budget-exhausted iteration could spin
-            // forever in V8 (no watcher → tokio::time::timeout can't
-            // preempt CPU-bound JS).
-            let remaining = nav_budget
-                .saturating_sub(nav_t0.elapsed())
-                .max(Duration::from_secs(5));
+            // The V8 deadline watcher is the hard kill for CPU-bound spins
+            // that tokio timeouts cannot preempt. It must never fire BEFORE
+            // the drain below has exhausted its own budget: a mid-drain
+            // terminate_execution orphans every in-flight async op promise
+            // (timer sleeps, fetches) — the callbacks' `.then` chains never
+            // settle, silently stalling challenge/fingerprint flows that
+            // were mid-schedule (measured: a site fingerprint's 50 ms
+            // Promise timer pending forever after the old 5 s floor fired
+            // mid-drain). Cover the full drain window plus a small tail.
+            let drain_budget = {
+                let remaining = nav_budget.saturating_sub(nav_t0.elapsed());
+                remaining.max(Duration::from_secs(8))
+            };
+            let watcher_budget = drain_budget + Duration::from_millis(500);
             eprintln!(
-                "[navigate] iter={} installing V8DeadlineWatcher with {}ms remaining",
+                "[navigate] iter={} installing V8DeadlineWatcher with {}ms (drain {}ms)",
                 iter,
-                remaining.as_millis()
+                watcher_budget.as_millis(),
+                drain_budget.as_millis()
             );
-            let _watcher =
-                V8DeadlineWatcher::new(page.event_loop().runtime_mut().isolate_handle(), remaining);
+            let _watcher = V8DeadlineWatcher::new(
+                page.event_loop().runtime_mut().isolate_handle(),
+                watcher_budget,
+            );
 
             // Drain the event loop. Use the remaining nav budget (floored at 8s)
             // so that heavy PoW challenges (the VM can take 30+ seconds) can
@@ -2364,11 +2372,7 @@ impl Page {
             // installed above provides the hard kill for analytics loops that never
             // reach idle on their own — once V8 is terminated, run_event_loop()
             // returns and the drain exits naturally.
-            let drain_timeout = {
-                let remaining = nav_budget.saturating_sub(nav_t0.elapsed());
-                remaining.max(Duration::from_secs(8))
-            };
-            if let Err(e) = page.event_loop().run_until_idle(drain_timeout).await {
+            if let Err(e) = page.event_loop().run_until_idle(drain_budget).await {
                 tracing::warn!(error = %e, "navigate event loop error");
             }
 

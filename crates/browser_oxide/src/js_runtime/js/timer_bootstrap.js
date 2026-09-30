@@ -13,6 +13,12 @@
         return () => _runClassicScript(source, '');
     };
     const _cancelledTimers = new Set();
+    // Live timer ids THIS realm handed out. clearTimeout with a foreign id
+    // (a page wrapper's own id space colliding with ours) must be a no-op,
+    // exactly like Chrome — without this, Turnstile's wrapper clearing its
+    // own ids silently killed our unrelated pending timers and stalled the
+    // challenge round.
+    const _liveTimers = new Set();
     // Timer generation — bumped by `globalThis.__cancelAllTimers()` so that
     // the warm-reuse path in `Page::navigate_warm` can mass-cancel every
     // in-flight `setTimeout`/`setInterval` callback from the previous page
@@ -27,6 +33,7 @@
     let _timerGen = 0;
     globalThis.__cancelAllTimers = function __cancelAllTimers() {
         _timerGen++;
+        _liveTimers.clear();
     };
     // W5b-PLUS (twitter/x.com hydration fix): unref every op_timer_sleep
     // promise. The deno_core event loop treats every in-flight async op as
@@ -89,11 +96,13 @@
         }
         const ms = Math.max(0, delay | 0);
         const id = ops.op_set_timeout(ms);
+        _liveTimers.add(id);
         // Async ops in deno_core 0.311 are called directly and return Promise
         const p = ops.op_timer_sleep(ms);
         _maybeUnref(p, ms);
         const myGen = _timerGen;
         p.then(() => {
+            _liveTimers.delete(id);
             if (myGen !== _timerGen) return; // post `__cancelAllTimers`, drop
             if (!_cancelledTimers.has(id)) {
                 callback(...args);
@@ -118,10 +127,12 @@
         }
         const ms = Math.max(0, delay | 0);
         const id = ops.op_set_timeout(ms);
+        _liveTimers.add(id);
         const p = ops.op_timer_sleep(ms);
         if (_unrefRaw) _unrefRaw(p);
         const myGen = _timerGen;
         p.then(() => {
+            _liveTimers.delete(id);
             if (myGen !== _timerGen) return;
             if (!_cancelledTimers.has(id)) {
                 callback(...args);
@@ -136,6 +147,7 @@
         }
         const ms = Math.max(4, delay | 0);
         const id = ops.op_set_interval(ms);
+        _liveTimers.add(id);
 
         const myGen = _timerGen;
         function tick() {
@@ -157,10 +169,10 @@
     };
 
     globalThis.clearTimeout = function clearTimeout(id) {
-        if (id !== undefined && id !== null) {
-            _cancelledTimers.add(id);
-            ops.op_clear_timer(id);
-        }
+        if (!_liveTimers.has(id)) return; // foreign id — no-op, like Chrome
+        _liveTimers.delete(id);
+        _cancelledTimers.add(id);
+        ops.op_clear_timer(id);
     };
 
     globalThis.clearInterval = globalThis.clearTimeout;

@@ -24,7 +24,13 @@ impl Default for TimerState {
 impl TimerState {
     pub fn new() -> Self {
         Self {
-            next_id: 1,
+            // Ids start far above the range page-side wrappers count in
+            // (their own id spaces begin at 1). A wrapper that passes its
+            // OWN id to clearTimeout/clearInterval would otherwise collide
+            // with a live engine timer of the same number and cancel it —
+            // Turnstile's round stalled exactly this way. Chrome's native
+            // ids stay distinct from page counters; so do ours now.
+            next_id: 1_000_003,
             pending: HashMap::new(),
             cancelled: std::collections::HashSet::new(),
         }

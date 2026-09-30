@@ -3140,8 +3140,24 @@
         _defProtoGetter(_PerfProto, 'navigation', () => _perfNavigation);
         _defProtoGetter(_PerfProto, 'onresourcetimingbufferfull', () => null);
 
+        // UserTiming registry — Chrome records every mark/measure and
+        // returns them from getEntries()/getEntriesByType. The engine used
+        // to return the entry from mark() but record nothing, so a script
+        // that marks (Turnstile marks `cp-n-<c-ray>` before collecting)
+        // then reads getEntries() found its own mark missing — its
+        // collection loop never completed.
+        const _userTiming = [];
+        const _mkEntry = (name, entryType, startTime, duration, detail) => {
+            const e = {
+                name: String(name), entryType, startTime,
+                duration, detail: detail || null,
+            };
+            Object.defineProperty(e, Symbol.toStringTag, { value: entryType === 'mark' ? 'PerformanceMark' : 'PerformanceMeasure', configurable: true });
+            return e;
+        };
+
         _defProtoMethod(_PerfProto, 'getEntries', function getEntries() {
-            const entries = [_navEntry(), ..._buildResourceEntries()];
+            const entries = [..._userTiming, _navEntry(), ..._buildResourceEntries()];
             const origin = globalThis.location ? globalThis.location.origin : "";
             
             // Add challenge-resource fallback entries if not present
@@ -3180,7 +3196,9 @@
             if (type === "resource") {
                 return globalThis.performance.getEntries().filter(e => e.entryType === 'resource');
             }
-            if (type === "mark" || type === "measure") return [];
+            if (type === "mark" || type === "measure") {
+                return _userTiming.filter((e) => e.entryType === type);
+            }
             if (type === "paint") {
                 return [
                     { name: "first-paint", entryType: "paint", startTime: 156.3, duration: 0 },
@@ -3194,14 +3212,60 @@
                 .getEntries()
                 .filter((e) => e.name === name && (!type || e.entryType === type));
         });
-        _defProtoMethod(_PerfProto, 'mark', function mark(name) {
-            return { name, entryType: "mark", startTime: performance.now(), duration: 0 };
+        _defProtoMethod(_PerfProto, 'mark', function mark(name, options) {
+            if (typeof name !== 'string' || !name) {
+                throw new TypeError("Failed to execute 'mark' on 'Performance': The mark name must be a non-empty string.");
+            }
+            const start = (options && typeof options.startTime === 'number')
+                ? options.startTime
+                : performance.now();
+            const e = _mkEntry(name, "mark", start, 0, options && options.detail);
+            _userTiming.push(e);
+            return e;
         });
         _defProtoMethod(_PerfProto, 'measure', function measure(name, startMark, endMark) {
-            return { name, entryType: "measure", startTime: 0, duration: 0 };
+            if (typeof name !== 'string' || !name) {
+                throw new TypeError("Failed to execute 'measure' on 'Performance': The measure name must be a non-empty string.");
+            }
+            const resolve = (m) => {
+                if (typeof m === 'number') return m;
+                if (m === undefined || m === '') return undefined;
+                const found = _userTiming.filter((e) => e.name === m);
+                if (found.length === 0) {
+                    throw new DOMException(
+                        `Failed to execute 'measure' on 'Performance': The mark '${m}' does not exist.`,
+                        "SyntaxError");
+                }
+                return found[found.length - 1].startTime;
+            };
+            const end = (endMark === undefined) ? performance.now() : resolve(endMark);
+            const start = (startMark === undefined) ? 0 : resolve(startMark);
+            const e = _mkEntry(name, "measure", start, Math.max(0, end - start));
+            _userTiming.push(e);
+            return e;
         });
-        _defProtoMethod(_PerfProto, 'clearMarks', function clearMarks() {});
-        _defProtoMethod(_PerfProto, 'clearMeasures', function clearMeasures() {});
+        _defProtoMethod(_PerfProto, 'clearMarks', function clearMarks(name) {
+            if (name === undefined) {
+                for (let i = _userTiming.length - 1; i >= 0; i--) {
+                    if (_userTiming[i].entryType === 'mark') _userTiming.splice(i, 1);
+                }
+            } else {
+                for (let i = _userTiming.length - 1; i >= 0; i--) {
+                    if (_userTiming[i].entryType === 'mark' && _userTiming[i].name === name) _userTiming.splice(i, 1);
+                }
+            }
+        });
+        _defProtoMethod(_PerfProto, 'clearMeasures', function clearMeasures(name) {
+            if (name === undefined) {
+                for (let i = _userTiming.length - 1; i >= 0; i--) {
+                    if (_userTiming[i].entryType === 'measure') _userTiming.splice(i, 1);
+                }
+            } else {
+                for (let i = _userTiming.length - 1; i >= 0; i--) {
+                    if (_userTiming[i].entryType === 'measure' && _userTiming[i].name === name) _userTiming.splice(i, 1);
+                }
+            }
+        });
         _defProtoMethod(_PerfProto, 'clearResourceTimings', function clearResourceTimings() {
             // No-op for now, as we dynamically fetch from document.
         });
