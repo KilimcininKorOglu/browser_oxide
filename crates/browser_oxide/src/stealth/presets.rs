@@ -1,5 +1,29 @@
 use crate::stealth::profile::{DeviceClass, MediaDeviceInfo, StealthProfile};
 
+/// The host system's IANA timezone, as real Chrome would report it.
+/// Reads the `/etc/localtime` symlink (macOS `/var/db/timezone/zoneinfo/…`,
+/// Linux `/usr/share/zoneinfo/…`); falls back to the `TZ` env var.
+/// Real Chrome never fakes the timezone — an engine that reports
+/// `America/Los_Angeles` from a Turkish IP is an instant scorer tell.
+pub fn system_timezone() -> Option<String> {
+    if let Ok(target) = std::fs::read_link("/etc/localtime") {
+        let path = target.to_string_lossy();
+        if let Some(idx) = path.find("zoneinfo/") {
+            let zone = &path[idx + "zoneinfo/".len()..];
+            if !zone.is_empty() {
+                return Some(zone.to_string());
+            }
+        }
+    }
+    let tz = std::env::var("TZ").ok()?;
+    let tz = tz.trim_start_matches(':');
+    if tz.is_empty() {
+        None
+    } else {
+        Some(tz.to_string())
+    }
+}
+
 fn default_media_devices(seed: &str) -> Vec<MediaDeviceInfo> {
     // Deterministic device IDs based on a seed string
     let hash = |s: &str| -> String {
@@ -66,7 +90,7 @@ pub fn chrome_148_windows() -> StealthProfile {
 
         language: "en-US".into(),
         languages: vec!["en-US".into(), "en".into()],
-        timezone: "America/New_York".into(),
+        timezone: system_timezone().unwrap_or_else(|| "America/New_York".into()),
 
         cpu_architecture: "x86".into(),
         cpu_bitness: "64".into(),
@@ -155,7 +179,10 @@ pub fn chrome_148_macos() -> StealthProfile {
 
         language: "en-US".into(),
         languages: vec!["en-US".into(), "en".into()],
-        timezone: "America/Los_Angeles".into(),
+        // Real Chrome reports the host timezone; a hardcoded one mismatches
+        // the IP's geography (a Turkish IP quoting America/Los_Angeles is a
+        // scorer tell). Falls back to the captured value off macOS/Linux.
+        timezone: system_timezone().unwrap_or_else(|| "America/Los_Angeles".into()),
 
         cpu_architecture: "arm".into(),
         cpu_bitness: "64".into(),
