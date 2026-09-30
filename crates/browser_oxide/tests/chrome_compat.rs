@@ -1036,6 +1036,22 @@ async fn computed_display_follows_the_ua_stylesheet() {
     );
 }
 
+// A node in a shadow tree whose host is in the document is connected,
+// though the shadow root has no parent node. Measured in Chrome 146.
+#[tokio::test]
+async fn shadow_tree_nodes_are_connected() {
+    let js = r#"(() => {
+        const h = document.createElement('div');
+        const r = h.attachShadow({ mode: 'closed' });
+        const f = document.createElement('iframe');
+        r.appendChild(f);
+        const detached = [f.isConnected, r.isConnected];
+        document.body.appendChild(h);
+        return JSON.stringify([detached, f.isConnected, r.isConnected, r.parentNode]);
+    })()"#;
+    assert_eq!(check(js).await, "[[false,false],true,true,null]");
+}
+
 // The declaration getComputedStyle returns is live: it reports the
 // element's style after a later change, and every call returns a new
 // declaration. Measured in Chrome 146.

@@ -564,11 +564,13 @@
             const root = _rootOf(this);
             return root !== this && _parsedDocTypes.has(root) ? root : _document;
         }
+        // Connected means the shadow-including root is a document: a shadow
+        // root continues at its host.
         get isConnected() {
             let n = this;
             while (n) {
                 if (n.nodeType === 9) return true;
-                n = n.parentNode;
+                n = n.parentNode || (n instanceof ShadowRoot ? n.host : null);
             }
             return false;
         }
