@@ -525,6 +525,19 @@ fn trusted_script_check_cb<'s>(
     }
 }
 
+/// Whether this realm enforces Trusted Types for scripts, which
+/// `enforce_trusted_types_for_script` records by refusing code generation.
+fn trusted_types_enforced_cb<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    _args: v8::FunctionCallbackArguments<'s>,
+    mut rv: v8::ReturnValue,
+) {
+    let enforced = !scope
+        .get_current_context()
+        .is_code_generation_from_strings_allowed();
+    rv.set_bool(enforced);
+}
+
 fn default_policy_accepts<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     context: v8::Local<'s, v8::Context>,
@@ -603,7 +616,7 @@ pub fn enforce_trusted_types_for_script(scope: &mut v8::PinScope) {
 }
 
 /// Install the native half of `TrustedScript` as the one-shot global
-/// `__ox_trusted_script = { ctor, make, check }`, which
+/// `__ox_trusted_script = { ctor, make, check, enforced }`, which
 /// trusted_types_bootstrap.js reads and deletes.
 ///
 /// Chrome marks a TrustedScript's instance template code-like, so V8's
@@ -644,13 +657,21 @@ pub fn install_trusted_script_native(scope: &mut v8::PinScope) -> bool {
     let check = v8::FunctionTemplate::builder(trusted_script_check_cb)
         .constructor_behavior(v8::ConstructorBehavior::Throw)
         .build(scope);
-    let (Some(check), Some(k_check)) = (check.get_function(scope), v8::String::new(scope, "check"))
-    else {
+    let enforced = v8::FunctionTemplate::builder(trusted_types_enforced_cb)
+        .constructor_behavior(v8::ConstructorBehavior::Throw)
+        .build(scope);
+    let (Some(check), Some(k_check), Some(enforced), Some(k_enforced)) = (
+        check.get_function(scope),
+        v8::String::new(scope, "check"),
+        enforced.get_function(scope),
+        v8::String::new(scope, "enforced"),
+    ) else {
         return false;
     };
     holder.set(scope, k_ctor.into(), ctor.into());
     holder.set(scope, k_make.into(), make.into());
     holder.set(scope, k_check.into(), check.into());
+    holder.set(scope, k_enforced.into(), enforced.into());
     let global = scope.get_current_context().global(scope);
     global
         .set(scope, k_global.into(), holder.into())

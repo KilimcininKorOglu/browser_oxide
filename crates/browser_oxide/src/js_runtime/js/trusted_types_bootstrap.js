@@ -13,6 +13,7 @@
     // createScript returns it unchanged. Chrome names the sink by the
     // source V8 builds for Function.
     let _defaultCreateScript = null;
+    let _hasDefaultPolicy = false;
     const _String = String;
     const _slice = Function.prototype.call.bind(String.prototype.slice);
     const _call = Function.prototype.call.bind(Function.prototype.call);
@@ -30,6 +31,20 @@
     Object.defineProperty(_TrustedScript.prototype, 'toString', { value: function toString() { return _tsValues.get(this); }, writable: true, enumerable: false, configurable: true });
     Object.defineProperty(_TrustedScript.prototype, 'toJSON', { value: function toJSON() { return _tsValues.get(this); }, writable: true, enumerable: false, configurable: true });
     _maskAsNative(_TrustedScript.prototype, 'toString', 'toJSON');
+    // The script text of a string timer handler, which timer_bootstrap.js
+    // reads from the holder. Under enforcement Chrome runs a TrustedScript
+    // as is and passes a string through the default policy, whose result
+    // then runs; `method` is the Window method that received the handler.
+    _nativeTS.scriptFor = (value, method) => {
+        if (!_nativeTS.enforced()) return _String(value);
+        if (_tsValues.has(value)) return _tsValues.get(value);
+        const refuse = (why) => new TypeError(`Failed to execute '${method}' on 'Window': This document requires 'TrustedScript' assignment${why}.`);
+        if (!_hasDefaultPolicy) throw refuse('');
+        if (typeof _defaultCreateScript !== 'function') throw refuse(" and no 'default' policy for 'TrustedScript' has been defined");
+        const result = _call(_defaultCreateScript, undefined, _String(value), 'TrustedScript', 'Window ' + method);
+        if (result === null || result === undefined) throw refuse(" and the 'default' policy failed to execute");
+        return _String(result);
+    };
     Object.defineProperty(_TrustedScript.prototype, Symbol.toStringTag, { value: 'TrustedScript', configurable: true });
     const _TrustedScriptURL = function TrustedScriptURL(v) { this._v = v; };
     _TrustedScriptURL.prototype.toString = function() { return this._v; };
@@ -46,6 +61,7 @@
                 globalThis.trustedTypes.defaultPolicy = p;
                 // WebIDL converts the options dictionary once, at creation.
                 _defaultCreateScript = rules && rules.createScript;
+                _hasDefaultPolicy = true;
             }
             return p;
         },

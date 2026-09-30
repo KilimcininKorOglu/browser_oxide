@@ -4,8 +4,12 @@
     // in the global scope: `var` declares a global and `return` is a
     // SyntaxError. A later bootstrap deletes the global.
     const _runClassicScript = globalThis.__ox_run_classic_script;
-    const _stringHandler = (code) => {
-        const source = String(code);
+    // trusted_types_bootstrap.js adds `scriptFor` to this holder, which
+    // applies Trusted Types to the handler. A worker installs the holder
+    // after this bootstrap and never enforces Trusted Types.
+    const _trustedScript = globalThis.__ox_trusted_script;
+    const _stringHandler = (code, method) => {
+        const source = _trustedScript ? _trustedScript.scriptFor(code, method) : String(code);
         return () => _runClassicScript(source, '');
     };
     const _cancelledTimers = new Set();
@@ -81,7 +85,7 @@
 
     globalThis.setTimeout = function setTimeout(callback, delay = 0, ...args) {
         if (typeof callback !== "function") {
-            callback = _stringHandler(callback);
+            callback = _stringHandler(callback, 'setTimeout');
         }
         const ms = Math.max(0, delay | 0);
         const id = ops.op_set_timeout(ms);
@@ -110,7 +114,7 @@
     // `setTimeout(...).unref()`.
     globalThis.__bgSetTimeout = function __bgSetTimeout(callback, delay = 0, ...args) {
         if (typeof callback !== "function") {
-            callback = _stringHandler(callback);
+            callback = _stringHandler(callback, 'setTimeout');
         }
         const ms = Math.max(0, delay | 0);
         const id = ops.op_set_timeout(ms);
@@ -128,7 +132,7 @@
 
     globalThis.setInterval = function setInterval(callback, delay = 0, ...args) {
         if (typeof callback !== "function") {
-            callback = _stringHandler(callback);
+            callback = _stringHandler(callback, 'setInterval');
         }
         const ms = Math.max(4, delay | 0);
         const id = ops.op_set_interval(ms);

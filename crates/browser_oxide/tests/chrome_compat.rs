@@ -7117,8 +7117,8 @@ async fn string_timer_runs_as_a_global_classic_script() {
 }
 
 /// Run `js` as a parser-inserted script in a document whose CSP requires
-/// Trusted Types for scripts, and return what it evaluated to.
-async fn check_trusted_types(js: &str) -> String {
+/// Trusted Types for scripts, and let its timers fire.
+async fn trusted_types_page(js: &str) -> Page {
     let doc = format!(
         "<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" \
          content=\"require-trusted-types-for 'script'\"></head><body>\
@@ -7131,8 +7131,64 @@ async fn check_trusted_types(js: &str) -> String {
     )
     .await
     .unwrap();
-    page.evaluate("String(window.__r)")
+    let _ = page
+        .evaluate_async("void 0", std::time::Duration::from_millis(300))
+        .await;
+    page
+}
+
+/// What `js` evaluated to in `trusted_types_page`.
+async fn check_trusted_types(js: &str) -> String {
+    trusted_types_page(js)
+        .await
+        .evaluate("String(window.__r)")
         .unwrap_or_else(|e| format!("ERROR: {e}"))
+}
+
+#[tokio::test]
+async fn trusted_types_gate_string_timer_handlers() {
+    // Measured in Chrome with `require-trusted-types-for 'script'`: a string
+    // handler throws a TypeError naming the method unless the default
+    // policy returns a script, which then runs in place of the string.
+    let js = r#"(() => {
+        const out = [];
+        const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.name + ':' + e.message); } };
+        t('st', () => setTimeout('window.__s = 1', 0));
+        t('si', () => setInterval('window.__s = 1', 1000));
+        const p = trustedTypes.createPolicy('p', { createScript: (s) => s });
+        t('stTS', () => typeof setTimeout(p.createScript('window.__c = 1'), 0));
+        const calls = [];
+        let mode = 'rewrite';
+        trustedTypes.createPolicy('default', { createScript: (s, type, sink) => { calls.push([s, type, sink]); if (mode === 'throw') throw new RangeError('boom'); return mode === 'null' ? null : 'window.__rw = ' + JSON.stringify(s); } });
+        t('rewrite', () => typeof setTimeout('window.__orig = 1', 0));
+        t('siRewrite', () => { const id = setInterval('window.__iv = 1', 1000); clearInterval(id); return typeof id; });
+        mode = 'null';
+        t('null', () => setTimeout('1', 0));
+        mode = 'throw';
+        t('throw', () => setTimeout('1', 0));
+        t('calls', () => calls);
+        setTimeout(() => { window.__later = JSON.stringify([window.__s, window.__c, window.__rw, window.__orig]); }, 50);
+        return out.join(' ;; ');
+    })()"#;
+    let mut page = trusted_types_page(js).await;
+    assert_eq!(
+        page.evaluate("String(window.__r) + ' ;; later=' + window.__later")
+            .unwrap_or_default(),
+        r#"st!TypeError:Failed to execute 'setTimeout' on 'Window': This document requires 'TrustedScript' assignment. ;; si!TypeError:Failed to execute 'setInterval' on 'Window': This document requires 'TrustedScript' assignment. ;; stTS="number" ;; rewrite="number" ;; siRewrite="number" ;; null!TypeError:Failed to execute 'setTimeout' on 'Window': This document requires 'TrustedScript' assignment and the 'default' policy failed to execute. ;; throw!RangeError:boom ;; calls=[["window.__orig = 1","TrustedScript","Window setTimeout"],["window.__iv = 1","TrustedScript","Window setInterval"],["1","TrustedScript","Window setTimeout"],["1","TrustedScript","Window setTimeout"]] ;; later=[null,1,"window.__orig = 1",null]"#
+    );
+    let js = r#"(() => {
+        const out = [];
+        const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.name + ':' + e.message); } };
+        trustedTypes.createPolicy('default', {});
+        t('st', () => setTimeout('1', 0));
+        t('ev', () => eval('1'));
+        t('si', () => setInterval('1', 1000));
+        return out.join(' ;; ');
+    })()"#;
+    assert_eq!(
+        check_trusted_types(js).await,
+        r#"st!TypeError:Failed to execute 'setTimeout' on 'Window': This document requires 'TrustedScript' assignment and no 'default' policy for 'TrustedScript' has been defined. ;; ev!EvalError:Evaluating a string as JavaScript violates this document's Trusted Type assignment requirements. ;; si!TypeError:Failed to execute 'setInterval' on 'Window': This document requires 'TrustedScript' assignment and no 'default' policy for 'TrustedScript' has been defined."#
+    );
 }
 
 #[tokio::test]
