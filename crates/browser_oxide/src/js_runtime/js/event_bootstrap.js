@@ -547,29 +547,18 @@
         }
     }
 
-    globalThis.Event = Event;
-    globalThis.CustomEvent = CustomEvent;
-    globalThis.SecurityPolicyViolationEvent = SecurityPolicyViolationEvent;
-    globalThis.UIEvent = UIEvent;
-    globalThis.MouseEvent = MouseEvent;
-    globalThis.KeyboardEvent = KeyboardEvent;
-    globalThis.InputEvent = InputEvent;
-    globalThis.FocusEvent = FocusEvent;
-    globalThis.PointerEvent = PointerEvent;
-    globalThis.WheelEvent = WheelEvent;
-    globalThis.TouchEvent = TouchEvent;
-    globalThis.MessageEvent = MessageEvent;
-    globalThis.ErrorEvent = ErrorEvent;
-    globalThis.ProgressEvent = ProgressEvent;
-    globalThis.AnimationEvent = AnimationEvent;
-    globalThis.TransitionEvent = TransitionEvent;
-    globalThis.ClipboardEvent = ClipboardEvent;
-    globalThis.PopStateEvent = PopStateEvent;
-    globalThis.HashChangeEvent = HashChangeEvent;
-    globalThis.StorageEvent = StorageEvent;
-    globalThis.PageTransitionEvent = PageTransitionEvent;
-    globalThis.BeforeUnloadEvent = BeforeUnloadEvent;
-    globalThis.DragEvent = DragEvent;
+    // Publish each interface with the toStringTag Chrome gives its
+    // prototype: Object.prototype.toString(ev) reads "[object MessageEvent]".
+    for (const cls of [
+        Event, CustomEvent, SecurityPolicyViolationEvent, UIEvent, MouseEvent,
+        KeyboardEvent, InputEvent, FocusEvent, PointerEvent, WheelEvent,
+        TouchEvent, MessageEvent, ErrorEvent, ProgressEvent, AnimationEvent,
+        TransitionEvent, ClipboardEvent, PopStateEvent, HashChangeEvent,
+        StorageEvent, PageTransitionEvent, BeforeUnloadEvent, DragEvent,
+    ]) {
+        Object.defineProperty(cls.prototype, Symbol.toStringTag, { value: cls.name, configurable: true });
+        globalThis[cls.name] = cls;
+    }
     // EventTarget is already defined in dom_bootstrap.js as the base of
     // the Node prototype chain — do not reassign it here or the
     // `document instanceof EventTarget` check will break.

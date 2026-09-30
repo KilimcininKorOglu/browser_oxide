@@ -4126,6 +4126,7 @@
                 this.wasClean = options.wasClean !== undefined ? options.wasClean : true;
             }
         };
+        Object.defineProperty(globalThis.CloseEvent.prototype, Symbol.toStringTag, { value: "CloseEvent", configurable: true });
     }
 
     // --- history — prototype-backed ---

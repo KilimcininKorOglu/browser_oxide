@@ -3454,6 +3454,23 @@ async fn perf_now_is_strictly_monotonic() {
 }
 
 #[tokio::test]
+async fn event_interfaces_carry_their_to_string_tag() {
+    // Chrome: Object.prototype.toString(new MessageEvent('x')) is
+    // "[object MessageEvent]", and so on for every event interface.
+    assert_eq!(
+        check(
+            "(() => ['Event', 'CustomEvent', 'UIEvent', 'MouseEvent', 'KeyboardEvent', \
+               'FocusEvent', 'PointerEvent', 'MessageEvent', 'ErrorEvent', 'ProgressEvent', \
+               'PopStateEvent', 'StorageEvent', 'CloseEvent'] \
+               .filter(n => Object.prototype.toString.call(new globalThis[n]('x')) !== '[object ' + n + ']') \
+               .join(','))()"
+        )
+        .await,
+        ""
+    );
+}
+
+#[tokio::test]
 async fn fetch_network_errors_read_failed_to_fetch() {
     // Chrome 148 rejects an unsupported scheme, an unknown blob URL and a
     // DNS failure alike with `TypeError: Failed to fetch`, no cause attached.
