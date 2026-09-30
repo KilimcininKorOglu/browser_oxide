@@ -8,6 +8,7 @@ pub mod inheritance;
 pub mod initial;
 pub mod layers;
 pub mod media;
+pub mod ua;
 
 pub use cascade::{cascade_sort, CascadeEntry, Origin};
 pub use computed::ComputedStyle;

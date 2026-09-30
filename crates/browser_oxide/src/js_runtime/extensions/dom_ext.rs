@@ -943,7 +943,12 @@ pub fn op_dom_get_computed_style(
         }
     }
 
-    // 4. CSS default
+    // 4. The UA stylesheet's display, else the CSS default
+    if property == "display" {
+        if let Some(elem) = state.dom.get(id).and_then(|n| n.as_element()) {
+            return crate::css_cascade::ua::element_ua_display(elem).to_string();
+        }
+    }
     crate::js_runtime::extensions::layout_ext::css_default(property)
 }
 

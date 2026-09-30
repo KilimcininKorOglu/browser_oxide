@@ -1018,6 +1018,24 @@ async fn document_fonts_is_a_chrome_font_face_set() {
     );
 }
 
+// getComputedStyle reports the display Chrome's UA stylesheet gives each
+// element. Every expected value was measured in Chrome 146.
+#[tokio::test]
+async fn computed_display_follows_the_ua_stylesheet() {
+    let js = r#"(() => {
+        const tags = ['span', 'a', 'div', 'p', 'li', 'button', 'input', 'table', 'tr', 'td', 'thead', 'caption', 'script', 'style', 'template', 'dialog', 'audio', 'noscript', 'slot', 'ruby', 'custom-el'];
+        const out = tags.map((t) => { const el = document.createElement(t); document.body.appendChild(el); return getComputedStyle(el).display; });
+        const h = document.createElement('div'); h.setAttribute('hidden', ''); document.body.appendChild(h);
+        out.push(getComputedStyle(h).display, getComputedStyle(document.head).display);
+        return out.join(',');
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        "inline,inline,block,block,list-item,inline-block,inline-block,table,table-row,table-cell,\
+         table-header-group,table-caption,none,none,none,none,none,inline,contents,ruby,inline,none,none"
+    );
+}
+
 // A <style> element in the document owns a CSSStyleSheet whose rules
 // script can edit, and the rules it adds reach getComputedStyle and the
 // layout. Every expected value was measured in Chrome 146.

@@ -402,21 +402,11 @@ fn parse_style_rules(css: &str) -> Vec<StyleRule> {
         .collect()
 }
 
-/// Elements Chrome's UA stylesheet hides (scripting is on, so
-/// `noscript` too).
-const UA_HIDDEN: [&str; 9] = [
-    "base", "head", "link", "meta", "noscript", "script", "style", "template", "title",
-];
-
 /// The UA stylesheet's `display: none`, which author rules override.
+/// With scripting on, Chrome creates no box for `noscript` either.
 fn ua_declarations(elem: &crate::dom::node::ElementData) -> HashMap<PropertyId, CssValue> {
-    let hidden = UA_HIDDEN
-        .iter()
-        .any(|tag| elem.name.local.eq_ignore_ascii_case(tag))
-        || elem
-            .attrs
-            .iter()
-            .any(|a| a.name.local.eq_ignore_ascii_case("hidden"));
+    let hidden = crate::css_cascade::ua::element_ua_display(elem) == "none"
+        || elem.name.local.eq_ignore_ascii_case("noscript");
     let mut map = HashMap::new();
     if hidden {
         map.insert(PropertyId::Display, CssValue::Display(Display::None));
