@@ -3787,7 +3787,7 @@ impl Page {
                     if (m) {
                         const sch = m[1].toLowerCase();
                         if (!['http','https','data','blob','file','about'].includes(sch)) {
-                            throw new TypeError("Failed to fetch: URL scheme \"" + sch + "\" is not supported.");
+                            throw new TypeError("Failed to fetch");
                         }
                     }
                 })();

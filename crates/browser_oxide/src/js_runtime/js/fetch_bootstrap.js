@@ -221,14 +221,16 @@
         // 200 with the blob's bytes and content-type.
         if (url && url.startsWith("blob:")) {
             let resp;
+            // A network error reads "Failed to fetch" in Chrome, with no
+            // detail of the cause.
             try {
                 resp = ops.op_blob_fetch_bytes(url);
             } catch (e) {
-                throw new TypeError("Failed to fetch: " + e.message);
+                throw new TypeError("Failed to fetch");
             }
             if (!resp || !resp.found) {
                 // Unknown blob URL — the spec says a network error.
-                throw new TypeError("Failed to fetch: unknown blob URL");
+                throw new TypeError("Failed to fetch");
             }
             // `resp.bytes` comes back from serde as an array of numbers;
             // coerce to Uint8Array so Response.arrayBuffer/blob hand
@@ -384,7 +386,9 @@
             if (fetchLog) {
                 fetchLog.push({ method, url, status: 0, error: e.message });
             }
-            throw new TypeError("Failed to fetch: " + e.message);
+            // The cause stays in the audit log above; the page sees Chrome's
+            // fixed message.
+            throw new TypeError("Failed to fetch");
         }
     };
 

@@ -3453,6 +3453,35 @@ async fn perf_now_is_strictly_monotonic() {
     );
 }
 
+#[tokio::test]
+async fn fetch_network_errors_read_failed_to_fetch() {
+    // Chrome 148 rejects an unsupported scheme, an unknown blob URL and a
+    // DNS failure alike with `TypeError: Failed to fetch`, no cause attached.
+    let mut page = Page::from_html_with_url(
+        &html(""),
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    page.evaluate(
+        r#"window.__r = null;
+        const msg = (p) => p.then(() => 'resolved', (e) => e.name + ': ' + e.message);
+        Promise.all([
+            msg(fetch('ftp://example.com/x')),
+            msg(fetch('blob:https://example.com/00000000-0000-0000-0000-000000000000')),
+        ]).then((r) => { window.__r = JSON.stringify(r); });"#,
+    )
+    .unwrap();
+    page.evaluate_async("void 0", std::time::Duration::from_millis(200))
+        .await
+        .ok();
+    assert_eq!(
+        page.evaluate("window.__r").unwrap(),
+        r#"["TypeError: Failed to fetch","TypeError: Failed to fetch"]"#
+    );
+}
+
 // ================================================================
 // Cross-origin isolation + SharedArrayBuffer
 // ----------------------------------------------------------------
