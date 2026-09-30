@@ -100,6 +100,7 @@ pub fn get_snapshot() -> &'static [u8] {
                 // restore with extra/missing ops segfaults on deno_core 0.403.
                 crate::js_runtime::extensions::perf_ext::perf_extension::init(),
                 crate::js_runtime::extensions::nav_ext::nav_extension::init(),
+                crate::js_runtime::extensions::url_ext::url_extension::init(),
             ],
             // Match runtime.rs's heap config so the snapshot deserializes into an
             // identically-configured V8 heap (candidate fix for the V8-149

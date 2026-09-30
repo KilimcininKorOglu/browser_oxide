@@ -236,82 +236,218 @@
     // URLSearchParams/URL bindings that throw "Illegal constructor" —
     // forcing our pure-JS implementations guarantees constructability.
     {
-        const _uspMap = new WeakMap();
-        function URLSearchParams(init) {
-            const p = [];
-            if (typeof init === "string") {
-                const s = init.startsWith("?") ? init.slice(1) : init;
-                for (const pair of s.split("&")) { const eq = pair.indexOf("="); if (eq < 0) { if (pair) p.push([decodeURIComponent(pair), ""]); } else { p.push([decodeURIComponent(pair.slice(0, eq)), decodeURIComponent(pair.slice(eq + 1))]); } }
-            } else if (init && typeof init === "object") { for (const [k, v] of Object.entries(init)) p.push([String(k), String(v)]); }
-            _uspMap.set(this, p);
-        }
-        URLSearchParams.prototype.get = function(name) { const p = _uspMap.get(this); const e = p.find(([k]) => k === name); return e ? e[1] : null; };
-        URLSearchParams.prototype.getAll = function(name) { return _uspMap.get(this).filter(([k]) => k === name).map(([, v]) => v); };
-        URLSearchParams.prototype.has = function(name) { return _uspMap.get(this).some(([k]) => k === name); };
-        URLSearchParams.prototype.set = function(name, value) { const p = _uspMap.get(this); let f = false; const np = p.filter(([k]) => { if (k === name && !f) { f = true; return true; } return k !== name; }); if (f) np.find(([k]) => k === name)[1] = String(value); else np.push([name, String(value)]); _uspMap.set(this, np); };
-        URLSearchParams.prototype.append = function(name, value) { _uspMap.get(this).push([String(name), String(value)]); };
-        URLSearchParams.prototype.delete = function(name) { _uspMap.set(this, _uspMap.get(this).filter(([k]) => k !== name)); };
-        URLSearchParams.prototype.toString = function() { return _uspMap.get(this).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&"); };
-        URLSearchParams.prototype.forEach = function(cb, t) { for (const [k, v] of _uspMap.get(this)) cb.call(t, v, k, this); };
-        URLSearchParams.prototype.keys = function() { return _uspMap.get(this).map(([k]) => k)[Symbol.iterator](); };
-        URLSearchParams.prototype.values = function() { return _uspMap.get(this).map(([, v]) => v)[Symbol.iterator](); };
-        URLSearchParams.prototype.entries = function() { return _uspMap.get(this)[Symbol.iterator](); };
-        URLSearchParams.prototype[Symbol.iterator] = function() { return this.entries(); };
-        Object.defineProperty(URLSearchParams.prototype, 'size', {
-            get: Object.getOwnPropertyDescriptor({ get size() { return _uspMap.get(this).length; } }, 'size').get,
-            enumerable: true, configurable: true,
+        // application/x-www-form-urlencoded (URL Standard §5.1): a space is "+",
+        // and only ASCII alphanumerics and *-._ stay unescaped.
+        const _formEncode = (s) => encodeURIComponent(String(s).toWellFormed())
+            .replace(/[!'()~]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+            .replace(/%20/g, '+');
+        const _formDecode = (s) => s.replace(/\+/g, ' ').replace(/(?:%[0-9a-fA-F]{2})+/g, (run) => {
+            const bytes = new Uint8Array(run.length / 3);
+            for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(run.substr(i * 3 + 1, 2), 16);
+            return new TextDecoder().decode(bytes);
         });
-        Object.defineProperty(URLSearchParams, 'name', { value: 'URLSearchParams', configurable: true });
+        const _parseQuery = (input) => {
+            const list = [];
+            for (const seq of input.split('&')) {
+                if (seq === '') continue;
+                const eq = seq.indexOf('=');
+                list.push([_formDecode(eq < 0 ? seq : seq.slice(0, eq)), _formDecode(eq < 0 ? '' : seq.slice(eq + 1))]);
+            }
+            return list;
+        };
+        const _need = (args, count, cls, method) => {
+            if (args.length < count) {
+                throw new TypeError(`Failed to execute '${method}' on '${cls}': ${count} argument${count > 1 ? 's' : ''} required, but only ${args.length} present.`);
+            }
+        };
+        const _pairFrom = (item) => {
+            const pair = [...item];
+            if (pair.length !== 2) {
+                throw new TypeError("Failed to construct 'URLSearchParams': Each query pair must be an iterable [name, value] tuple");
+            }
+            return [String(pair[0]), String(pair[1])];
+        };
+        const _listFrom = (init) => {
+            if (init === null || init === undefined) return [];
+            if (typeof init !== 'object' && typeof init !== 'function') {
+                return _parseQuery(String(init).replace(/^\?/, ''));
+            }
+            if (typeof init[Symbol.iterator] === 'function') return [...init].map(_pairFrom);
+            return Object.keys(init).map((k) => [String(k), String(init[k])]);
+        };
+        // list and, once URL.searchParams links it, the owner's update callback.
+        const _uspState = new WeakMap();
+        const _uspOf = (self) => {
+            const st = _uspState.get(self);
+            if (!st) throw new TypeError('Illegal invocation');
+            return st;
+        };
+        const _uspSerialize = (list) => list.map(([k, v]) => _formEncode(k) + '=' + _formEncode(v)).join('&');
+        const _uspUpdate = (st) => { if (st.onChange) st.onChange(_uspSerialize(st.list)); };
+        const _uspIterator = (self, pick) => {
+            const st = _uspOf(self);
+            let i = 0;
+            return {
+                next() { return i < st.list.length ? { value: pick(st.list[i++]), done: false } : { value: undefined, done: true }; },
+                [Symbol.iterator]() { return this; },
+            };
+        };
+        class URLSearchParams {
+            constructor(init = undefined) {
+                _uspState.set(this, { list: _listFrom(init), onChange: null });
+            }
+            get size() { return _uspOf(this).list.length; }
+            append(name, value) {
+                _need(arguments, 2, 'URLSearchParams', 'append');
+                const st = _uspOf(this);
+                st.list.push([String(name), String(value)]);
+                _uspUpdate(st);
+            }
+            delete(name, value = undefined) {
+                _need(arguments, 1, 'URLSearchParams', 'delete');
+                const st = _uspOf(this);
+                const key = String(name);
+                const val = value === undefined ? undefined : String(value);
+                st.list = st.list.filter(([k, v]) => k !== key || (val !== undefined && v !== val));
+                _uspUpdate(st);
+            }
+            get(name) {
+                _need(arguments, 1, 'URLSearchParams', 'get');
+                const hit = _uspOf(this).list.find(([k]) => k === String(name));
+                return hit ? hit[1] : null;
+            }
+            getAll(name) {
+                _need(arguments, 1, 'URLSearchParams', 'getAll');
+                return _uspOf(this).list.filter(([k]) => k === String(name)).map(([, v]) => v);
+            }
+            has(name, value = undefined) {
+                _need(arguments, 1, 'URLSearchParams', 'has');
+                const val = value === undefined ? undefined : String(value);
+                return _uspOf(this).list.some(([k, v]) => k === String(name) && (val === undefined || v === val));
+            }
+            set(name, value) {
+                _need(arguments, 2, 'URLSearchParams', 'set');
+                const st = _uspOf(this);
+                const key = String(name);
+                const val = String(value);
+                const first = st.list.findIndex(([k]) => k === key);
+                if (first < 0) st.list.push([key, val]);
+                else {
+                    st.list[first][1] = val;
+                    st.list = st.list.filter(([k], i) => k !== key || i === first);
+                }
+                _uspUpdate(st);
+            }
+            sort() {
+                const st = _uspOf(this);
+                const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+                st.list = st.list.map((p, i) => [p, i]).sort((a, b) => cmp(a[0][0], b[0][0]) || a[1] - b[1]).map(([p]) => p);
+                _uspUpdate(st);
+            }
+            toString() { return _uspSerialize(_uspOf(this).list); }
+            forEach(callback, thisArg = undefined) {
+                _need(arguments, 1, 'URLSearchParams', 'forEach');
+                if (typeof callback !== 'function') {
+                    throw new TypeError("Failed to execute 'forEach' on 'URLSearchParams': parameter 1 is not of type 'Function'.");
+                }
+                const st = _uspOf(this);
+                for (let i = 0; i < st.list.length; i++) callback.call(thisArg, st.list[i][1], st.list[i][0], this);
+            }
+            keys() { return _uspIterator(this, ([k]) => k); }
+            values() { return _uspIterator(this, ([, v]) => v); }
+            entries() { return _uspIterator(this, ([k, v]) => [k, v]); }
+            [Symbol.iterator]() { return this.entries(); }
+        }
+        // Chrome lists these on the prototype as enumerable, and never marks them as script.
+        const _exposeProto = (cls, tag) => {
+            const proto = cls.prototype;
+            for (const name of Object.getOwnPropertyNames(proto)) {
+                if (name === 'constructor') continue;
+                const d = Object.getOwnPropertyDescriptor(proto, name);
+                d.enumerable = true;
+                Object.defineProperty(proto, name, d);
+                _maskAsNative(proto, name);
+            }
+            Object.defineProperty(proto, Symbol.toStringTag, { value: tag, configurable: true });
+            _maskAsNative(proto, Symbol.iterator);
+            _maskAsNative(cls);
+        };
+        _exposeProto(URLSearchParams, 'URLSearchParams');
         try {
             Object.defineProperty(globalThis, 'URLSearchParams', { value: URLSearchParams, writable: true, configurable: true, enumerable: false });
         } catch (_) { globalThis.URLSearchParams = URLSearchParams; }
-        _maskAsNative(globalThis.URLSearchParams);
-    }
-    {
+
+        // The URL class holds no parsing logic: op_url_parse and op_url_set run the
+        // URL Standard's parser and setters, and answer the eleven components in
+        // this order.
+        const [HREF, ORIGIN, PROTOCOL, USERNAME, PASSWORD, HOST, HOSTNAME, PORT, PATHNAME, SEARCH, HASH] =
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        const _urlState = new WeakMap();
+        const _urlOf = (self) => {
+            const st = _urlState.get(self);
+            if (!st) throw new TypeError('Illegal invocation');
+            return st;
+        };
+        const _parseUrl = (input, base) => (base === undefined
+            ? ops.op_url_parse(input, '', false)
+            : ops.op_url_parse(input, base, true));
+        const _resetParams = (st) => {
+            if (st.params) _uspState.get(st.params).list = _parseQuery(st.parts[SEARCH].replace(/^\?/, ''));
+        };
+        const _setUrlPart = (self, name, value) => {
+            const st = _urlOf(self);
+            st.parts = ops.op_url_set(st.parts[HREF], name, String(value));
+            if (name === 'search') _resetParams(st);
+        };
+        const _urlAccessors = {
+            origin: ORIGIN, protocol: PROTOCOL, username: USERNAME, password: PASSWORD, host: HOST,
+            hostname: HOSTNAME, port: PORT, pathname: PATHNAME, search: SEARCH, hash: HASH,
+        };
         globalThis.URL = class URL {
-            constructor(url, base) {
-                let full = String(url);
-                if (base && !full.match(/^[a-z]+:\/\//i)) {
-                    const b = String(base);
-                    if (full.startsWith('//')) { const proto = b.match(/^([a-z]+:)/i); full = (proto ? proto[1] : 'https:') + full; }
-                    else if (full.startsWith('/')) { const m = b.match(/^([a-z]+:\/\/[^/]+)/i); full = m ? m[1] + full : full; }
-                    else { full = b.replace(/[^/]*$/, '') + full; }
+            constructor(url, base = undefined) {
+                if (arguments.length === 0) {
+                    throw new TypeError("Failed to construct 'URL': 1 argument required, but only 0 present.");
                 }
-                // Opaque-scheme handling (WHATWG URL spec: blob, data,
-                // javascript, about). Real Chrome returns the scheme + ":"
-                // as `.protocol` and "null" for `.origin`; our http-style
-                // regex below would emit "" for both. vNext/10.
-                const _opaqueMatch = full.match(/^(blob|data|javascript|about):/i);
-                if (_opaqueMatch) {
-                    const scheme = _opaqueMatch[1].toLowerCase();
-                    this.protocol = scheme + ':';
-                    this.href = full;
-                    this.pathname = full.slice(scheme.length + 1);
-                    this.search = '';
-                    this.hash = '';
-                    this.host = '';
-                    this.hostname = '';
-                    this.port = '';
-                    this.origin = 'null';
-                    this.username = '';
-                    this.password = '';
-                    this.searchParams = new URLSearchParams('');
-                    return;
-                }
-                const m = full.match(/^([a-z]+):\/\/([^/:]+)(?::(\d+))?(\/[^?#]*)?(\?[^#]*)?(#.*)?$/i);
-                if (m) {
-                    this.protocol = m[1].toLowerCase() + ':'; this.hostname = m[2]; this.port = m[3] || '';
-                    this.pathname = m[4] || '/'; this.search = m[5] || ''; this.hash = m[6] || '';
-                    this.host = this.port ? this.hostname + ':' + this.port : this.hostname;
-                    this.origin = this.protocol + '//' + this.host; this.href = this.origin + this.pathname + this.search + this.hash;
-                } else {
-                    this.href = full; this.protocol = ''; this.hostname = ''; this.port = '';
-                    this.pathname = full; this.search = ''; this.hash = ''; this.host = ''; this.origin = 'null';
-                }
-                this.username = ''; this.password = ''; this.searchParams = new URLSearchParams(this.search);
+                const parts = _parseUrl(String(url), base === undefined ? undefined : String(base));
+                if (!parts) throw new TypeError("Failed to construct 'URL': Invalid URL");
+                _urlState.set(this, { parts, params: null });
             }
-            toString() { return this.href; }
-            toJSON() { return this.href; }
+            static canParse(url, base = undefined) {
+                if (arguments.length === 0) {
+                    throw new TypeError("Failed to execute 'canParse' on 'URL': 1 argument required, but only 0 present.");
+                }
+                return _parseUrl(String(url), base === undefined ? undefined : String(base)) !== null;
+            }
+            static parse(url, base = undefined) {
+                if (arguments.length === 0) {
+                    throw new TypeError("Failed to execute 'parse' on 'URL': 1 argument required, but only 0 present.");
+                }
+                const parts = _parseUrl(String(url), base === undefined ? undefined : String(base));
+                if (!parts) return null;
+                const u = Object.create(globalThis.URL.prototype);
+                _urlState.set(u, { parts, params: null });
+                return u;
+            }
+            get href() { return _urlOf(this).parts[HREF]; }
+            set href(value) {
+                const st = _urlOf(this);
+                const parts = _parseUrl(String(value), undefined);
+                if (!parts) throw new TypeError("Failed to set the 'href' property on 'URL': Invalid URL");
+                st.parts = parts;
+                _resetParams(st);
+            }
+            get searchParams() {
+                const st = _urlOf(this);
+                if (!st.params) {
+                    st.params = new URLSearchParams(st.parts[SEARCH]);
+                    _uspState.get(st.params).onChange = (serialized) => {
+                        st.parts = ops.op_url_set(st.parts[HREF], 'search', serialized);
+                    };
+                }
+                return st.params;
+            }
+            toString() { return _urlOf(this).parts[HREF]; }
+            toJSON() { return _urlOf(this).parts[HREF]; }
             static createObjectURL(obj) {
                 const u = 'blob:' + (globalThis.location && globalThis.location.origin || 'null') + '/' + _randomUUID();
                 let data, contentType = '';
@@ -324,7 +460,14 @@
             }
             static revokeObjectURL(url) { try { ops.op_blob_revoke(url); } catch (e) {} }
         };
-        _maskAsNative(globalThis.URL);
+        for (const [name, index] of Object.entries(_urlAccessors)) {
+            const setter = name === 'origin' ? undefined : function (value) { _setUrlPart(this, name, value); };
+            Object.defineProperty(globalThis.URL.prototype, name, {
+                get() { return _urlOf(this).parts[index]; }, set: setter, enumerable: true, configurable: true,
+            });
+        }
+        _exposeProto(globalThis.URL, 'URL');
+        _maskAsNative(globalThis.URL, 'canParse', 'parse', 'createObjectURL', 'revokeObjectURL');
     }
     function _randomUUID() {
         if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') { try { return globalThis.crypto.randomUUID(); } catch (e) {} }

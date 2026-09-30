@@ -11,6 +11,7 @@ pub mod perf_ext;
 pub mod sse_ext;
 pub mod stealth_ext;
 pub mod timer_ext;
+pub mod url_ext;
 pub mod webgl_ext;
 pub mod websocket_ext;
 pub mod worker_ext;

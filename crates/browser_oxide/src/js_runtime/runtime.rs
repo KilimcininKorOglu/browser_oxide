@@ -12,6 +12,7 @@ use crate::js_runtime::extensions::perf_ext::{perf_extension, PerfState};
 use crate::js_runtime::extensions::sse_ext::{sse_extension, SseState};
 use crate::js_runtime::extensions::stealth_ext::{stealth_extension, StealthState};
 use crate::js_runtime::extensions::timer_ext::{timer_extension, TimerState};
+use crate::js_runtime::extensions::url_ext::url_extension;
 use crate::js_runtime::extensions::webgl_ext::{webgl_extension, WebGLState};
 use crate::js_runtime::extensions::websocket_ext::{websocket_extension, WebSocketState};
 use crate::js_runtime::extensions::worker_ext::worker_extension;
@@ -254,6 +255,7 @@ pub fn create_runtime_with_signals(
             audio_extension::init(),
             perf_extension::init(),
             nav_extension::init(),
+            url_extension::init(),
         ],
         startup_snapshot: options.startup_snapshot,
         create_params: Some(create_params),
@@ -501,6 +503,7 @@ pub fn create_worker_runtime(
             canvas_extension::init(),
             stealth_extension::init(),
             perf_extension::init(),
+            url_extension::init(),
         ],
         ..Default::default()
     });

@@ -7759,3 +7759,58 @@ async fn html_element_global_attributes_reflect() {
         r#"[0,true,false,"t","tr","k","","rtl","","bogus",false,"","until-found",false,"numeric","",-1,0,-1,0,3,"3"]"#
     );
 }
+
+// URL follows the URL Standard: resolution against a base, normalisation,
+// credentials, live searchParams, and TypeError on an invalid URL.
+// Expected values follow the Standard.
+#[tokio::test]
+async fn url_follows_the_url_standard() {
+    let js = r#"(() => {
+        const out = [];
+        const u = new URL('HTTPS://u:p@Ex.com:443/a/./b/../c d?q=1 2#h#i');
+        out.push(u.href, u.origin, u.host, u.port, u.pathname, u.search, u.hash);
+        out.push(new URL('../x?y#z', 'http://h.com/a/b/c').href, new URL('', 'http://h.com/p?q#r').href,
+            new URL('//other.org/p', 'https://h.com/').href, new URL('?k', 'http://h.com/p').href);
+        out.push(new URL('data:text/plain,hi').origin, new URL('file:///a/b').host);
+        out.push(URL.canParse('nope'), URL.canParse('/rel', 'http://h.com'), URL.parse('nope'));
+        try { new URL('nope'); } catch (e) { out.push(e instanceof TypeError, e.message); }
+        const v = new URL('http://h.com/p?a=1&b=2');
+        v.searchParams.append('c', 'x y'); out.push(v.search);
+        v.search = '?z=9'; out.push(v.searchParams.get('z'), v.searchParams.has('a'));
+        v.searchParams.delete('z'); out.push(v.href);
+        v.hash = 'top'; v.port = '8080'; v.pathname = '/n m'; v.protocol = 'https';
+        out.push(v.href, String(v), JSON.stringify(v), Object.prototype.toString.call(v));
+        out.push(Object.getOwnPropertyNames(v).length, 'href' in URL.prototype);
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r##"["https://u:p@ex.com/a/c%20d?q=1%202#h#i","https://ex.com","ex.com","","/a/c%20d","?q=1%202","#h#i","http://h.com/a/x?y#z","http://h.com/p?q","https://other.org/p","http://h.com/p?k","null","",false,true,null,true,"Failed to construct 'URL': Invalid URL","?a=1&b=2&c=x+y","9",false,"http://h.com/p","https://h.com:8080/n%20m#top","https://h.com:8080/n%20m#top","\"https://h.com:8080/n%20m#top\"","[object URL]",0,true]"##
+    );
+}
+
+// URLSearchParams follows the URL Standard: form encoding, sequence and record
+// initialisers, sort, size, and the value argument of has and delete.
+#[tokio::test]
+async fn url_search_params_follow_the_url_standard() {
+    let js = r#"(() => {
+        const out = [];
+        const p = new URLSearchParams('?a=1&b=%zz&c=x+y&a=%E2%82%AC&&d');
+        out.push(p.toString(), p.getAll('a').join('|'), p.get('b'), p.get('c'), p.get('d'), p.size);
+        out.push(new URLSearchParams({ k: 'v w', 'é': '!' }).toString(),
+            new URLSearchParams([['x', '1'], ['y', '2']]).toString(),
+            new URLSearchParams(p).toString());
+        const q = new URLSearchParams('b=2&a=1&b=1&a=0');
+        q.sort(); out.push(q.toString());
+        q.delete('a', '0'); out.push(q.toString(), q.has('b', '1'), q.has('b', '9'));
+        q.set('b', "it's (~)"); out.push(q.toString(), [...q.keys()].join(), [...q.values()].join());
+        const seen = []; q.forEach((v, k) => seen.push(k + v)); out.push(seen.join());
+        try { new URLSearchParams([['only']]); } catch (e) { out.push(e instanceof TypeError); }
+        try { q.get(); } catch (e) { out.push(e.message); }
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r##"["a=1&b=%25zz&c=x+y&a=%E2%82%AC&d=","1|€","%zz","x y","",5,"k=v+w&%C3%A9=%21","x=1&y=2","a=1&b=%25zz&c=x+y&a=%E2%82%AC&d=","a=1&a=0&b=2&b=1","a=1&b=2&b=1",true,false,"a=1&b=it%27s+%28%7E%29","a,b","1,it's (~)","a1,bit's (~)",true,"Failed to execute 'get' on 'URLSearchParams': 1 argument required, but only 0 present."]"##
+    );
+}
