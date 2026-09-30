@@ -156,16 +156,17 @@ impl LayoutEngine {
         )
     }
 
-    /// Get offsetWidth (width including padding + border).
+    /// Get offsetWidth (width including padding + border). Chrome's
+    /// offsetWidth is always an integer — the used value rounds.
     pub fn get_offset_width(&mut self, dom: &Dom, node_id: NodeId) -> f64 {
         self.ensure_computed(dom);
-        self.taffy_size(node_id).0
+        (self.taffy_size(node_id).0 + 0.5).floor()
     }
 
     /// Get offsetHeight.
     pub fn get_offset_height(&mut self, dom: &Dom, node_id: NodeId) -> f64 {
         self.ensure_computed(dom);
-        self.taffy_size(node_id).1
+        (self.taffy_size(node_id).1 + 0.5).floor()
     }
 
     /// Get offsetTop (position relative to offsetParent).
@@ -322,7 +323,12 @@ impl LayoutEngine {
                         .filter_map(|cid| {
                             dom.get(cid).and_then(|n| match &n.data {
                                 NodeData::Text(t) => {
-                                    Some(t.chars().count() as f32 * ctx.font_size * 0.6)
+                                    let advance = if ctx.font_size == 0.0 {
+                                        0.1
+                                    } else {
+                                        ctx.font_size * 0.6
+                                    };
+                                    Some(t.chars().count() as f32 * advance)
                                 }
                                 _ => None,
                             })
@@ -337,7 +343,14 @@ impl LayoutEngine {
             }
             NodeData::Text(text) => {
                 let char_count = text.chars().count() as f32;
-                let width = char_count * ctx.font_size * 0.6;
+                // Blink gives a zero-size font a 0.1px advance per glyph
+                // (10 chars at font-size:0 measure 1.0px wide), not zero.
+                let advance = if ctx.font_size == 0.0 {
+                    0.1
+                } else {
+                    ctx.font_size * 0.6
+                };
+                let width = char_count * advance;
                 let height = ctx.font_size * 1.2;
                 let style = taffy::Style {
                     size: taffy::Size {

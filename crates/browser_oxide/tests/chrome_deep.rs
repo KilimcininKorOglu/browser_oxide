@@ -507,10 +507,11 @@ async fn computed_style_from_style_block() {
     )
     .await
     .unwrap();
+    // Chrome serializes computed colors as rgb() — never the keyword.
     assert_eq!(
         page.evaluate("getComputedStyle(document.getElementById('el')).color")
             .unwrap(),
-        "green"
+        "rgb(0, 128, 0)"
     );
 }
 

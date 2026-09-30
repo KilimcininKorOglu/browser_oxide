@@ -20,7 +20,7 @@ async fn inline_style_color() {
     let val = page
         .evaluate("getComputedStyle(document.getElementById('el')).color")
         .unwrap();
-    assert_eq!(val, "red", "should return inline style color");
+    assert_eq!(val, "rgb(255, 0, 0)", "should return inline style color");
 }
 
 #[tokio::test]
@@ -48,7 +48,7 @@ async fn inline_style_multiple_properties() {
     assert_eq!(
         page.evaluate("getComputedStyle(document.getElementById('el')).color")
             .unwrap(),
-        "blue"
+        "rgb(0, 0, 255)"
     );
     assert_eq!(
         page.evaluate("getComputedStyle(document.getElementById('el')).opacity")
@@ -108,7 +108,7 @@ async fn js_style_mutation_reflected() {
     let val = page
         .evaluate("getComputedStyle(document.getElementById('el')).backgroundColor")
         .unwrap();
-    assert_eq!(val, "green");
+    assert_eq!(val, "rgb(0, 128, 0)");
 }
 
 // --- Style block tests (these need CSS cascade wiring) ---
@@ -123,7 +123,7 @@ async fn style_block_color() {
     let val = page
         .evaluate("getComputedStyle(document.getElementById('el')).color")
         .unwrap();
-    assert_eq!(val, "red");
+    assert_eq!(val, "rgb(255, 0, 0)");
 }
 
 #[tokio::test]
@@ -139,7 +139,7 @@ async fn style_block_specificity_id_beats_class() {
     assert_eq!(
         page.evaluate("getComputedStyle(document.getElementById('el')).color")
             .unwrap(),
-        "green"
+        "rgb(0, 128, 0)"
     );
 }
 
@@ -153,7 +153,7 @@ async fn inline_style_beats_style_block() {
     assert_eq!(
         page.evaluate("getComputedStyle(document.getElementById('el')).color")
             .unwrap(),
-        "red"
+        "rgb(255, 0, 0)"
     );
 }
 
@@ -186,6 +186,6 @@ async fn multiple_rules_last_wins_same_specificity() {
     assert_eq!(
         page.evaluate("getComputedStyle(document.getElementById('el')).color")
             .unwrap(),
-        "blue"
+        "rgb(0, 0, 255)"
     );
 }

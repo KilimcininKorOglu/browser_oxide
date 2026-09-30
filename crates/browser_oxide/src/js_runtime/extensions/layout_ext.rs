@@ -103,6 +103,13 @@ pub fn css_default(property: &str) -> String {
         "background-color" => "rgba(0, 0, 0, 0)".into(),
         "font-size" => "16px".into(),
         "font-family" => "\"Times New Roman\"".into(),
+        "font-kerning" => "auto".into(),
+        "font-optical-sizing" => "auto".into(),
+        "font-stretch" => "100%".into(),
+        "font-variant-caps" => "normal".into(),
+        "font-variant-ligatures" => "normal".into(),
+        "text-rendering" => "auto".into(),
+        "-webkit-font-smoothing" => "antialiased".into(),
         "line-height" => "normal".into(),
         "margin" | "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => "0px".into(),
         "padding" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => {

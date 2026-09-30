@@ -1086,9 +1086,9 @@ async fn e2e_style_block_to_computed_style() {
     .await
     .unwrap();
 
-    assert_eq!(page.evaluate("color").unwrap(), "red");
+    assert_eq!(page.evaluate("color").unwrap(), "rgb(255, 0, 0)");
     assert_eq!(page.evaluate("fontSize").unwrap(), "24px");
-    assert_eq!(page.evaluate("bg").unwrap(), "blue");
+    assert_eq!(page.evaluate("bg").unwrap(), "rgb(0, 0, 255)");
 }
 
 // ================================================================
@@ -1280,12 +1280,12 @@ async fn e2e_spa_with_css_cascade() {
 
     assert_eq!(
         page.evaluate("aliceColor").unwrap(),
-        "red",
+        "rgb(255, 0, 0)",
         "active card should be red"
     );
     assert_eq!(
         page.evaluate("bobColor").unwrap(),
-        "navy",
+        "rgb(0, 0, 128)",
         "inactive card should be navy"
     );
     assert_eq!(

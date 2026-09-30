@@ -866,7 +866,15 @@ pub fn op_dom_get_all_computed_styles(
     let ctx = calc_context_from(state);
     let res: HashMap<String, String> = declarations
         .into_iter()
-        .map(|(k, v)| (k, resolve_computed_value(&v.2, &ctx)))
+        .map(|(k, v)| {
+            let val = resolve_computed_value(&v.2, &ctx);
+            let val = if is_color_property(&k) {
+                normalize_computed_color(&val).unwrap_or(val)
+            } else {
+                val
+            };
+            (k, val)
+        })
         .collect();
     res
 }
@@ -881,6 +889,45 @@ pub fn op_dom_get_computed_style(
     let state = state.borrow_mut::<DomState>();
     state.refresh_styles();
     let id = NodeId::from_raw(node_id as u32);
+
+    if property == "font" {
+        // Chrome composes the font shorthand from the computed longhands
+        // and omits the normal parts: "italic bold 16px/18px Arial" or,
+        // with a set line-height, "0px / 0px Roboto, …".
+        let style = computed_property_raw(state, id, "font-style");
+        let variant = computed_property_raw(state, id, "font-variant");
+        let weight = computed_property_raw(state, id, "font-weight");
+        let size = computed_property_raw(state, id, "font-size");
+        let line_height = computed_property_raw(state, id, "line-height");
+        let family = computed_property_raw(state, id, "font-family");
+        let mut parts: Vec<String> = Vec::new();
+        if style != "normal" && !style.is_empty() {
+            parts.push(style);
+        }
+        if variant != "normal" && !variant.is_empty() {
+            parts.push(variant);
+        }
+        if weight != "normal" && weight != "400" && !weight.is_empty() {
+            parts.push(weight);
+        }
+        parts.push(if line_height == "normal" {
+            format!("{size} {family}")
+        } else {
+            format!("{size} / {line_height} {family}")
+        });
+        return parts.join(" ");
+    }
+
+    let raw = computed_property_raw(state, id, property);
+    if crate::js_runtime::extensions::dom_ext::is_color_property(property) {
+        if let Some(c) = normalize_computed_color(&raw) {
+            return c;
+        }
+    }
+    raw
+}
+
+fn computed_property_raw(state: &mut DomState, id: NodeId, property: &str) -> String {
     let ctx = calc_context_from(state);
 
     // 1. Check inline style (highest specificity)
@@ -950,6 +997,97 @@ pub fn op_dom_get_computed_style(
         }
     }
     crate::js_runtime::extensions::layout_ext::css_default(property)
+}
+
+/// Color properties Chrome serializes as computed rgb()/rgba().
+pub fn is_color_property(property: &str) -> bool {
+    matches!(
+        property,
+        "color"
+            | "background-color"
+            | "border-color"
+            | "border-top-color"
+            | "border-right-color"
+            | "border-bottom-color"
+            | "border-left-color"
+            | "outline-color"
+            | "text-decoration-color"
+            | "column-rule-color"
+            | "caret-color"
+            | "-webkit-text-fill-color"
+            | "-webkit-text-stroke-color"
+    )
+}
+
+/// Chrome never leaks keywords or hex through getComputedStyle — a computed
+/// color always reads back as rgb()/rgba(). `transparent` is the one the
+/// hidden-element probes hit (`color: transparent` → rgba(0, 0, 0, 0)).
+fn normalize_computed_color(value: &str) -> Option<String> {
+    let v = value.trim().to_ascii_lowercase();
+    let named: Option<(u8, u8, u8)> = match v.as_str() {
+        "transparent" => Some((0, 0, 0)),
+        "black" => Some((0, 0, 0)),
+        "white" => Some((255, 255, 255)),
+        "red" => Some((255, 0, 0)),
+        "green" => Some((0, 128, 0)),
+        "blue" => Some((0, 0, 255)),
+        "gray" | "grey" => Some((128, 128, 128)),
+        "silver" => Some((192, 192, 192)),
+        "yellow" => Some((255, 255, 0)),
+        "orange" => Some((255, 165, 0)),
+        "purple" => Some((128, 0, 128)),
+        "navy" => Some((0, 0, 128)),
+        "teal" => Some((0, 128, 128)),
+        "maroon" => Some((128, 0, 0)),
+        "lime" => Some((0, 255, 0)),
+        "aqua" | "cyan" => Some((0, 255, 255)),
+        "fuchsia" | "magenta" => Some((255, 0, 255)),
+        _ => None,
+    };
+    if v == "transparent" {
+        return Some("rgba(0, 0, 0, 0)".into());
+    }
+    if let Some((r, g, b)) = named {
+        return Some(format!("rgb({r}, {g}, {b})"));
+    }
+    if let Some(hex) = v.strip_prefix('#') {
+        let expand = |s: &str| u8::from_str_radix(&format!("{s}{s}"), 16);
+        let full = |s: &str| u8::from_str_radix(s, 16);
+        let parsed: Option<(u8, u8, u8, u8)> = match hex.len() {
+            3 => Some((
+                expand(&hex[0..1]).ok()?,
+                expand(&hex[1..2]).ok()?,
+                expand(&hex[2..3]).ok()?,
+                255,
+            )),
+            6 => Some((
+                full(&hex[0..2]).ok()?,
+                full(&hex[2..4]).ok()?,
+                full(&hex[4..6]).ok()?,
+                255,
+            )),
+            4 => Some((
+                expand(&hex[0..1]).ok()?,
+                expand(&hex[1..2]).ok()?,
+                expand(&hex[2..3]).ok()?,
+                expand(&hex[3..4]).ok()?,
+            )),
+            8 => Some((
+                full(&hex[0..2]).ok()?,
+                full(&hex[2..4]).ok()?,
+                full(&hex[4..6]).ok()?,
+                full(&hex[6..8]).ok()?,
+            )),
+            _ => None,
+        };
+        let (r, g, b, a) = parsed?;
+        return Some(if a == 255 {
+            format!("rgb({r}, {g}, {b})")
+        } else {
+            format!("rgba({r}, {g}, {b}, {})", a as f32 / 255.0)
+        });
+    }
+    None
 }
 
 /// Extract a property value from an element's inline style attribute.

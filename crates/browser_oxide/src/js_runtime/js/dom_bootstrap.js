@@ -734,6 +734,14 @@
                 if (prop === "setProperty") return (name, value) => { cache[name] = String(value); flush(); };
                 if (prop === "getPropertyValue") return (name) => cache[name] || "";
                 if (prop === "removeProperty") return (name) => { const old = cache[name] || ""; delete cache[name]; flush(); return old; };
+                if (prop === "item") return (i) => Object.keys(cache)[i] || "";
+                if (prop === "getPropertyPriority") return () => "";
+                if (prop === "parentRule") return null;
+                if (prop === Symbol.iterator) {
+                    const keys = Object.keys(cache);
+                    let idx = 0;
+                    return () => ({ done: idx >= keys.length, value: keys[idx++] });
+                }
                 if (prop === "cssText") return ops.op_dom_get_attribute(nodeId, "style") || "";
                 if (prop === "length") return Object.keys(cache).length;
                 if (prop === Symbol.toStringTag) return "CSSStyleDeclaration";
@@ -1138,6 +1146,121 @@
     // tag name to select the right specific class (HTMLDivElement etc.)
     // without having to create a dedicated Rust-side dispatch.
     class HTMLElement extends Element {}
+    // --- HTMLElement surface Chrome always exposes; scripts probe these
+    // basics and read undefined where a real browser answers. ---
+    Object.defineProperty(HTMLElement.prototype, "innerText", {
+        get() {
+            // Rendered-text approximation: hidden subtrees contribute
+            // nothing, block-level children break lines.
+            const render = (node) => {
+                if (node.nodeType === 3) return node.nodeValue;
+                if (node.nodeType !== 1) return "";
+                const display = getComputedStyle(node).display;
+                if (display === "none") return "";
+                const block = display !== "inline";
+                let out = "";
+                for (const child of node.childNodes) {
+                    out += render(child);
+                }
+                if (block && out && !out.endsWith("\n")) out += "\n";
+                return out;
+            };
+            return render(this).replace(/\n$/, "");
+        },
+        set(val) { this.textContent = String(val); },
+        enumerable: true, configurable: true
+    });
+    Object.defineProperty(HTMLElement.prototype, "contentEditable", {
+        get() {
+            const v = (this.getAttribute("contenteditable") || "").toLowerCase();
+            return v === "true" || v === "plaintext-only" ? v === "plaintext-only" ? "plaintext-only" : "true" : v === "false" ? "false" : "inherit";
+        },
+        set(val) { this.setAttribute("contenteditable", String(val)); },
+        enumerable: true, configurable: true
+    });
+    Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
+        get() { return (this.getAttribute("contenteditable") || "").toLowerCase() === "true"; },
+        enumerable: true, configurable: true
+    });
+    // ARIA reflection (Chrome 112+): the IDL attribute maps the content
+    // attribute; absent reads null.
+    const _ariaReflected = (attr) => ({
+        get() { return this.getAttribute(attr); },
+        set(v) { if (v == null) this.removeAttribute(attr); else this.setAttribute(attr, String(v)); },
+        enumerable: true, configurable: true
+    });
+    for (const a of ["role", "ariaHidden", "ariaLabel", "ariaDisabled", "ariaExpanded", "ariaPressed", "ariaSelected", "ariaChecked", "ariaLive", "ariaRelevant", "ariaAtomic", "ariaBusy", "ariaCurrent", "ariaDescription", "ariaHasPopup", "ariaKeyShortcuts", "ariaLevel", "ariaValueNow"]) {
+        Object.defineProperty(HTMLElement.prototype, a, _ariaReflected(a.replace(/^aria([A-Z])/, (m, c) => a === "role" ? "role" : "aria-" + c.toLowerCase())));
+    }
+    Object.defineProperty(HTMLElement.prototype, "role", _ariaReflected("role"));
+    // Chrome's GlobalEventHandlers: every on* IDL attribute reads null when
+    // unset (not undefined). Scripts enumerate and stringify these; an
+    // undefined value breaks the audit. Accessors store per-element so
+    // dispatch's plain-property read keeps working.
+    const _elHandlers = new WeakMap();
+    const _onHandlerNames = ('onabort onafterprint onanimationcancel onanimationend ' +
+        'onanimationiteration onanimationstart onappinstalled onauxclick ' +
+        'onbeforeinput onbeforeinstallprompt onbeforematch onbeforeprint ' +
+        'onbeforetoggle onbeforeunload onbeforexrselect onblur ' +
+        'oncancel oncanplay oncanplaythrough onchange ' +
+        'onclick onclose oncommand oncontentvisibilityautostatechange ' +
+        'oncontextlost oncontextmenu oncontextrestored oncuechange ' +
+        'ondblclick ondrag ondragend ondragenter ' +
+        'ondragleave ondragover ondragstart ondrop ' +
+        'ondurationchange onemptied onended onfocus ' +
+        'onformdata ongamepadconnected ongamepaddisconnected ongotpointercapture ' +
+        'onhashchange oninput oninvalid onkeydown ' +
+        'onkeypress onkeyup onlanguagechange onload ' +
+        'onloadeddata onloadedmetadata onloadstart onlostpointercapture ' +
+        'onmessage onmessageerror onmousedown onmouseenter ' +
+        'onmouseleave onmousemove onmouseout onmouseover ' +
+        'onmouseup onmousewheel onoffline ononline ' +
+        'onpagehide onpagereveal onpageshow onpageswap ' +
+        'onpause onplay onplaying onpointercancel ' +
+        'onpointerdown onpointerenter onpointerleave onpointermove ' +
+        'onpointerout onpointerover onpointerrawupdate onpointerup onpopstate ' +
+        'onprogress onratechange onrejectionhandled onreset ' +
+        'onresize onscroll onscrollend onscrollsnapchange ' +
+        'onscrollsnapchanging onsearch onsecuritypolicyviolation onseeked ' +
+        'onseeking onselect onselectionchange onselectstart ' +
+        'onslotchange onstalled onstorage onsubmit ' +
+        'onsuspend ontimeupdate ontoggle ontransitioncancel ' +
+        'ontransitionend ontransitionrun ontransitionstart onunhandledrejection ' +
+        'onunload onvolumechange onwaiting onwebkitanimationend ' +
+        'onwebkitanimationiteration onwebkitanimationstart onwebkittransitionend ' +
+        'onwheel').split(/\s+/);
+    for (const _name of _onHandlerNames) {
+        Object.defineProperty(HTMLElement.prototype, _name, {
+            get() {
+                const m = _elHandlers.get(this);
+                return (m && m.get(_name)) || null;
+            },
+            set(v) {
+                let m = _elHandlers.get(this);
+                if (!m) { m = new Map(); _elHandlers.set(this, m); }
+                m.set(_name, typeof v === "function" ? v : null);
+            },
+            enumerable: true, configurable: true
+        });
+    }
+    // part — an Element's DOMTokenList over the part attribute; empty reads "".
+    Object.defineProperty(Element.prototype, "part", {
+        get() {
+            const el = this;
+            const tokens = () => (el.getAttribute("part") || "").split(/\s+/).filter(Boolean);
+            return {
+                get length() { return tokens().length; },
+                get value() { return tokens().join(" "); },
+                item(i) { return tokens()[i] || null; },
+                contains(t) { return tokens().includes(String(t)); },
+                add(...ts) { const s = new Set(tokens()); ts.forEach(x => s.add(String(x))); el.setAttribute("part", [...s].join(" ")); },
+                remove(...ts) { const s = new Set(tokens()); ts.forEach(x => s.delete(String(x))); el.setAttribute("part", [...s].join(" ")); },
+                toString() { return tokens().join(" "); },
+                [Symbol.toStringTag]: "DOMTokenList",
+            };
+        },
+        enumerable: true, configurable: true
+    });
     class HTMLDivElement extends HTMLElement {}
     class HTMLSpanElement extends HTMLElement {}
     class HTMLParagraphElement extends HTMLElement {}
