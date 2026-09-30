@@ -3698,6 +3698,8 @@
                 'window','self','globalThis','frames','top','parent',
                 'document','location','opener',
                 'length',
+                // The child realm's own Trusted Types (op_create_child_realm):
+                'trustedTypes','TrustedHTML','TrustedScript','TrustedScriptURL',
                 // Carefully configured below (accessor or child-specific value):
                 'devicePixelRatio','navigator','fetch','postMessage',
                 // Already set above:

@@ -7175,6 +7175,40 @@ async fn check_trusted_types(js: &str) -> String {
 }
 
 #[tokio::test]
+async fn trusted_types_gate_eval_in_a_blank_iframe() {
+    // Measured in Chrome: an about:blank frame inherits the document's CSP,
+    // so its own eval and Function refuse a string with its own EvalError,
+    // and only its own default policy lets one through.
+    let js = r#"(() => {
+        const out = [];
+        const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.name + ':' + (e.message.includes('Trusted Type assignment') ? 'TT' : e.message) + (e instanceof EvalError ? ':parentRealm' : '')); } };
+        const f = document.createElement('iframe');
+        document.body.appendChild(f);
+        const cw = f.contentWindow;
+        t('str', () => cw.eval('1+1'));
+        t('fn', () => new cw.Function('return 2')());
+        const p = trustedTypes.createPolicy('pp', { createScript: (s) => s });
+        t('parentTS', () => cw.eval(p.createScript('3')));
+        t('childTT', () => typeof cw.trustedTypes);
+        let cp = null;
+        t('childPolicy', () => { cp = cw.trustedTypes.createPolicy('cp', { createScript: (s) => s }); return typeof cp; });
+        t('childTS', () => cw.eval(cp.createScript('4')));
+        t('childTSinParent', () => eval(cp.createScript('5')));
+        t('same', () => cw.trustedTypes === trustedTypes);
+        trustedTypes.createPolicy('default', { createScript: (s) => s });
+        t('parentDefault', () => cw.eval('6'));
+        t('childDefaultPolicy', () => String(cw.trustedTypes.defaultPolicy));
+        t('childDefCreate', () => typeof cw.trustedTypes.createPolicy('default', { createScript: (s) => s }));
+        t('childDefault', () => cw.eval('7'));
+        return out.join(' ;; ');
+    })()"#;
+    assert_eq!(
+        check_trusted_types(js).await,
+        r#"str!EvalError:TT ;; fn!EvalError:TT ;; parentTS=3 ;; childTT="object" ;; childPolicy="object" ;; childTS=4 ;; childTSinParent=5 ;; same=false ;; parentDefault!EvalError:TT ;; childDefaultPolicy="null" ;; childDefCreate="object" ;; childDefault=7"#
+    );
+}
+
+#[tokio::test]
 async fn trusted_types_gate_string_timer_handlers() {
     // Measured in Chrome with `require-trusted-types-for 'script'`: a string
     // handler throws a TypeError naming the method unless the default

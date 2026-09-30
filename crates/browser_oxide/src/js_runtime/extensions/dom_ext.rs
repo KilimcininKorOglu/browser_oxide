@@ -1251,6 +1251,8 @@ pub fn op_create_child_realm<'s>(
     let parent_ctx = scope.get_current_context();
     let parent_tok = parent_ctx.get_security_token(scope);
     child_ctx.set_security_token(parent_tok);
+    // The blank frame inherits the document's CSP, Trusted Types included.
+    let parent_enforces_trusted_types = !parent_ctx.is_code_generation_from_strings_allowed();
 
     // Set up the child context.  Returns None on any fatal V8 allocation
     // failure (extremely rare); the outer code falls back to undefined.
@@ -1310,6 +1312,13 @@ pub fn op_create_child_realm<'s>(
         // in the child realm stringify correctly via the Array-data path.
         if let Some(ref orig) = orig_fpt {
             install_native_fp_tostring(cs, orig, native_tag_sym.as_ref());
+        }
+
+        if !crate::js_runtime::native_fns::install_child_trusted_types(
+            cs,
+            parent_enforces_trusted_types,
+        ) {
+            eprintln!("[child-realm] Trusted Types install failed");
         }
 
         Some(v8::Global::new(cs, child_global))

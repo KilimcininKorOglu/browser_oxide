@@ -615,6 +615,53 @@ pub fn enforce_trusted_types_for_script(scope: &mut v8::PinScope) {
     unsafe { v8_isolate_set_modify_codegen_callback(raw_isolate(scope), trusted_types_codegen_cb) };
 }
 
+/// Give a same-origin child realm (an about:blank frame) its own Trusted
+/// Types and, when `enforce` is set because the embedding document enforces
+/// them, the same code-generation check: Chrome's blank frame inherits the
+/// document's CSP but keeps its own `trustedTypes` and default policy.
+/// Runs inside the child context.
+pub fn install_child_trusted_types(scope: &mut v8::PinScope, enforce: bool) -> bool {
+    // The window bootstrap's `_maskAsNative` does not exist in the child,
+    // so a minimal one tags the methods for the native toString.
+    const SOURCE: &str = concat!(
+        "((_maskAsNative) => {\n",
+        include_str!("js/trusted_types_bootstrap.js"),
+        "\n})((obj, ...names) => { const tag = Symbol.for('__browser_oxide_native__'); ",
+        "for (const name of names) { const fn = obj[name]; if (typeof fn !== 'function') continue; ",
+        "Object.defineProperty(fn, 'name', { value: name, configurable: true }); ",
+        "Object.defineProperty(fn, tag, { value: name, configurable: true }); } });",
+    );
+    if !install_trusted_script_native(scope) {
+        return false;
+    }
+    let (Some(source), Some(name)) = (
+        v8::String::new(scope, SOURCE),
+        v8::String::new(scope, INTERNAL_SCRIPT_NAME),
+    ) else {
+        return false;
+    };
+    let origin = v8::ScriptOrigin::new(
+        scope,
+        name.into(),
+        0,
+        0,
+        false,
+        0,
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
+    let ran = v8::Script::compile(scope, source, Some(&origin))
+        .and_then(|script| script.run(scope))
+        .is_some();
+    if ran && enforce {
+        enforce_trusted_types_for_script(scope);
+    }
+    ran
+}
+
 /// Install the native half of `TrustedScript` as the one-shot global
 /// `__ox_trusted_script = { ctor, make, check, enforced }`, which
 /// trusted_types_bootstrap.js reads and deletes.
