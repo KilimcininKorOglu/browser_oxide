@@ -48,9 +48,30 @@ pub fn tokens_to_string(values: &[ComponentValue]) -> String {
                 s.push(')');
             }
             ComponentValue::SimpleBlock(b) => {
+                let close = match b.token {
+                    '[' => ']',
+                    '(' => ')',
+                    _ => '}',
+                };
+                s.push(b.token);
                 s.push_str(&tokens_to_string(&b.value));
+                s.push(close);
             }
         }
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_blocks_keep_their_brackets() {
+        let (sheet, _) = crate::css_parser::parse_stylesheet("a[href] > b { top: 0 }");
+        let crate::css_parser::ast::Rule::Qualified(rule) = &sheet.rules[0] else {
+            panic!("expected a style rule");
+        };
+        assert_eq!(tokens_to_string(&rule.prelude).trim(), "a[href] > b");
+    }
 }
