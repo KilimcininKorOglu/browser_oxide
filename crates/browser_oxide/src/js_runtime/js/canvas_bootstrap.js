@@ -566,16 +566,15 @@
             }
             return gpu.extensions.slice();
         }
+        // Answers only for a name in this context's own
+        // getSupportedExtensions() list, matched case-insensitively as in
+        // Chrome, and hands out the same object on every call.
         getExtension(name) {
-            if (name === "WEBGL_debug_renderer_info") return { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
-            // Any supported extension gets a non-null stub. Fingerprinters
-            // call getExtension(name) after getSupportedExtensions to verify.
-            // Must agree with this context's getSupportedExtensions() surface —
-            // a WebGL 1 ctx returning {} for a WebGL-2-only ext would contradict
-            // its own extension list.
             const exts = this.getSupportedExtensions();
-            if (exts && exts.includes(name)) return {};
-            return null;
+            if (!exts) return null;
+            const wanted = String(name).toLowerCase();
+            const found = exts.find((e) => e.toLowerCase() === wanted);
+            return found ? _glExtension(this, found) : null;
         }
         // getContextAttributes — returns the WebGLContextAttributes used at
         // creation. Real Chrome returns these specific defaults.
@@ -593,7 +592,7 @@
                 xrCompatible: false,
             };
         }
-        isContextLost() { return false; }
+        isContextLost() { return _glLost.has(this); }
         getShaderPrecisionFormat(shaderType, precisionType) {
             const gpu = WebGLRenderingContext._g();
             const key = `${shaderType}:${precisionType}`;
@@ -705,7 +704,6 @@
         deleteTexture() {}
         deleteFramebuffer() {}
         deleteRenderbuffer() {}
-        isContextLost() { return false; }
     }
 
     // FIX-D2: WebGL2RenderingContext is a SEPARATE constructor from
@@ -1014,6 +1012,149 @@
     const _glConst = (value) => ({ value, writable: false, enumerable: true, configurable: false });
     const _glMethod = (value) => ({ value, writable: true, enumerable: true, configurable: true });
 
+    // Chrome 147's extension interfaces: `name=Interface|CONST:value|
+    // method()length`. The ones Chrome's software renderer does not offer
+    // (ASTC, ETC, ETC1, PVRTC, KHR_parallel_shader_compile,
+    // WEBGL_blend_func_extended, WEBGL_provoking_vertex, EXT_texture_norm16,
+    // EXT_render_snorm, WEBGL_render_shared_exponent) follow their Khronos
+    // specifications.
+    const _GL_EXTENSIONS = (
+        'ANGLE_instanced_arrays=ANGLEInstancedArrays|VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE:35070|drawArraysInstancedANGLE()4|drawElementsInstancedANGLE()5|vertexAttribDivisorANGLE()2;' +
+        'EXT_blend_minmax=EXTBlendMinMax|MIN_EXT:32775|MAX_EXT:32776;' +
+        'EXT_clip_control=EXTClipControl|LOWER_LEFT_EXT:36001|UPPER_LEFT_EXT:36002|NEGATIVE_ONE_TO_ONE_EXT:37726|ZERO_TO_ONE_EXT:37727|CLIP_ORIGIN_EXT:37724|CLIP_DEPTH_MODE_EXT:37725|clipControlEXT()2;' +
+        'EXT_color_buffer_float=EXTColorBufferFloat;' +
+        'EXT_color_buffer_half_float=EXTColorBufferHalfFloat|RGBA16F_EXT:34842|RGB16F_EXT:34843|FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT:33297|UNSIGNED_NORMALIZED_EXT:35863;' +
+        'EXT_conservative_depth=EXTConservativeDepth;' +
+        'EXT_depth_clamp=EXTDepthClamp|DEPTH_CLAMP_EXT:34383;' +
+        'EXT_disjoint_timer_query=EXTDisjointTimerQuery|QUERY_COUNTER_BITS_EXT:34916|CURRENT_QUERY_EXT:34917|QUERY_RESULT_EXT:34918|QUERY_RESULT_AVAILABLE_EXT:34919|TIME_ELAPSED_EXT:35007|TIMESTAMP_EXT:36392|GPU_DISJOINT_EXT:36795|beginQueryEXT()2|createQueryEXT()0|deleteQueryEXT()1|endQueryEXT()1|getQueryEXT()2|getQueryObjectEXT()2|isQueryEXT()1|queryCounterEXT()2;' +
+        'EXT_disjoint_timer_query_webgl2=EXTDisjointTimerQueryWebGL2|QUERY_COUNTER_BITS_EXT:34916|TIME_ELAPSED_EXT:35007|TIMESTAMP_EXT:36392|GPU_DISJOINT_EXT:36795|queryCounterEXT()2;' +
+        'EXT_float_blend=EXTFloatBlend;' +
+        'EXT_frag_depth=EXTFragDepth;' +
+        'EXT_polygon_offset_clamp=EXTPolygonOffsetClamp|POLYGON_OFFSET_CLAMP_EXT:36379|polygonOffsetClampEXT()3;' +
+        'EXT_render_snorm=EXTRenderSnorm;' +
+        'EXT_sRGB=EXTsRGB|SRGB_EXT:35904|SRGB_ALPHA_EXT:35906|SRGB8_ALPHA8_EXT:35907|FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT:33296;' +
+        'EXT_shader_texture_lod=EXTShaderTextureLOD;' +
+        'EXT_texture_compression_bptc=EXTTextureCompressionBPTC|COMPRESSED_RGBA_BPTC_UNORM_EXT:36492|COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT:36493|COMPRESSED_RGB_BPTC_SIGNED_FLOAT_EXT:36494|COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT:36495;' +
+        'EXT_texture_compression_rgtc=EXTTextureCompressionRGTC|COMPRESSED_RED_RGTC1_EXT:36283|COMPRESSED_SIGNED_RED_RGTC1_EXT:36284|COMPRESSED_RED_GREEN_RGTC2_EXT:36285|COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT:36286;' +
+        'EXT_texture_filter_anisotropic=EXTTextureFilterAnisotropic|TEXTURE_MAX_ANISOTROPY_EXT:34046|MAX_TEXTURE_MAX_ANISOTROPY_EXT:34047;' +
+        'EXT_texture_mirror_clamp_to_edge=EXTTextureMirrorClampToEdge|MIRROR_CLAMP_TO_EDGE_EXT:34627;' +
+        'EXT_texture_norm16=EXTTextureNorm16|R16_EXT:33322|RG16_EXT:33324|RGB16_EXT:32852|RGBA16_EXT:32859|R16_SNORM_EXT:36760|RG16_SNORM_EXT:36761|RGB16_SNORM_EXT:36762|RGBA16_SNORM_EXT:36763;' +
+        'KHR_parallel_shader_compile=KHRParallelShaderCompile|COMPLETION_STATUS_KHR:37297;' +
+        'NV_shader_noperspective_interpolation=NVShaderNoperspectiveInterpolation;' +
+        'OES_draw_buffers_indexed=OESDrawBuffersIndexed|blendEquationSeparateiOES()3|blendEquationiOES()2|blendFuncSeparateiOES()5|blendFunciOES()3|colorMaskiOES()5|disableiOES()2|enableiOES()2;' +
+        'OES_element_index_uint=OESElementIndexUint;' +
+        'OES_fbo_render_mipmap=OESFboRenderMipmap;' +
+        'OES_sample_variables=OESSampleVariables;' +
+        'OES_shader_multisample_interpolation=OESShaderMultisampleInterpolation|MIN_FRAGMENT_INTERPOLATION_OFFSET_OES:36443|MAX_FRAGMENT_INTERPOLATION_OFFSET_OES:36444|FRAGMENT_INTERPOLATION_OFFSET_BITS_OES:36445;' +
+        'OES_standard_derivatives=OESStandardDerivatives|FRAGMENT_SHADER_DERIVATIVE_HINT_OES:35723;' +
+        'OES_texture_float=OESTextureFloat;' +
+        'OES_texture_float_linear=OESTextureFloatLinear;' +
+        'OES_texture_half_float=OESTextureHalfFloat|HALF_FLOAT_OES:36193;' +
+        'OES_texture_half_float_linear=OESTextureHalfFloatLinear;' +
+        'OES_vertex_array_object=OESVertexArrayObject|VERTEX_ARRAY_BINDING_OES:34229|bindVertexArrayOES()0|createVertexArrayOES()0|deleteVertexArrayOES()0|isVertexArrayOES()0;' +
+        'WEBGL_blend_func_extended=WebGLBlendFuncExtended|SRC1_COLOR_WEBGL:35065|SRC1_ALPHA_WEBGL:34185|ONE_MINUS_SRC1_COLOR_WEBGL:35066|ONE_MINUS_SRC1_ALPHA_WEBGL:35067|MAX_DUAL_SOURCE_DRAW_BUFFERS_WEBGL:35068;' +
+        'WEBGL_clip_cull_distance=WebGLClipCullDistance|MAX_CLIP_DISTANCES_WEBGL:3378|MAX_CULL_DISTANCES_WEBGL:33529|MAX_COMBINED_CLIP_AND_CULL_DISTANCES_WEBGL:33530|CLIP_DISTANCE0_WEBGL:12288|CLIP_DISTANCE1_WEBGL:12289|CLIP_DISTANCE2_WEBGL:12290|CLIP_DISTANCE3_WEBGL:12291|CLIP_DISTANCE4_WEBGL:12292|CLIP_DISTANCE5_WEBGL:12293|CLIP_DISTANCE6_WEBGL:12294|CLIP_DISTANCE7_WEBGL:12295;' +
+        'WEBGL_color_buffer_float=WebGLColorBufferFloat|RGBA32F_EXT:34836|FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT:33297|UNSIGNED_NORMALIZED_EXT:35863;' +
+        'WEBGL_compressed_texture_astc=WebGLCompressedTextureASTC|COMPRESSED_RGBA_ASTC_4x4_KHR:37808|COMPRESSED_RGBA_ASTC_5x4_KHR:37809|COMPRESSED_RGBA_ASTC_5x5_KHR:37810|COMPRESSED_RGBA_ASTC_6x5_KHR:37811|COMPRESSED_RGBA_ASTC_6x6_KHR:37812|COMPRESSED_RGBA_ASTC_8x5_KHR:37813|COMPRESSED_RGBA_ASTC_8x6_KHR:37814|COMPRESSED_RGBA_ASTC_8x8_KHR:37815|COMPRESSED_RGBA_ASTC_10x5_KHR:37816|COMPRESSED_RGBA_ASTC_10x6_KHR:37817|COMPRESSED_RGBA_ASTC_10x8_KHR:37818|COMPRESSED_RGBA_ASTC_10x10_KHR:37819|COMPRESSED_RGBA_ASTC_12x10_KHR:37820|COMPRESSED_RGBA_ASTC_12x12_KHR:37821|COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:37840|COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:37841|COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:37842|COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:37843|COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:37844|COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:37845|COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:37846|COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:37847|COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:37848|COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:37849|COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:37850|COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:37851|COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:37852|COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:37853|getSupportedProfiles()0;' +
+        'WEBGL_compressed_texture_etc=WebGLCompressedTextureETC|COMPRESSED_R11_EAC:37488|COMPRESSED_SIGNED_R11_EAC:37489|COMPRESSED_RG11_EAC:37490|COMPRESSED_SIGNED_RG11_EAC:37491|COMPRESSED_RGB8_ETC2:37492|COMPRESSED_SRGB8_ETC2:37493|COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:37494|COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:37495|COMPRESSED_RGBA8_ETC2_EAC:37496|COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:37497;' +
+        'WEBGL_compressed_texture_etc1=WebGLCompressedTextureETC1|COMPRESSED_RGB_ETC1_WEBGL:36196;' +
+        'WEBGL_compressed_texture_pvrtc=WebGLCompressedTexturePVRTC|COMPRESSED_RGB_PVRTC_4BPPV1_IMG:35840|COMPRESSED_RGB_PVRTC_2BPPV1_IMG:35841|COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:35842|COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:35843;' +
+        'WEBGL_compressed_texture_s3tc=WebGLCompressedTextureS3TC|COMPRESSED_RGB_S3TC_DXT1_EXT:33776|COMPRESSED_RGBA_S3TC_DXT1_EXT:33777|COMPRESSED_RGBA_S3TC_DXT3_EXT:33778|COMPRESSED_RGBA_S3TC_DXT5_EXT:33779;' +
+        'WEBGL_compressed_texture_s3tc_srgb=WebGLCompressedTextureS3TCsRGB|COMPRESSED_SRGB_S3TC_DXT1_EXT:35916|COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:35917|COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:35918|COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:35919;' +
+        'WEBGL_debug_renderer_info=WebGLDebugRendererInfo|UNMASKED_VENDOR_WEBGL:37445|UNMASKED_RENDERER_WEBGL:37446;' +
+        'WEBGL_debug_shaders=WebGLDebugShaders|getTranslatedShaderSource()1;' +
+        'WEBGL_depth_texture=WebGLDepthTexture|UNSIGNED_INT_24_8_WEBGL:34042;' +
+        'WEBGL_draw_buffers=WebGLDrawBuffers|COLOR_ATTACHMENT0_WEBGL:36064|COLOR_ATTACHMENT1_WEBGL:36065|COLOR_ATTACHMENT2_WEBGL:36066|COLOR_ATTACHMENT3_WEBGL:36067|COLOR_ATTACHMENT4_WEBGL:36068|COLOR_ATTACHMENT5_WEBGL:36069|COLOR_ATTACHMENT6_WEBGL:36070|COLOR_ATTACHMENT7_WEBGL:36071|COLOR_ATTACHMENT8_WEBGL:36072|COLOR_ATTACHMENT9_WEBGL:36073|COLOR_ATTACHMENT10_WEBGL:36074|COLOR_ATTACHMENT11_WEBGL:36075|COLOR_ATTACHMENT12_WEBGL:36076|COLOR_ATTACHMENT13_WEBGL:36077|COLOR_ATTACHMENT14_WEBGL:36078|COLOR_ATTACHMENT15_WEBGL:36079|DRAW_BUFFER0_WEBGL:34853|DRAW_BUFFER1_WEBGL:34854|DRAW_BUFFER2_WEBGL:34855|DRAW_BUFFER3_WEBGL:34856|DRAW_BUFFER4_WEBGL:34857|DRAW_BUFFER5_WEBGL:34858|DRAW_BUFFER6_WEBGL:34859|DRAW_BUFFER7_WEBGL:34860|DRAW_BUFFER8_WEBGL:34861|DRAW_BUFFER9_WEBGL:34862|DRAW_BUFFER10_WEBGL:34863|DRAW_BUFFER11_WEBGL:34864|DRAW_BUFFER12_WEBGL:34865|DRAW_BUFFER13_WEBGL:34866|DRAW_BUFFER14_WEBGL:34867|DRAW_BUFFER15_WEBGL:34868|MAX_COLOR_ATTACHMENTS_WEBGL:36063|MAX_DRAW_BUFFERS_WEBGL:34852|drawBuffersWEBGL()1;' +
+        'WEBGL_lose_context=WebGLLoseContext|loseContext()0|restoreContext()0;' +
+        'WEBGL_multi_draw=WebGLMultiDraw|multiDrawArraysInstancedWEBGL()8|multiDrawArraysWEBGL()6|multiDrawElementsInstancedWEBGL()9|multiDrawElementsWEBGL()7;' +
+        'WEBGL_polygon_mode=WebGLPolygonMode|POLYGON_MODE_WEBGL:2880|POLYGON_OFFSET_LINE_WEBGL:10754|LINE_WEBGL:6913|FILL_WEBGL:6914|polygonModeWEBGL()2;' +
+        'WEBGL_provoking_vertex=WebGLProvokingVertex|FIRST_VERTEX_CONVENTION_WEBGL:36429|LAST_VERTEX_CONVENTION_WEBGL:36430|PROVOKING_VERTEX_WEBGL:36431|provokingVertexWEBGL()1;' +
+        'WEBGL_render_shared_exponent=WebGLRenderSharedExponent;' +
+        'WEBGL_stencil_texturing=WebGLStencilTexturing|DEPTH_STENCIL_TEXTURE_MODE_WEBGL:37098|STENCIL_INDEX_WEBGL:6401'
+    );
+
+    // The methods whose effect the engine models; every other extension
+    // method is a no-op.
+    const _GL_EXT_BEHAVIOUR = {
+        loseContext() { const gl = _glExtOwner.get(this); if (gl) _glLose(gl, true); },
+        restoreContext() { const gl = _glExtOwner.get(this); if (gl) _glLose(gl, false); },
+    };
+
+    // One prototype per interface, shared by every context, with no
+    // constructor and no interface object on the global, as in Chrome.
+    // The prototypes are built on first use, after cleanup_bootstrap has
+    // removed the masking helper from the global, so it is kept here.
+    const _maskAsNative = globalThis._maskAsNative;
+    const _glExtProtos = new Map();
+    const _glExtProto = (spec) => {
+        const [iface, ...members] = spec.split('|');
+        if (_glExtProtos.has(iface)) return _glExtProtos.get(iface);
+        const proto = {};
+        const methods = [];
+        for (const m of members) {
+            const call = /^(\w+)\(\)(\d+)$/.exec(m);
+            if (!call) {
+                const [key, value] = m.split(':');
+                Object.defineProperty(proto, key, _glConst(Number(value)));
+                continue;
+            }
+            const [, key, len] = call;
+            const own = _GL_EXT_BEHAVIOUR[key];
+            const fn = { [key]() { if (own) own.call(this); } }[key];
+            Object.defineProperty(fn, 'length', { value: Number(len), configurable: true });
+            Object.defineProperty(proto, key, _glMethod(fn));
+            methods.push(key);
+        }
+        // No global reaches these prototypes, so the cleanup sweep that
+        // masks interface methods as native code never sees them.
+        if (methods.length) _maskAsNative(proto, ...methods);
+        Object.defineProperty(proto, Symbol.toStringTag,
+            { value: iface, writable: false, enumerable: false, configurable: true });
+        _glExtProtos.set(iface, proto);
+        return proto;
+    };
+    const _GL_EXT_SPECS = new Map(_GL_EXTENSIONS.split(';').map((entry) => {
+        const at = entry.indexOf('=');
+        return [entry.slice(0, at), entry.slice(at + 1)];
+    }));
+
+    // The extension objects a context has handed out, and the context each
+    // one belongs to.
+    const _glExtCache = new WeakMap();
+    const _glExtOwner = new WeakMap();
+    const _glExtension = (gl, name) => {
+        const spec = _GL_EXT_SPECS.get(name);
+        if (!spec) return null;
+        let cache = _glExtCache.get(gl);
+        if (!cache) { cache = new Map(); _glExtCache.set(gl, cache); }
+        if (!cache.has(name)) {
+            const ext = Object.create(_glExtProto(spec));
+            _glExtOwner.set(ext, gl);
+            cache.set(name, ext);
+        }
+        return cache.get(name);
+    };
+
+    // WEBGL_lose_context. Measured in Chrome 147: a lost context answers
+    // isContextLost() true, getError() CONTEXT_LOST_WEBGL once, and null
+    // from getParameter(), getExtension() and getSupportedExtensions().
+    const _glLost = new WeakSet();
+    const _glLose = (gl, lost) => {
+        if (lost && !_glLost.has(gl)) {
+            _glLost.add(gl);
+            _glRecordError(gl, 0x9242);
+        } else if (!lost) {
+            _glLost.delete(gl);
+        }
+    };
+    const _glWhileAlive = (proto, name) => {
+        const live = proto[name];
+        Object.defineProperty(proto, name, _glMethod({ [name]() {
+            return _glLost.has(this) ? null : live.apply(this, arguments);
+        } }[name]));
+        Object.defineProperty(proto[name], 'length', { value: live.length, configurable: true });
+    };
+
     const _completeGLSurface = (C, webgl2, impl) => {
         const proto = C.prototype;
         for (const { name, num, webgl2Only } of _glTable(_GL_CONSTS)) {
@@ -1065,6 +1206,11 @@
         { getInternalformatParameter: WebGL2RenderingContext.prototype.getInternalformatParameter });
     _completeGLSurface(WebGLRenderingContext, false, _webgl1Impl);
     _completeGLSurface(WebGL2RenderingContext, true, _webgl2Impl);
+    for (const C of [WebGLRenderingContext, WebGL2RenderingContext]) {
+        for (const name of ['getParameter', 'getExtension', 'getSupportedExtensions']) {
+            _glWhileAlive(C.prototype, name);
+        }
+    }
 
     // AudioContext + OfflineAudioContext
     // Simulates the pipeline commonly used for audio fingerprinting:

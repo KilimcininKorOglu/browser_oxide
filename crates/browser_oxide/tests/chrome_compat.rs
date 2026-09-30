@@ -6715,6 +6715,36 @@ async fn webgl_interfaces_carry_chrome_members_and_typed_objects() {
 }
 
 #[tokio::test]
+async fn webgl_extensions_are_chrome_shaped_objects() {
+    // Measured in Chrome 147: an extension object has no own properties,
+    // its prototype carries the interface's constants and native-looking
+    // methods plus a toStringTag, one prototype serves every context, the
+    // name matches case-insensitively, and WEBGL_lose_context really loses
+    // the context.
+    let js = r#"
+        (() => {
+            const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+            const e = gl.getExtension('WEBGL_lose_context'), d = gl.getExtension('WEBGL_debug_renderer_info');
+            const p = Object.getPrototypeOf(e);
+            const sh = (o, n) => { const x = Object.getOwnPropertyDescriptor(o, n); return x && [x.writable, x.enumerable, x.configurable, typeof x.value]; };
+            const gl1 = new OffscreenCanvas(1, 1).getContext('webgl');
+            return JSON.stringify({
+                ctor: Object.getOwnPropertyNames(p), hasCtor: Object.prototype.hasOwnProperty.call(p, 'constructor'), ctorName: p.constructor === Object,
+                pp: Object.getPrototypeOf(p) === Object.prototype, tag: sh(p, Symbol.toStringTag), tagv: p[Symbol.toStringTag],
+                m: sh(p, 'loseContext'), c: sh(Object.getPrototypeOf(d), 'UNMASKED_VENDOR_WEBGL'), src: Function.prototype.toString.call(e.loseContext), name: e.loseContext.name,
+                shared: Object.getPrototypeOf(gl1.getExtension('WEBGL_lose_context')) === p, sameCtx: gl1.getExtension('WEBGL_lose_context') === e,
+                unsupported: gl.getExtension('OES_texture_float'), bad: gl.getExtension('nope'), ci: gl.getExtension('webgl_lose_context') === e,
+                lost: (() => { e.loseContext(); const r = [gl.isContextLost(), gl.getError(), gl.getParameter(gl.MAX_SAMPLES), gl.getExtension('WEBGL_lose_context') === e, gl.getSupportedExtensions()]; e.restoreContext(); return r; })(),
+            });
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"{"ctor":["loseContext","restoreContext"],"hasCtor":false,"ctorName":true,"pp":true,"tag":[false,false,true,"string"],"tagv":"WebGLLoseContext","m":[true,true,true,"function"],"c":[false,true,false,"number"],"src":"function loseContext() { [native code] }","name":"loseContext","shared":true,"sameCtx":false,"unsupported":null,"bad":null,"ci":true,"lost":[true,37442,null,false,null]}"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
