@@ -6639,6 +6639,82 @@ async fn derived_interfaces_are_their_own_constructors() {
 }
 
 #[tokio::test]
+async fn webgl_interfaces_carry_chrome_members_and_typed_objects() {
+    // Measured in Chrome 147: WebGL2RenderingContext does not inherit from
+    // WebGLRenderingContext, both carry every IDL constant (read-only,
+    // enumerable, non-configurable on the prototype and the interface) and
+    // every method (enumerable, with its IDL length), and create*() hands
+    // out typed objects that is*() recognises.
+    let js = r#"
+        (() => {
+            const P1 = WebGLRenderingContext.prototype, P2 = WebGL2RenderingContext.prototype;
+            const shape = (o, n) => {
+                const d = Object.getOwnPropertyDescriptor(o, n);
+                return d ? [d.writable, d.enumerable, d.configurable] : null;
+            };
+            const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+            const tag = (o) => o === null ? null : typeof o === 'object' ? Object.prototype.toString.call(o) : o;
+            const errors = () => { const e = []; for (let c; (c = gl.getError()) !== 0 && e.length < 5;) e.push(c); return e; };
+            const steps = [];
+            const step = (f) => { const r = tag(f()); steps.push(r, errors()); };
+            const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+            let q, s, p;
+            step(() => (q = gl.createQuery()));
+            step(() => (s = gl.createShader(gl.VERTEX_SHADER)));
+            step(() => (p = gl.createProgram()));
+            step(() => gl.isQuery(q));
+            step(() => gl.isQuery(null));
+            step(() => gl.isShader(s));
+            step(() => gl.createVertexArray());
+            step(() => gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0));
+            step(() => gl.getUniformLocation(p, 'x'));
+            step(() => gl.linkProgram(p));
+            step(() => gl.getProgramParameter(p, gl.LINK_STATUS));
+            step(() => gl.getUniformLocation(p, 'x'));
+            const max = gl.getParameter(gl.MAX_SAMPLES);
+            const expected = [];
+            for (let n = max; n >= 1; n = Math.floor(n / 2)) expected.push(n);
+            step(() => JSON.stringify(Array.from(gl.getInternalformatParameter(gl.RENDERBUFFER, gl.RGBA8, gl.SAMPLES))) === JSON.stringify(expected));
+            step(() => gl.getInternalformatParameter(0, gl.RGBA8, gl.SAMPLES));
+            step(() => gl.getInternalformatParameter(gl.RENDERBUFFER, gl.RGBA32F, gl.SAMPLES));
+            step(() => gl.getInternalformatParameter(gl.RENDERBUFFER, gl.RGBA8, 0));
+            const vs = shader(gl.VERTEX_SHADER, 'void main(){gl_Position=vec4(0);}');
+            const fs = shader(gl.FRAGMENT_SHADER, 'precision mediump float; uniform float u; void main(){gl_FragColor=vec4(u);}');
+            const p2 = gl.createProgram();
+            gl.attachShader(p2, vs);
+            gl.attachShader(p2, fs);
+            step(() => gl.linkProgram(p2));
+            step(() => gl.getProgramParameter(p2, gl.LINK_STATUS));
+            step(() => gl.getUniformLocation(p2, 'u'));
+            step(() => gl.getUniformLocation(p2, 'nope'));
+            step(() => gl.getShaderParameter(vs, gl.COMPILE_STATUS));
+            step(() => gl.getShaderParameter(shader(gl.VERTEX_SHADER, 'garbage'), gl.COMPILE_STATUS));
+            step(() => gl.getShaderParameter(gl.createShader(gl.VERTEX_SHADER), gl.COMPILE_STATUS));
+            return JSON.stringify([
+                Object.getPrototypeOf(P2) === Object.prototype,
+                P1.clear === P2.clear,
+                shape(P1, 'clear'), shape(P1, 'COLOR_BUFFER_BIT'),
+                shape(WebGLRenderingContext, 'COLOR_BUFFER_BIT'),
+                P1.texImage2D.length, P2.texSubImage3D.length, P2.blitFramebuffer.length,
+                'createQuery' in P1, P2.MAX_SAMPLES, P1.MAX_SAMPLES,
+                steps,
+            ]);
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        concat!(
+            r#"[true,false,[true,true,true],[false,true,false],[false,true,false],6,11,10,false,36183,null,["#,
+            r#""[object WebGLQuery]",[],"[object WebGLShader]",[],"[object WebGLProgram]",[],"#,
+            r#"false,[],false,[],true,[],"[object WebGLVertexArrayObject]",[],"[object WebGLSync]",[],"#,
+            r#"null,[1282],null,[],false,[],null,[1282],"#,
+            r#"true,[],null,[1280],null,[1280],null,[1280],"#,
+            r#"null,[],true,[],"[object WebGLUniformLocation]",[],null,[],true,[],false,[],false,[]]]"#,
+        )
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
