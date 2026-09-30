@@ -114,10 +114,45 @@
     }
     globalThis.ImageData = ImageData;
     _maskFunction(ImageData, 'ImageData');
+    Object.defineProperty(ImageData.prototype, Symbol.toStringTag, { value: "ImageData", configurable: true });
+
+    // The element or OffscreenCanvas each 2D context belongs to. Chrome
+    // exposes it through a prototype getter, never an own property.
+    const _ctxOwner = new WeakMap();
+    // The global mask helper is removed after bootstrap; keep a reference
+    // for getters built lazily at runtime.
+    const _maskGetter = globalThis._maskFunction;
+
+    // TextMetrics values live in a WeakMap behind enumerable prototype
+    // getters, the shape WebIDL attributes have in Chrome.
+    const _metrics = new WeakMap();
+    const _metricKeys = ["width", "actualBoundingBoxLeft", "actualBoundingBoxRight",
+        "fontBoundingBoxAscent", "fontBoundingBoxDescent", "actualBoundingBoxAscent",
+        "actualBoundingBoxDescent", "emHeightAscent", "emHeightDescent",
+        "hangingBaseline", "alphabeticBaseline", "ideographicBaseline"];
+    let _metricsProto = null;
+    const _textMetricsProto = () => {
+        if (_metricsProto) return _metricsProto;
+        const C = globalThis.TextMetrics;
+        _metricsProto = (C && C.prototype) || {};
+        for (const key of _metricKeys) {
+            if (Object.getOwnPropertyDescriptor(_metricsProto, key)) continue;
+            const get = { [key]() { return _metrics.get(this)[key]; } }[key];
+            _maskGetter(get, "get " + key);
+            Object.defineProperty(_metricsProto, key, { get, enumerable: true, configurable: true });
+        }
+        return _metricsProto;
+    };
+    const _makeTextMetrics = (values) => {
+        const m = Object.create(_textMetricsProto());
+        _metrics.set(m, values);
+        return m;
+    };
 
     class CanvasRenderingContext2D {
         #id;
         constructor(id) { this.#id = id; }
+        get canvas() { return _ctxOwner.get(this) ?? null; }
 
         // Style
         set fillStyle(v) {
@@ -187,7 +222,7 @@
             const deltaPerChar = _fontFamilyWidthDelta(fam);
             const len = (typeof text === "string") ? text.length : 0;
             const widthDelta = deltaPerChar * Math.max(1, len) * 0.25;
-            return {
+            return _makeTextMetrics({
                 width: m.width + widthDelta,
                 actualBoundingBoxLeft: m.actual_bounding_box_left,
                 actualBoundingBoxRight: m.actual_bounding_box_right + widthDelta,
@@ -200,7 +235,7 @@
                 alphabeticBaseline: m.alphabetic_baseline,
                 hangingBaseline: m.hanging_baseline,
                 ideographicBaseline: m.ideographic_baseline,
-            };
+            });
         }
 
         // Transform
@@ -1062,7 +1097,7 @@
         removeAttribute(name) { delete this.#attrs[name]; }
         hasAttribute(name) { return name in this.#attrs; }
         getContext(type) {
-            if (type === "2d") return new CanvasRenderingContext2D(this.#canvasId);
+            if (type === "2d") return _context2d(this, this.#canvasId);
             if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
                 // FIX-D2: webgl2 → WebGL2RenderingContext (distinct class +
                 // WebGL 2 surface); webgl/experimental-webgl → WebGLRenderingContext
@@ -1116,6 +1151,25 @@
     // double install they would not see `getContext`. The lazy methods
     // installed further down work on both kinds of canvas (`_canvasId`
     // is initialised on demand via `_lazyInitCanvas`).
+    // One 2D context per canvas: Chrome returns the same object on every
+    // getContext('2d') call.
+    function _context2d(canvas, id) {
+        let ctx = _ctx2dByCanvas.get(canvas);
+        if (!ctx) {
+            ctx = new CanvasRenderingContext2D(id);
+            _ctxOwner.set(ctx, canvas);
+            _ctx2dByCanvas.set(canvas, ctx);
+        }
+        return ctx;
+    }
+    const _ctx2dByCanvas = new WeakMap();
+
+    class OffscreenCanvasRenderingContext2D extends CanvasRenderingContext2D {}
+    Object.defineProperty(OffscreenCanvasRenderingContext2D.prototype, Symbol.toStringTag, {
+        value: "OffscreenCanvasRenderingContext2D", configurable: true,
+    });
+    globalThis.OffscreenCanvasRenderingContext2D = OffscreenCanvasRenderingContext2D;
+
     let _domCanvasProto = null;
     if (globalThis.HTMLCanvasElement) {
         _domCanvasProto = globalThis.HTMLCanvasElement.prototype;
@@ -1236,7 +1290,7 @@
             value: function getContext(type) {
                 _requireCanvas(this, "getContext");
                 _lazyInitCanvas(this);
-                if (type === "2d") return new CanvasRenderingContext2D(this._canvasId);
+                if (type === "2d") return _context2d(this, this._canvasId);
                 if (
                     type === "webgl" ||
                     type === "webgl2" ||
@@ -1336,8 +1390,8 @@
                     this._canvasId = ops.op_canvas_create(this.width, this.height, _getOsName(), _getCanvasSeed());
                 }
                 if (!this._context) {
-                    this._context = new CanvasRenderingContext2D(this._canvasId);
-                    this._context.canvas = this;
+                    this._context = new OffscreenCanvasRenderingContext2D(this._canvasId);
+                    _ctxOwner.set(this._context, this);
                 }
                 return this._context;
             }
@@ -1368,13 +1422,13 @@
             return null;
         }
         transferToImageBitmap() {
-            const self = this;
-            return {
-                width: self.width,
-                height: self.height,
-                _canvasId: self._canvasId,
-                close() {},
-            };
+            if (!this._context && !this._glctx1 && !this._glctx2) {
+                throw new DOMException("Failed to execute 'transferToImageBitmap' on 'OffscreenCanvas': Cannot transfer an ImageBitmap from an OffscreenCanvas with no context", "InvalidStateError");
+            }
+            const bitmap = new globalThis.ImageBitmap();
+            Object.defineProperty(bitmap, "width", { value: this.width, configurable: true });
+            Object.defineProperty(bitmap, "height", { value: this.height, configurable: true });
+            return bitmap;
         }
         async convertToBlob(options) {
             const type = (options && options.type) || "image/png";
