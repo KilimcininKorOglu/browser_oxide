@@ -1303,6 +1303,61 @@
         set(v) { this.setAttribute('tabindex', String(Math.trunc(Number(v)) || 0)); },
         enumerable: true, configurable: true,
     });
+    // HTMLHyperlinkElementUtils (HTML §4.6.3) on <a>: href resolves against the
+    // document's base URL, and the URL parts read and write through it. A
+    // missing or unparsable href reads back as the empty string or the raw
+    // attribute, and its parts as empty strings.
+    const _hyperlinkUrl = (el) => {
+        const raw = el.getAttribute('href');
+        if (raw === null) return null;
+        try {
+            return new URL(raw, el.ownerDocument ? el.ownerDocument.baseURI : undefined);
+        } catch (_) {
+            return null;
+        }
+    };
+    Object.defineProperty(HTMLAnchorElement.prototype, 'href', {
+        get() {
+            const url = _hyperlinkUrl(this);
+            return url ? url.href : (this.getAttribute('href') ?? '');
+        },
+        set(v) { this.setAttribute('href', String(v)); },
+        enumerable: true, configurable: true,
+    });
+    for (const part of ['origin', 'protocol', 'username', 'password', 'host', 'hostname',
+        'port', 'pathname', 'search', 'hash']) {
+        Object.defineProperty(HTMLAnchorElement.prototype, part, {
+            get() {
+                const url = _hyperlinkUrl(this);
+                return url ? url[part] : '';
+            },
+            set(v) {
+                if (part === 'origin') return;
+                const url = _hyperlinkUrl(this);
+                if (!url) return;
+                url[part] = String(v);
+                this.setAttribute('href', url.href);
+            },
+            enumerable: true, configurable: true,
+        });
+    }
+    Object.defineProperty(HTMLAnchorElement.prototype, 'toString', {
+        value() { return this.href; },
+        writable: true, enumerable: true, configurable: true,
+    });
+    Object.defineProperty(HTMLAnchorElement.prototype, 'text', {
+        get() { return this.textContent; },
+        set(v) { this.textContent = String(v); },
+        enumerable: true, configurable: true,
+    });
+    _reflectStr(HTMLAnchorElement.prototype, 'target');
+    _reflectStr(HTMLAnchorElement.prototype, 'download');
+    _reflectStr(HTMLAnchorElement.prototype, 'hreflang');
+    _reflectStr(HTMLAnchorElement.prototype, 'ping');
+    _reflectEnum(HTMLAnchorElement.prototype, 'referrerPolicy',
+        ['no-referrer', 'no-referrer-when-downgrade', 'same-origin', 'origin',
+            'strict-origin', 'origin-when-cross-origin', 'strict-origin-when-cross-origin',
+            'unsafe-url'], 'referrerpolicy');
     // The value and checkedness of a form control (HTML §4.10.5.4). Setting
     // the property makes it dirty, and from then on the attribute is only
     // the default: el.value = 'x' leaves getAttribute('value') alone.

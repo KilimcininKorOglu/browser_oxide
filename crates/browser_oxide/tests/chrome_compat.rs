@@ -7760,6 +7760,33 @@ async fn html_element_global_attributes_reflect() {
     );
 }
 
+// An anchor resolves href against the document's base URL and exposes the URL
+// parts, which read and write through href. Expected values follow the HTML
+// Standard's hyperlink element utilities.
+#[tokio::test]
+async fn anchor_exposes_its_url_parts() {
+    let js = r#"(() => {
+        const a = document.createElement('a');
+        const out = [a.href, a.host, a.protocol, a.origin];
+        a.setAttribute('href', 'https://u:p@x.com:8080/a/b?q=1#h');
+        out.push(a.href, a.origin, a.protocol, a.username, a.password, a.host, a.hostname,
+            a.port, a.pathname, a.search, a.hash, String(a));
+        a.pathname = '/z'; a.search = 'k=2'; a.hash = ''; a.port = '';
+        out.push(a.getAttribute('href'));
+        a.href = 'not a url';
+        out.push(a.href, a.host);
+        a.target = '_blank'; a.download = 'f'; a.referrerPolicy = 'Origin';
+        out.push(a.getAttribute('target'), a.getAttribute('download'), a.referrerPolicy);
+        a.textContent = 'hi';
+        out.push(a.text, (a.text = 'yo', a.textContent));
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(
+        check_secure(js).await,
+        r##"["","","","","https://u:p@x.com:8080/a/b?q=1#h","https://x.com:8080","https:","u","p","x.com:8080","x.com","8080","/a/b","?q=1","#h","https://u:p@x.com:8080/a/b?q=1#h","https://u:p@x.com/z?k=2","https://example.com/not%20a%20url","example.com","_blank","f","origin","hi","yo"]"##
+    );
+}
+
 // URL follows the URL Standard: resolution against a base, normalisation,
 // credentials, live searchParams, and TypeError on an invalid URL.
 // Expected values follow the Standard.
