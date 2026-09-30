@@ -924,7 +924,62 @@ pub fn op_dom_get_computed_style(
             return c;
         }
     }
+    // Chrome's computed values carry units: a declared `0` reads back `0px`
+    // for every length property. A bare number in the computed output is a
+    // tell the hidden-element audits pick up.
+    if is_length_property(property) && is_bare_number(&raw) {
+        return format!("{raw}px");
+    }
     raw
+}
+
+/// Properties whose computed value is a <length> (percentage lengths
+/// normalize to px in Chrome too; we only need the bare-number case).
+fn is_length_property(property: &str) -> bool {
+    matches!(
+        property,
+        "width"
+            | "height"
+            | "top"
+            | "right"
+            | "bottom"
+            | "left"
+            | "margin"
+            | "margin-top"
+            | "margin-right"
+            | "margin-bottom"
+            | "margin-left"
+            | "padding"
+            | "padding-top"
+            | "padding-right"
+            | "padding-bottom"
+            | "padding-left"
+            | "font-size"
+            | "line-height"
+            | "letter-spacing"
+            | "word-spacing"
+            | "text-indent"
+            | "border-width"
+            | "border-top-width"
+            | "border-right-width"
+            | "border-bottom-width"
+            | "border-left-width"
+            | "outline-width"
+            | "column-width"
+            | "column-gap"
+            | "row-gap"
+            | "min-width"
+            | "min-height"
+            | "max-width"
+            | "max-height"
+    )
+}
+
+fn is_bare_number(value: &str) -> bool {
+    let v = value.trim();
+    !v.is_empty()
+        && (v.parse::<f32>().is_ok()
+            || (v.ends_with('%') && v[..v.len() - 1].trim().parse::<f32>().is_ok()))
 }
 
 fn computed_property_raw(state: &mut DomState, id: NodeId, property: &str) -> String {

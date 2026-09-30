@@ -340,8 +340,11 @@
 
     class NodeList {
         constructor(data, isTyped = false) {
+            // ids live in a non-enumerable own slot — a page enumerating the
+            // list's own properties must see only the numeric indices
+            // (real Chrome's NodeList has no extra own props).
+            Object.defineProperty(this, '_ids', { value: [], enumerable: false, configurable: true, writable: true });
             if (isTyped) {
-                this._ids = [];
                 for (let i = 0; i < data.length; i += 2) {
                     const id = data[i];
                     const type = data[i+1];
@@ -349,7 +352,7 @@
                     this[i/2] = _wrapNodeWithType(id, type);
                 }
             } else {
-                this._ids = data;
+                this._ids.push(...data);
                 for (let i = 0; i < data.length; i++) {
                     this[i] = _wrapNode(data[i]);
                 }
@@ -392,7 +395,7 @@
     class HTMLCollection {
         constructor(data, isTyped = false) {
             const list = new NodeList(data, isTyped);
-            this._ids = list._ids;
+            Object.defineProperty(this, '_ids', { value: list._ids, enumerable: false, configurable: true, writable: true });
             for (let i = 0; i < list.length; i++) this[i] = list[i];
         }
         get length() { return this._ids.length; }
@@ -729,7 +732,14 @@
         }
         function flush() {
             const parts = [];
-            for (const k in cache) { if (cache[k] !== "") parts.push(k + ": " + cache[k]); }
+            for (const k in cache) {
+                if (cache[k] === "") continue;
+                // Chrome normalizes bare-number lengths at parse time
+                // (`font-size: 0` serializes back as `font-size: 0px`).
+                const v = cache[k];
+                const norm = /^-?\d+(\.\d+)?$/.test(v.trim()) ? v.trim() + "px" : v;
+                parts.push(k + ": " + norm);
+            }
             ops.op_dom_set_attribute(nodeId, "style", parts.join("; "));
         }
         const toKebab = (p) => p.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
@@ -781,19 +791,38 @@
                 return false;
             },
             ownKeys() {
-                return Object.keys(cache);
+                const declared = Object.keys(cache);
+                // Chrome's inline declaration enumerates numeric indices for
+                // the declared props, then every supported property name.
+                const names = typeof CHROME_COMPUTED_STYLE_PROPS !== "undefined"
+                    ? CHROME_COMPUTED_STYLE_PROPS : [];
+                return [...declared.keys().map(String), ...names];
             },
             getOwnPropertyDescriptor(target, prop) {
                 if (typeof prop !== "string") return undefined;
+                if (/^\d+$/.test(prop)) {
+                    const i = parseInt(prop, 10);
+                    const declared = Object.keys(cache);
+                    if (i < declared.length) {
+                        return { value: declared[i], enumerable: true, configurable: true, writable: true };
+                    }
+                    return undefined;
+                }
                 const key = toKebab(prop);
                 if (Object.prototype.hasOwnProperty.call(cache, key)) {
                     return { value: cache[key], enumerable: true, configurable: true, writable: true };
+                }
+                // Undeclared supported names read "" but still enumerate.
+                if (typeof CHROME_COMPUTED_STYLE_PROPS !== "undefined"
+                    && CHROME_COMPUTED_STYLE_PROPS.includes(key)) {
+                    return { value: "", enumerable: true, configurable: true, writable: true };
                 }
                 return undefined;
             }
         });
     }
 
+    const _elementStyleProxies = new WeakMap();
     class Element extends Node {
         get tagName() { return _qualifiedTagName(this); }
         get localName() { return ops.op_dom_get_tag_name(_getNodeId(this)); }
@@ -810,35 +839,8 @@
         // that breaks any script deriving paths from its own `.src`. Resolve
         // against the document base; fall back to the raw value if URL parsing
         // fails, and keep "" for an absent/empty attribute (Chrome parity).
-        get src() {
-            const _raw = this.getAttribute("src");
-            if (!_raw) return "";
-            try {
-                const _base = (globalThis.location && globalThis.location.href)
-                    || (globalThis.__browser_oxide && globalThis.__browser_oxide._baseUrl)
-                    || undefined;
-                return new URL(_raw, _base).href;
-            } catch (_) {
-                return _raw;
-            }
-        }
-        set src(val) { this.setAttribute("src", String(val)); }
-        get href() { return this.getAttribute("href") || ""; }
-        set href(val) { this.setAttribute("href", String(val)); }
-        get type() { return this.getAttribute("type") || ""; }
-        set type(val) { this.setAttribute("type", String(val)); }
-        get rel() { return this.getAttribute("rel") || ""; }
-        set rel(val) { this.setAttribute("rel", String(val)); }
-        get async() { return this.hasAttribute("async"); }
-        set async(val) { if (val) this.setAttribute("async", ""); else this.removeAttribute("async"); }
-        get defer() { return this.hasAttribute("defer"); }
-        set defer(val) { if (val) this.setAttribute("defer", ""); else this.removeAttribute("defer"); }
-        get crossOrigin() { return this.getAttribute("crossorigin"); }
-        set crossOrigin(val) { if (val != null) this.setAttribute("crossorigin", String(val)); else this.removeAttribute("crossorigin"); }
-        get integrity() { return this.getAttribute("integrity") || ""; }
-        set integrity(val) { this.setAttribute("integrity", String(val)); }
-        get referrerPolicy() { return this.getAttribute("referrerpolicy") || ""; }
-        set referrerPolicy(val) { this.setAttribute("referrerpolicy", String(val)); }
+
+
         get classList() { return _tokenListFor(this); }
         set classList(v) { this.className = v; }
         get innerHTML() { return ops.op_dom_get_inner_html(_getNodeId(this)); }
@@ -889,10 +891,24 @@
         get offsetHeight() { return ops.op_layout_get_offset_height(_getNodeId(this)); }
         get offsetTop() { return ops.op_layout_get_offset_top(_getNodeId(this)); }
         get offsetLeft() { return ops.op_layout_get_offset_left(_getNodeId(this)); }
-        get clientWidth() { return this.offsetWidth; }
-        get clientHeight() { return this.offsetHeight; }
-        get scrollWidth() { return this.offsetWidth; }
-        get scrollHeight() { return this.offsetHeight; }
+        // Chrome: inline boxes have zero client/scroll dimensions (the
+        // client rects exist, the box model does not).
+        get clientWidth() {
+            if (getComputedStyle(this).display === "inline") return 0;
+            return this.offsetWidth;
+        }
+        get clientHeight() {
+            if (getComputedStyle(this).display === "inline") return 0;
+            return this.offsetHeight;
+        }
+        get scrollWidth() {
+            if (getComputedStyle(this).display === "inline") return 0;
+            return this.offsetWidth;
+        }
+        get scrollHeight() {
+            if (getComputedStyle(this).display === "inline") return 0;
+            return this.offsetHeight;
+        }
         get scrollTop() {
             const s = _scrollState.get(_getNodeId(this));
             return s ? s.top : 0;
@@ -997,7 +1013,7 @@
             const id = _getNodeId(this);
             const namesOf = () => ops.op_dom_get_attribute_names(id);
             const itemFor = (name) => (ops.op_dom_has_attribute(id, name) ? _attrFor(el, name) : null);
-            const map = new Proxy([], {
+            const map = new Proxy({}, {
                 get(target, prop) {
                     // Real Chrome reports
                     // Object.prototype.toString.call(el.attributes) ===
@@ -1022,6 +1038,22 @@
                     if (typeof prop === "string") return itemFor(prop);
                     return undefined;
                 },
+                ownKeys(target) {
+                    const names = namesOf();
+                    const keys = names.map((_, i) => String(i));
+                    keys.push("length");
+                    return keys;
+                },
+                getOwnPropertyDescriptor(target, prop) {
+                    if (typeof prop === "string" && /^\d+$/.test(prop)) {
+                        const n = namesOf()[parseInt(prop, 10)];
+                        if (n) return { value: itemFor(n), enumerable: true, configurable: true, writable: false };
+                    }
+                    if (prop === "length") {
+                        return { value: namesOf().length, enumerable: false, configurable: true, writable: true };
+                    }
+                    return undefined;
+                },
                 has(target, prop) {
                     if (prop === "length" || prop === "getNamedItem" || prop === "item") return true;
                     if (typeof prop === "string" && /^\d+$/.test(prop)) {
@@ -1038,7 +1070,7 @@
                 },
                 getOwnPropertyDescriptor(target, prop) {
                     if (prop === "length") {
-                        return { value: namesOf().length, enumerable: false, configurable: false, writable: false };
+                        return { value: namesOf().length, enumerable: false, configurable: true, writable: false };
                     }
                     if (typeof prop === "string" && /^\d+$/.test(prop)) {
                         const n = namesOf()[parseInt(prop, 10)];
@@ -1108,10 +1140,15 @@
         get childElementCount() {
             return ops.op_dom_get_child_elements(_getNodeId(this)).length;
         }
-        // element.style — CSSStyleDeclaration proxy
+        // element.style — CSSStyleDeclaration proxy (per-element handle in
+        // a WeakMap: an own `_style` property leaks into every element's
+        // property enumeration).
         get style() {
-            if (!this._style) this._style = _createStyleProxy(_getNodeId(this));
-            return this._style;
+            const cached = _elementStyleProxies.get(this);
+            if (cached) return cached;
+            const proxy = _createStyleProxy(_getNodeId(this));
+            _elementStyleProxies.set(this, proxy);
+            return proxy;
         }
         // Interaction stubs
         click() { this.dispatchEvent(new Event("click", { bubbles: true })); }
@@ -1173,6 +1210,11 @@
             return render(this).replace(/\n$/, "");
         },
         set(val) { this.textContent = String(val); },
+        enumerable: true, configurable: true
+    });
+    Object.defineProperty(HTMLElement.prototype, "outerText", {
+        get() { return this.innerText; },
+        set(val) { this.replaceWith(document.createTextNode(String(val))); },
         enumerable: true, configurable: true
     });
     Object.defineProperty(HTMLElement.prototype, "contentEditable", {
@@ -1253,19 +1295,22 @@
         get() {
             const el = this;
             const tokens = () => (el.getAttribute("part") || "").split(/\s+/).filter(Boolean);
-            return {
-                get length() { return tokens().length; },
-                get value() { return tokens().join(" "); },
-                item(i) { return tokens()[i] || null; },
-                contains(t) { return tokens().includes(String(t)); },
-                add(...ts) { const s = new Set(tokens()); ts.forEach(x => s.add(String(x))); el.setAttribute("part", [...s].join(" ")); },
-                remove(...ts) { const s = new Set(tokens()); ts.forEach(x => s.delete(String(x))); el.setAttribute("part", [...s].join(" ")); },
-                toString() { return tokens().join(" "); },
-                [Symbol.toStringTag]: "DOMTokenList",
-            };
+            const list = {};
+            Object.defineProperties(list, {
+                length: { get() { return tokens().length; }, enumerable: false, configurable: true },
+                value: { get() { return tokens().join(" "); }, set(v) { el.setAttribute("part", String(v)); }, enumerable: false, configurable: true },
+                item: { value: (i) => tokens()[i] || null, enumerable: false, configurable: true },
+                contains: { value: (t) => tokens().includes(String(t)), enumerable: false, configurable: true },
+                add: { value: (...ts) => { const s = new Set(tokens()); ts.forEach(x => s.add(String(x))); el.setAttribute("part", [...s].join(" ")); }, enumerable: false, configurable: true },
+                remove: { value: (...ts) => { const s = new Set(tokens()); ts.forEach(x => s.delete(String(x))); el.setAttribute("part", [...s].join(" ")); }, enumerable: false, configurable: true },
+                toString: { value: () => tokens().join(" "), enumerable: false, configurable: true },
+            });
+            Object.defineProperty(list, Symbol.toStringTag, { value: "DOMTokenList", configurable: true });
+            return list;
         },
         enumerable: true, configurable: true
     });
+
     class HTMLDivElement extends HTMLElement {}
     class HTMLSpanElement extends HTMLElement {}
     class HTMLParagraphElement extends HTMLElement {}
@@ -2843,12 +2888,27 @@
             this.endContainer = null; this.endOffset = 0;
             this.collapsed = true; this.commonAncestorContainer = null;
         }
+        selectNodeContents(node) {
+            this.startContainer = node; this.startOffset = 0;
+            this.endContainer = node;
+            this.endOffset = node.nodeType === 3 ? (node.nodeValue || "").length : node.childNodes.length;
+            this.collapsed = false; this.commonAncestorContainer = node;
+        }
         setStart(node, offset) { this.startContainer = node; this.startOffset = offset; this.collapsed = false; }
         setEnd(node, offset) { this.endContainer = node; this.endOffset = offset; }
         collapse(toStart) { this.collapsed = true; }
         cloneRange() { return new Range(); }
         getBoundingClientRect() { return new DOMRect(); }
-        getClientRects() { return []; }
+        getClientRects() {
+            // Approximate with the rects of the range's contents.
+            try {
+                const startEl = this.startContainer.nodeType === 1
+                    ? this.startContainer
+                    : this.startContainer.parentElement;
+                if (!startEl) return [];
+                return startEl.getClientRects();
+            } catch (_e) { return []; }
+        }
         createContextualFragment(html) {
             const div = _document.createElement("div");
             div.innerHTML = html;
@@ -4859,4 +4919,109 @@
         configurable: true,
         enumerable: false,
     });
+
+    // URL-bearing IDL attributes live only on the element interfaces that
+    // Chrome gives them to — a span/base class exposing href/src/rel is a
+    // property-enumeration tell.
+    const _srcBase = {
+        get src() {
+            const _raw = this.getAttribute("src");
+            if (!_raw) return "";
+            try {
+                const _base = (globalThis.location && globalThis.location.href)
+                    || (globalThis.__browser_oxide && globalThis.__browser_oxide._baseUrl)
+                    || undefined;
+                return new URL(_raw, _base).href;
+            } catch (_) {
+                return _raw;
+            }
+        },
+        set src(val) { this.setAttribute("src", String(val)); },
+    };
+    const _hrefBase = {
+        get href() { return this.getAttribute("href") || ""; },
+        set href(val) { this.setAttribute("href", String(val)); },
+    };
+    const _typeBase = {
+        get type() { return this.getAttribute("type") || ""; },
+        set type(val) { this.setAttribute("type", String(val)); },
+    };
+    const _relBase = {
+        get rel() { return this.getAttribute("rel") || ""; },
+        set rel(val) { this.setAttribute("rel", String(val)); },
+    };
+    const _asyncDefer = {
+        get async() { return this.hasAttribute("async"); },
+        set async(val) { if (val) this.setAttribute("async", ""); else this.removeAttribute("async"); },
+        get defer() { return this.hasAttribute("defer"); },
+        set defer(val) { if (val) this.setAttribute("defer", ""); else this.removeAttribute("defer"); },
+    };
+    const _corsIntegrity = {
+        get crossOrigin() { return this.getAttribute("crossorigin"); },
+        set crossOrigin(val) { if (val != null) this.setAttribute("crossorigin", String(val)); else this.removeAttribute("crossorigin"); },
+        get integrity() { return this.getAttribute("integrity") || ""; },
+        set integrity(val) { this.setAttribute("integrity", String(val)); },
+        get referrerPolicy() { return this.getAttribute("referrerpolicy") || ""; },
+        set referrerPolicy(val) { this.setAttribute("referrerpolicy", String(val)); },
+    };
+    const _mixin = (proto, ...parts) => {
+        for (const part of parts) {
+            for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(part))) {
+                // The element's own specialization (input.type normalization,
+                // anchor href resolution, …) always wins over the generic
+                // attribute-backed accessor.
+                if (Object.getOwnPropertyDescriptor(proto, k)) continue;
+                Object.defineProperty(proto, k, { ...d, enumerable: true, configurable: true });
+            }
+        }
+    };
+    if (typeof HTMLScriptElement !== "undefined") _mixin(HTMLScriptElement.prototype, _corsIntegrity, _srcBase, _typeBase, _asyncDefer);
+    if (typeof HTMLImageElement !== "undefined") _mixin(HTMLImageElement.prototype, _corsIntegrity, _srcBase);
+    if (typeof HTMLIFrameElement !== "undefined") _mixin(HTMLIFrameElement.prototype, _srcBase);
+    if (typeof HTMLAnchorElement !== "undefined") _mixin(HTMLAnchorElement.prototype, _hrefBase, _typeBase, _relBase);
+    if (typeof HTMLLinkElement !== "undefined") _mixin(HTMLLinkElement.prototype, _corsIntegrity, _hrefBase, _typeBase, _relBase);
+    if (typeof HTMLBaseElement !== "undefined") _mixin(HTMLBaseElement.prototype, _hrefBase);
+    if (typeof HTMLAreaElement !== "undefined") _mixin(HTMLAreaElement.prototype, _hrefBase, _relBase);
+    if (typeof HTMLInputElement !== "undefined") _mixin(HTMLInputElement.prototype, _srcBase, _typeBase);
+
+    // WebIDL puts interface constants on the prototype object, not the
+    // constructor — `span.ELEMENT_NODE` must resolve through the chain.
+    for (const [cname, cval] of Object.entries({
+        ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3,
+        CDATA_SECTION_NODE: 4, ENTITY_REFERENCE_NODE: 5, ENTITY_NODE: 6,
+        PROCESSING_INSTRUCTION_NODE: 7, COMMENT_NODE: 8, DOCUMENT_NODE: 9,
+        DOCUMENT_TYPE_NODE: 10, DOCUMENT_FRAGMENT_NODE: 11, NOTATION_NODE: 12,
+        DOCUMENT_POSITION_DISCONNECTED: 1, DOCUMENT_POSITION_PRECEDING: 2,
+        DOCUMENT_POSITION_FOLLOWING: 4, DOCUMENT_POSITION_CONTAINS: 8,
+        DOCUMENT_POSITION_CONTAINED_BY: 16,
+        DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32,
+    })) {
+        if (Node.prototype[cname] === undefined) {
+            Object.defineProperty(Node.prototype, cname, { value: cval, enumerable: true, configurable: false, writable: false });
+        }
+    }
+    // Element surface Chrome exposes that the engine lacked. Values are
+    // Chrome's on a bare span (nulls, empty strings, zeros).
+    for (const [pname, pval] of Object.entries({
+        slot: "", assignedSlot: null, clientLeft: 0, clientTop: 0,
+        currentCSSZoom: 1, editContext: null, elementTiming: "",
+        focusGroup: null, focusGroupStart: false,
+        customElementRegistry: null, attributeStyleMap: null,
+    })) {
+        const pd = { get: () => pval, enumerable: true, configurable: true };
+        if (Element.prototype[pname] === undefined) {
+            Object.defineProperty(Element.prototype, pname, pd);
+        }
+    }
+    if (typeof HTMLElement !== "undefined") {
+        for (const [pname, pval] of Object.entries({
+            popover: null, autocorrect: true, virtualKeyboardPolicy: "",
+            writingSuggestions: "true", activeViewTransition: null,
+        })) {
+            const pd = { get: () => pval, enumerable: true, configurable: true };
+            if (HTMLElement.prototype[pname] === undefined) {
+                Object.defineProperty(HTMLElement.prototype, pname, pd);
+            }
+        }
+    }
 })(globalThis);
