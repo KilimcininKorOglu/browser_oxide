@@ -34,7 +34,9 @@ pub fn initial_value(property: &PropertyId) -> CssValue {
         | PropertyId::BorderRightWidth
         | PropertyId::BorderBottomWidth
         | PropertyId::BorderLeftWidth => {
-            CssValue::Length(Length::Px(3.0)) // medium
+            // The specified initial value is `medium`, but border-style is
+            // not modelled and its initial `none` computes the width to 0.
+            CssValue::Length(Length::Zero)
         }
         PropertyId::BoxSizing => CssValue::BoxSizing(BoxSizing::ContentBox),
         PropertyId::OverflowX | PropertyId::OverflowY => CssValue::Overflow(Overflow::Visible),

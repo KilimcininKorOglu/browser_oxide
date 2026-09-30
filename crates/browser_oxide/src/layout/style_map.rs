@@ -186,6 +186,24 @@ mod tests {
         assert!(matches!(ts.display, taffy::Display::Block));
     }
 
+    // Chrome computes an unstyled element's border to 0px: the initial
+    // border-style is none.
+    #[test]
+    fn default_style_has_no_border() {
+        let style = ComputedStyle::resolve(&HashMap::new(), None);
+        let ts = computed_to_taffy(&style, &ResolveContext::default());
+        let zero = taffy::LengthPercentage::length(0.0);
+        assert_eq!(
+            [
+                ts.border.top,
+                ts.border.right,
+                ts.border.bottom,
+                ts.border.left
+            ],
+            [zero; 4]
+        );
+    }
+
     #[test]
     fn flex_display_maps() {
         let mut cascaded = HashMap::new();
