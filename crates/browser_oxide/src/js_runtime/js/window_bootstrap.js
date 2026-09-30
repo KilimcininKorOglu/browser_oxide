@@ -2604,13 +2604,6 @@
     Object.defineProperty(_SSProto, Symbol.toStringTag, { value: "SpeechSynthesis", configurable: true });
     globalThis.speechSynthesis = Object.create(_SSProto);
 
-    // Performance stub state — installed on Performance.prototype below.
-    const _perfMemory = {
-        jsHeapSizeLimit: 4294705152,
-        totalJSHeapSize: 10000000,
-        usedJSHeapSize: 8000000,
-    };
-
     // =========================================================
     // Intl timezone consistency.
     // Some scorers cross-check the IANA timezone
@@ -3113,6 +3106,25 @@
         // real Chrome ever reports (a fingerprinting tell). Compute once
         // per realm (closure cache) and bucket to 100KB.
         let _perfMemCache = null;
+        // Chrome answers every read with a new MemoryInfo, an interface with
+        // no global, so its prototype holds three enumerable getters and
+        // a toStringTag and inherits Object's constructor. The getters
+        // refuse any other receiver.
+        const _memoryInfoValues = new WeakMap();
+        const _memoryInfo = (self) => {
+            const values = _memoryInfoValues.get(self);
+            if (!values) throw new TypeError('Illegal invocation');
+            return values;
+        };
+        const _MemoryInfoProto = {
+            get totalJSHeapSize() { return _memoryInfo(this).totalJSHeapSize; },
+            get usedJSHeapSize() { return _memoryInfo(this).usedJSHeapSize; },
+            get jsHeapSizeLimit() { return _memoryInfo(this).jsHeapSizeLimit; },
+        };
+        for (const name of Object.getOwnPropertyNames(_MemoryInfoProto)) {
+            _maskFunction(Object.getOwnPropertyDescriptor(_MemoryInfoProto, name).get, `get ${name}`);
+        }
+        Object.defineProperty(_MemoryInfoProto, Symbol.toStringTag, { value: 'MemoryInfo', configurable: true });
         _defProtoGetter(_PerfProto, 'memory', () => {
             if (!_perfMemCache) {
                 const Q = 100000;
@@ -3126,7 +3138,9 @@
                     usedJSHeapSize,
                 };
             }
-            return _perfMemCache;
+            const info = Object.create(_MemoryInfoProto);
+            _memoryInfoValues.set(info, _perfMemCache);
+            return info;
         });
         _defProtoGetter(_PerfProto, 'timing', () => {
             const timing = Object.assign({}, _perfTiming);

@@ -7092,6 +7092,35 @@ async fn svg_text_reports_its_characters() {
 }
 
 #[tokio::test]
+async fn performance_memory_is_a_memory_info() {
+    // Measured in Chrome 147: every read builds a MemoryInfo whose getters
+    // live on a prototype with no interface object, so a script walking the
+    // prototype sees three heap getters rather than Object.prototype.
+    let js = r#"(() => {
+        const out = [];
+        const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.name + ':' + e.message); } };
+        const m = performance.memory;
+        const P = Object.getPrototypeOf(m);
+        t('names', () => Object.getOwnPropertyNames(P));
+        t('own', () => Object.getOwnPropertyNames(m));
+        t('tag', () => [Object.prototype.toString.call(m), String(P[Symbol.toStringTag]), P.constructor === Object, Object.getPrototypeOf(P) === Object.prototype]);
+        t('ctorName', () => [typeof P.constructor, P.constructor && P.constructor.name, typeof globalThis.MemoryInfo]);
+        t('desc', () => Object.getOwnPropertyNames(P).map((n) => { const d = Object.getOwnPropertyDescriptor(P, n); return [n, typeof d.get, typeof d.set, d.enumerable, d.configurable, 'value' in d ? typeof d.value : '-']; }));
+        t('symbols', () => Object.getOwnPropertySymbols(P).map(String));
+        t('same', () => [performance.memory === performance.memory, typeof m.jsHeapSizeLimit, m.totalJSHeapSize >= m.usedJSHeapSize]);
+        t('getter', () => { const g = Object.getOwnPropertyDescriptor(P, 'usedJSHeapSize').get; return [g.name, g.length, String(g)]; });
+        t('illegal', () => Object.getOwnPropertyDescriptor(P, 'usedJSHeapSize').get.call({}));
+        t('json', () => JSON.stringify(m));
+        t('keys', () => { const r = []; for (const k in m) r.push(k); return r; });
+        return out.join(' ;; ');
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r#"names=["totalJSHeapSize","usedJSHeapSize","jsHeapSizeLimit"] ;; own=[] ;; tag=["[object MemoryInfo]","MemoryInfo",true,true] ;; ctorName=["function","Object","undefined"] ;; desc=[["totalJSHeapSize","function","undefined",true,true,"-"],["usedJSHeapSize","function","undefined",true,true,"-"],["jsHeapSizeLimit","function","undefined",true,true,"-"]] ;; symbols=["Symbol(Symbol.toStringTag)"] ;; same=[false,"number",true] ;; getter=["get usedJSHeapSize",0,"function get usedJSHeapSize() { [native code] }"] ;; illegal!TypeError:Illegal invocation ;; json="{}" ;; keys=["totalJSHeapSize","usedJSHeapSize","jsHeapSizeLimit"]"#
+    );
+}
+
+#[tokio::test]
 async fn string_timer_runs_as_a_global_classic_script() {
     // Measured in Chrome: the string compiles as an unnamed script of its
     // own in the global scope, so `var` declares a global, `this` is the
