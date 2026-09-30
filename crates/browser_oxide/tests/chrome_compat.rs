@@ -6611,3 +6611,29 @@ async fn callable_proxy_prints_as_an_anonymous_native_without_traps() {
         r#"["function () { [native code] }","function () { [native code] }",[]]"#
     );
 }
+
+#[tokio::test]
+async fn derived_interfaces_are_their_own_constructors() {
+    // Measured in Chrome 147: each derived interface is a distinct
+    // constructor whose prototype chain reaches its base.
+    let js = r#"
+        JSON.stringify([
+            DOMRect === DOMRectReadOnly,
+            Object.getPrototypeOf(DOMRect) === DOMRectReadOnly,
+            Document === HTMLDocument,
+            Object.getPrototypeOf(HTMLDocument) === Document,
+            SVGElement === Element,
+            Object.getPrototypeOf(SVGElement) === Element,
+            document instanceof HTMLDocument,
+            document.constructor === HTMLDocument,
+            Object.prototype.toString.call(document),
+            Object.prototype.toString.call(new DOMRect()),
+            Object.prototype.toString.call(new DOMRectReadOnly()),
+            Object.prototype.toString.call(new DOMPoint()),
+        ])
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"[false,true,false,true,false,true,true,true,"[object HTMLDocument]","[object DOMRect]","[object DOMRectReadOnly]","[object DOMPoint]"]"#
+    );
+}

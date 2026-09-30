@@ -1938,8 +1938,13 @@
     }
     const _selection = new Selection();
 
+    // Chrome's HTMLDocument and SVGElement are their own interfaces:
+    // HTMLDocument extends Document and SVGElement extends Element.
+    class HTMLDocument extends Document {}
+    class SVGElement extends Element {}
+
     // Create the global document
-    const _document = new Document(ops.op_dom_document_node());
+    const _document = new HTMLDocument(ops.op_dom_document_node());
     _nodeCache.set(ops.op_dom_document_node(), new WeakRef(_document));
 
     // Set globals
@@ -1997,8 +2002,13 @@
     _tag(Comment, "Comment");
     _tag(DocumentFragment, "DocumentFragment");
     _tag(ShadowRoot, "ShadowRoot");
-    // Chrome exposes document as HTMLDocument (which extends Document).
-    _tag(Document, "HTMLDocument");
+    _tag(Document, "Document");
+    _tag(HTMLDocument, "HTMLDocument");
+    _tag(SVGElement, "SVGElement");
+    _tag(DOMRectReadOnly, "DOMRectReadOnly");
+    _tag(DOMRect, "DOMRect");
+    _tag(DOMPointReadOnly, "DOMPointReadOnly");
+    _tag(DOMPoint, "DOMPoint");
     _tag(NodeList, "NodeList");
     _tag(DOMTokenList, "DOMTokenList");
 
@@ -2019,7 +2029,7 @@
 
     globalThis.document = _document;
     globalThis.Document = Document;
-    globalThis.HTMLDocument = Document;
+    globalThis.HTMLDocument = HTMLDocument;
     globalThis.Node = Node;
     globalThis.Element = Element;
     // Widgets check `root instanceof ShadowRoot`; the interface stub is not
@@ -2063,7 +2073,7 @@
     globalThis.HTMLTemplateElement = HTMLTemplateElement;
     globalThis.HTMLPreElement = HTMLPreElement;
     globalThis.HTMLQuoteElement = HTMLQuoteElement;
-    globalThis.SVGElement = Element;
+    globalThis.SVGElement = SVGElement;
     globalThis.CharacterData = CharacterData;
     globalThis.Text = Text;
     globalThis.Comment = Comment;
@@ -2071,8 +2081,6 @@
     globalThis.Document = Document;
     globalThis.NodeList = NodeList;
     globalThis.DOMTokenList = DOMTokenList;
-    globalThis.DOMRect = DOMRect;
-    globalThis.DOMRectReadOnly = DOMRect;
     globalThis.Range = Range;
     globalThis.Selection = Selection;
     globalThis.getSelection = function() { return _selection; };
