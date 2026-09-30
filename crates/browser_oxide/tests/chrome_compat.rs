@@ -1036,6 +1036,24 @@ async fn computed_display_follows_the_ua_stylesheet() {
     );
 }
 
+// iframe.srcdoc reflects the srcdoc content attribute in both
+// directions. Measured in Chrome 146.
+#[tokio::test]
+async fn iframe_srcdoc_reflects_its_attribute() {
+    let js = r#"(() => {
+        const f = document.createElement('iframe');
+        const out = [f.srcdoc];
+        f.srcdoc = '<p>a</p>';
+        out.push(f.getAttribute('srcdoc'));
+        f.setAttribute('srcdoc', '<p>b</p>');
+        out.push(f.srcdoc);
+        f.removeAttribute('srcdoc');
+        out.push(f.srcdoc, f.hasAttribute('srcdoc'));
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(check(js).await, r#"["","<p>a</p>","<p>b</p>","",false]"#);
+}
+
 // A node in a shadow tree whose host is in the document is connected,
 // though the shadow root has no parent node. Measured in Chrome 146.
 #[tokio::test]

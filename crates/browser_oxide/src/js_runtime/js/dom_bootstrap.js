@@ -4318,18 +4318,13 @@
             configurable: true,
             enumerable: true,
         });
-        // srcdoc setter: when a script sets iframe.srcdoc = "..." BEFORE the first
-        // contentWindow access, the value lands on the element's own property dict
-        // (no setter exists, so JS creates an own data property). Our fallback in
-        // _getIframeWindow reads el.srcdoc if getAttribute("srcdoc") is empty.
-        //
+        // The srcdoc property reflects the content attribute, as in Chrome.
         // When srcdoc is set AFTER the first contentWindow access (child realm
-        // already cached), this setter fires immediately and re-executes the scripts.
-        const _srcdocValues = new WeakMap();
+        // already cached), the setter re-executes the scripts.
         Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
-            get: function() { return _srcdocValues.get(this) || this.getAttribute('srcdoc') || ''; },
+            get: function() { return this.getAttribute('srcdoc') ?? ''; },
             set: function(v) {
-                _srcdocValues.set(this, String(v));
+                this.setAttribute('srcdoc', String(v));
                 const _st = _iframeState.get(this);
                 if (_st && _st._realmId !== undefined && v && String(v) !== _st._processedSrcdoc) {
                     _st._processedSrcdoc = String(v);
