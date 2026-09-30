@@ -266,7 +266,8 @@ impl LayoutEngine {
                 }
             }
             NodeData::Element(elem) => {
-                let mut declared = self.cascaded(dom, node_id);
+                let mut declared = ua_declarations(elem);
+                declared.extend(self.cascaded(dom, node_id));
                 declared.extend(self.parse_inline_style(elem));
                 let computed = ComputedStyle::resolve(&declared, None);
                 if let Some(CssValue::Display(Display::None)) = computed.get(&PropertyId::Display) {
@@ -401,6 +402,28 @@ fn parse_style_rules(css: &str) -> Vec<StyleRule> {
         .collect()
 }
 
+/// Elements Chrome's UA stylesheet hides (scripting is on, so
+/// `noscript` too).
+const UA_HIDDEN: [&str; 9] = [
+    "base", "head", "link", "meta", "noscript", "script", "style", "template", "title",
+];
+
+/// The UA stylesheet's `display: none`, which author rules override.
+fn ua_declarations(elem: &crate::dom::node::ElementData) -> HashMap<PropertyId, CssValue> {
+    let hidden = UA_HIDDEN
+        .iter()
+        .any(|tag| elem.name.local.eq_ignore_ascii_case(tag))
+        || elem
+            .attrs
+            .iter()
+            .any(|a| a.name.local.eq_ignore_ascii_case("hidden"));
+    let mut map = HashMap::new();
+    if hidden {
+        map.insert(PropertyId::Display, CssValue::Display(Display::None));
+    }
+    map
+}
+
 fn has_pseudo_element(selector: &Selector) -> bool {
     selector
         .components()
@@ -412,6 +435,25 @@ fn has_pseudo_element(selector: &Selector) -> bool {
 mod tests {
     use super::*;
     use crate::dom::node::{Attribute, QualName};
+
+    // Chrome's UA stylesheet hides <head>, <style> and <script>, so their
+    // text takes no space above the content.
+    #[test]
+    fn ua_hidden_elements_take_no_space() {
+        let div_y = |html: &str| {
+            let dom = crate::html_parser::parse_html(html);
+            let div = dom.get_elements_by_tag_name(NodeId::DOCUMENT, "div")[0];
+            LayoutEngine::new(Viewport::new(1920.0, 1080.0))
+                .get_bounding_rect(&dom, div)
+                .y
+        };
+        let bare = div_y("<html><head></head><body><div></div></body></html>");
+        let hidden = div_y(
+            "<html><head><title>t</title><style>a { top: 0 }</style></head>\
+             <body><script>var x = 1;</script><div></div></body></html>",
+        );
+        assert_eq!(hidden, bare);
+    }
 
     #[test]
     fn stylesheet_rules_size_the_element() {
