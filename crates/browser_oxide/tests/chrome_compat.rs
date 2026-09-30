@@ -6637,3 +6637,48 @@ async fn derived_interfaces_are_their_own_constructors() {
         r#"[false,true,false,true,false,true,true,true,"[object HTMLDocument]","[object DOMRect]","[object DOMRectReadOnly]","[object DOMPoint]"]"#
     );
 }
+
+#[tokio::test]
+async fn every_global_function_prints_native_code() {
+    // Measured in Chrome 147 on a blank page: no global function, global
+    // accessor, constructor static or namespace member prints its source.
+    let js = r#"
+        (() => {
+            const ts = Function.prototype.toString;
+            const native = /^function [^(]*\(\) \{\s*\[native code\]\s*\}$/;
+            const leaks = [];
+            const test = (label, fn, name) => {
+                if (typeof fn !== 'function') return;
+                const s = ts.call(fn);
+                if (!native.test(s)) leaks.push(label + ': ' + s.slice(0, 40));
+                else if (name !== undefined && s !== 'function ' + name + '() { [native code] }')
+                    leaks.push(label + ': ' + s);
+            };
+            const members = (label, obj, skip) => {
+                for (const n of Object.getOwnPropertyNames(obj)) {
+                    if (skip.includes(n)) continue;
+                    const d = Object.getOwnPropertyDescriptor(obj, n);
+                    test(label + '.' + n + ' get', d.get, 'get ' + n);
+                    test(label + '.' + n + ' set', d.set, 'set ' + n);
+                    test(label + '.' + n, d.value);
+                }
+            };
+            for (const g of Object.getOwnPropertyNames(globalThis)) {
+                // Frame indices are not functions of the window; `_`-prefixed
+                // names are engine internals, which Chrome does not have at all.
+                if (/^\d+$/.test(g) || g.startsWith('_')) continue;
+                const d = Object.getOwnPropertyDescriptor(globalThis, g);
+                test(g + ' get', d.get, 'get ' + g);
+                test(g + ' set', d.set, 'set ' + g);
+                if (typeof d.value !== 'function') continue;
+                test(g, d.value, /^[A-Z]/.test(g) && !/^webkit/i.test(g) ? g : undefined);
+                members(g, d.value, ['prototype', 'caller', 'arguments']);
+            }
+            for (const ns of ['Intl', 'WebAssembly', 'CSS', 'console', 'Math', 'JSON', 'Reflect']) {
+                if (globalThis[ns]) members(ns, globalThis[ns], ['memory']);
+            }
+            return leaks.join('\n');
+        })()
+    "#;
+    assert_eq!(check(js).await, "");
+}

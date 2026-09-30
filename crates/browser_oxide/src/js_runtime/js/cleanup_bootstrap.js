@@ -569,6 +569,53 @@
         }
     } catch (_e) { /* universal mask sweep is best-effort */ }
 
+    // -- Global function sweep ----------
+    // Every function a fresh Chrome window exposes prints
+    // `function <name>() { [native code] }`: the global constructors, their
+    // static methods (URL.createObjectURL, MediaSource.isTypeSupported),
+    // the global accessors (isSecureContext) and the namespace members
+    // (Intl.DateTimeFormat, CSS.supports). The sweeps above only cover
+    // prototypes and a fixed name list, so the interface stubs and the
+    // statics still printed their JS source. Mask each one that does not
+    // already print native code, under the name Chrome gives it.
+    try {
+        const _mask = globalThis._maskFunction;
+        const _toStr = Function.prototype.toString;
+        const _native = /\{\s*\[native code\]\s*\}$/;
+        const _fix = (fn, name) => {
+            if (typeof fn !== 'function') return;
+            if (!_native.test(_toStr.call(fn))) _mask(fn, name);
+        };
+        const _fixMembers = (obj, skip) => {
+            for (const _n of Object.getOwnPropertyNames(obj)) {
+                if (skip.has(_n)) continue;
+                const _d = Object.getOwnPropertyDescriptor(obj, _n);
+                _fix(_d.get, `get ${_n}`);
+                _fix(_d.set, `set ${_n}`);
+                _fix(_d.value, _n);
+            }
+        };
+        if (typeof _mask === 'function') {
+            const _statics = new Set(['prototype', 'caller', 'arguments', 'length', 'name']);
+            const _none = new Set();
+            for (const _g of Object.getOwnPropertyNames(globalThis)) {
+                // Frame indices and the engine's own `_` internals are not
+                // Chrome interfaces.
+                if (/^\d+$/.test(_g) || _g.startsWith('_')) continue;
+                const _d = Object.getOwnPropertyDescriptor(globalThis, _g);
+                _fix(_d.get, `get ${_g}`);
+                _fix(_d.set, `set ${_g}`);
+                if (typeof _d.value !== 'function') continue;
+                _fix(_d.value, _g);
+                _fixMembers(_d.value, _statics);
+            }
+            for (const _ns of ['Intl', 'WebAssembly', 'CSS', 'console']) {
+                const _o = globalThis[_ns];
+                if (_o && typeof _o === 'object') _fixMembers(_o, _none);
+            }
+        }
+    } catch (_e) { /* global function sweep is best-effort */ }
+
     const internals = [
         'Deno',
         'ops',
