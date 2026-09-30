@@ -53,6 +53,19 @@ pub fn op_dom_get_tag_name(state: &mut OpState, #[smi] node_id: i32) -> String {
         .unwrap_or_default()
 }
 
+/// The element's namespace URI. `None` is the HTML namespace, which the
+/// DOM stores implicitly; `Some("")` is an element created in no namespace.
+#[op2]
+#[string]
+pub fn op_dom_get_namespace(state: &mut OpState, #[smi] node_id: i32) -> Option<String> {
+    let state = state.borrow::<DomState>();
+    state
+        .dom
+        .get(NodeId::from_raw(node_id as u32))
+        .and_then(|n| n.as_element())
+        .and_then(|e| e.name.ns.clone())
+}
+
 #[op2(fast)]
 #[smi]
 pub fn op_dom_get_node_type(state: &mut OpState, #[smi] node_id: i32) -> i32 {
@@ -378,6 +391,21 @@ pub fn op_dom_create_element(state: &mut OpState, #[string] tag: &str) -> i32 {
     state
         .dom
         .create_element(crate::dom::node::QualName::new(tag), vec![])
+        .to_raw() as i32
+}
+
+/// Creates an element in a namespace other than HTML (createElementNS).
+#[op2(fast)]
+#[smi]
+pub fn op_dom_create_element_ns(
+    state: &mut OpState,
+    #[string] ns: &str,
+    #[string] tag: &str,
+) -> i32 {
+    let state = state.borrow_mut::<DomState>();
+    state
+        .dom
+        .create_element(crate::dom::node::QualName::with_ns(ns, tag), vec![])
         .to_raw() as i32
 }
 
@@ -1432,6 +1460,7 @@ deno_core::extension!(
     ops = [
         op_dom_document_node,
         op_dom_get_tag_name,
+        op_dom_get_namespace,
         op_dom_get_node_type,
         op_dom_get_text_content,
         op_dom_get_inner_html,
@@ -1454,6 +1483,7 @@ deno_core::extension!(
         op_dom_get_elements_by_tag_name,
         op_dom_get_elements_by_class_name,
         op_dom_create_element,
+        op_dom_create_element_ns,
         op_dom_create_text_node,
         op_dom_create_comment,
         op_dom_create_document_fragment,

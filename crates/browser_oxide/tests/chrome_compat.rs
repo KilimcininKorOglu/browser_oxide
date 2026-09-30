@@ -6745,6 +6745,65 @@ async fn webgl_extensions_are_chrome_shaped_objects() {
 }
 
 #[tokio::test]
+async fn svg_elements_carry_their_namespace_interface_and_box() {
+    // Measured in Chrome 147: SVG elements, created by createElementNS or
+    // parsed from markup, keep the SVG namespace and their tag's case, take
+    // their SVG*Element interface, and answer getBBox() with an SVGRect
+    // built from their geometry; a detached element's box is empty.
+    let js = r#"
+        (() => {
+            const tag = (o) => Object.prototype.toString.call(o);
+            const NS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(NS, 'svg');
+            document.body.appendChild(svg);
+            const mk = (name, attrs, text) => {
+                const e = document.createElementNS(NS, name);
+                for (const k in attrs) e.setAttribute(k, attrs[k]);
+                if (text) e.textContent = text;
+                svg.appendChild(e);
+                return e;
+            };
+            const t = mk('text', { x: 5, y: 20, 'font-size': 32 }, 'Hi');
+            const r = mk('rect', { x: 2, y: 3, width: 10, height: 5 });
+            const c = mk('circle', { cx: 10, cy: 10, r: 4 });
+            const p = mk('path', { d: 'M10 10 L 30 40' });
+            const clip = mk('clipPath', {});
+            const bb = (e) => { const b = e.getBBox(); return [b.x, b.y, b.width, b.height]; };
+            const tb = t.getBBox();
+            const div = document.createElement('div');
+            div.innerHTML = '<svg><text id="svg-parsed">abc</text></svg>';
+            document.body.appendChild(div);
+            const parsed = document.getElementById('svg-parsed');
+            const chain = [];
+            for (let o = Object.getPrototypeOf(t); o; o = Object.getPrototypeOf(o)) chain.push(o.constructor.name);
+            const detached = document.createElementNS(NS, 'rect');
+            detached.setAttribute('width', 9);
+            return JSON.stringify([
+                tag(svg), svg.namespaceURI, svg.tagName, clip.tagName, clip.nodeName, tag(clip),
+                document.createElement('div').namespaceURI, document.createElement('div').tagName,
+                chain, tag(r), tag(p),
+                tag(parsed), parsed.namespaceURI, parsed.tagName,
+                tag(tb), tb instanceof DOMRect, tb.x, tb.y, tb.height, tb.width > 0,
+                t.getComputedTextLength() === tb.width, t.getNumberOfChars(),
+                bb(r), bb(c), bb(p), bb(detached),
+            ]);
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        concat!(
+            r#"["[object SVGSVGElement]","http://www.w3.org/2000/svg","svg","clipPath","clipPath","[object SVGClipPathElement]","#,
+            r#""http://www.w3.org/1999/xhtml","DIV","#,
+            r#"["SVGTextElement","SVGTextPositioningElement","SVGTextContentElement","SVGGraphicsElement","SVGElement","Element","Node","EventTarget","Object"],"#,
+            r#""[object SVGRectElement]","[object SVGPathElement]","#,
+            r#""[object SVGTextElement]","http://www.w3.org/2000/svg","text","#,
+            r#""[object SVGRect]",false,5,-11,41,true,true,2,"#,
+            r#"[2,3,10,5],[6,6,8,8],[10,10,20,30],[0,0,0,0]]"#,
+        )
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.

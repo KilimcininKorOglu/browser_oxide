@@ -16,6 +16,13 @@
         return Array.from(node.childNodes);
     }
 
+    // The topmost ancestor of a node: a document, or a detached node.
+    function _rootOf(node) {
+        let root = node;
+        for (let up = node.parentNode; up; up = up.parentNode) root = up;
+        return root;
+    }
+
     function _getNodeId(node) {
         if (node === null || node === undefined) return -1;
         if (node === globalThis || node === globalThis.window) return -999;
@@ -453,7 +460,7 @@
         get nodeType() { return ops.op_dom_get_node_type(_getNodeId(this)); }
         get nodeName() {
             const type = this.nodeType;
-            if (type === 1) return ops.op_dom_get_tag_name(_getNodeId(this)).toUpperCase();
+            if (type === 1) return _qualifiedTagName(this);
             if (type === 3) return "#text";
             if (type === 8) return "#comment";
             if (type === 9) return "#document";
@@ -665,8 +672,10 @@
     }
 
     class Element extends Node {
-        get tagName() { return ops.op_dom_get_tag_name(_getNodeId(this)).toUpperCase(); }
+        get tagName() { return _qualifiedTagName(this); }
         get localName() { return ops.op_dom_get_tag_name(_getNodeId(this)); }
+        get namespaceURI() { return _namespaceOf(this); }
+        get prefix() { return null; }
         get id() { return ops.op_dom_get_attribute(_getNodeId(this), "id") || ""; }
         set id(val) { ops.op_dom_set_attribute(_getNodeId(this), "id", String(val)); }
         get className() { return ops.op_dom_get_attribute(_getNodeId(this), "class") || ""; }
@@ -1456,12 +1465,36 @@
 
     // Adjust an Element instance's prototype to the tag-specific subclass
     // so `el instanceof HTMLDivElement` works as in real Chrome.
+    // SVG elements take their SVG*Element interface, elements of any other
+    // non-HTML namespace stay plain Elements.
     function _retargetElementProto(el) {
         try {
-            const tag = ops.op_dom_get_tag_name(_getNodeId(el)).toLowerCase();
-            const proto = _tagToProto[tag] || HTMLElement.prototype;
+            const ns = _namespaceOf(el);
+            const tag = ops.op_dom_get_tag_name(_getNodeId(el));
+            let proto;
+            if (ns === _HTML_NS) proto = _tagToProto[tag.toLowerCase()] || HTMLElement.prototype;
+            else if (ns === _SVG_NS) proto = (_svgTagToClass[tag] || SVGElement).prototype;
+            else proto = Element.prototype;
             Object.setPrototypeOf(el, proto);
         } catch {}
+    }
+
+    const _HTML_NS = "http://www.w3.org/1999/xhtml";
+    const _SVG_NS = "http://www.w3.org/2000/svg";
+
+    // The DOM stores the HTML namespace as no namespace at all, and an
+    // element created in no namespace as the empty string.
+    function _namespaceOf(el) {
+        const ns = ops.op_dom_get_namespace(_getNodeId(el));
+        if (ns === null || ns === undefined) return _HTML_NS;
+        return ns === "" ? null : ns;
+    }
+
+    // An HTML element's tag name is uppercased; any other keeps its case
+    // (SVG's clipPath, foreignObject).
+    function _qualifiedTagName(el) {
+        const tag = ops.op_dom_get_tag_name(_getNodeId(el));
+        return _namespaceOf(el) === _HTML_NS ? tag.toUpperCase() : tag;
     }
 
     // CharacterData (DOM Standard §4.10): the shared base of Text and Comment.
@@ -1656,8 +1689,9 @@
             return el;
         }
         createElementNS(ns, tag) {
-            // For now, treat namespaced elements same as regular ones.
-            return this.createElement(tag);
+            if (ns === _HTML_NS) return this.createElement(tag);
+            const nodeId = ops.op_dom_create_element_ns(ns === null || ns === undefined ? "" : String(ns), String(tag));
+            return _wrapNode(nodeId);
         }
         createTextNode(text) {
             return _wrapNode(ops.op_dom_create_text_node(text));
@@ -1943,6 +1977,167 @@
     class HTMLDocument extends Document {}
     class SVGElement extends Element {}
 
+    // SVGRect is its own interface in Chrome, not a DOMRect.
+    const _svgRectData = new WeakMap();
+    class SVGRect {
+        get x() { return _svgRectData.get(this).x; }
+        set x(v) { _svgRectData.get(this).x = Number(v); }
+        get y() { return _svgRectData.get(this).y; }
+        set y(v) { _svgRectData.get(this).y = Number(v); }
+        get width() { return _svgRectData.get(this).width; }
+        set width(v) { _svgRectData.get(this).width = Number(v); }
+        get height() { return _svgRectData.get(this).height; }
+        set height(v) { _svgRectData.get(this).height = Number(v); }
+    }
+    const _svgRect = (box) => {
+        const rect = Object.create(SVGRect.prototype);
+        _svgRectData.set(rect, box ? { ...box } : { x: 0, y: 0, width: 0, height: 0 });
+        return rect;
+    };
+
+    // The engine lays out no SVG, so a box is computed from the element's
+    // own geometry attributes, and text is measured with the canvas text
+    // metrics. Measured in Chrome 147: a text's box starts at its x, its
+    // top sits 0.96 font sizes above the baseline, and it is 1.28 font
+    // sizes tall; a detached element's box is empty.
+    const _svgNum = (el, name) => Number.parseFloat(el.getAttribute(name)) || 0;
+    const _svgFontSize = (el) => {
+        for (let n = el; n && n.nodeType === 1; n = n.parentNode) {
+            const size = Number.parseFloat(n.getAttribute("font-size"));
+            if (size > 0) return size;
+        }
+        const computed = Number.parseFloat(globalThis.getComputedStyle?.(el)?.fontSize);
+        return computed > 0 ? computed : 16;
+    };
+    let _svgMeasureCtx = null;
+    const _svgTextWidth = (el) => {
+        _svgMeasureCtx ||= _document.createElement("canvas").getContext("2d");
+        const family = globalThis.getComputedStyle?.(el)?.fontFamily || "sans-serif";
+        _svgMeasureCtx.font = _svgFontSize(el) + "px " + family;
+        return _svgMeasureCtx.measureText(el.textContent || "").width;
+    };
+    const _svgUnion = (boxes) => {
+        const real = boxes.filter(Boolean);
+        if (!real.length) return null;
+        const x = Math.min(...real.map((b) => b.x)), y = Math.min(...real.map((b) => b.y));
+        const right = Math.max(...real.map((b) => b.x + b.width));
+        const bottom = Math.max(...real.map((b) => b.y + b.height));
+        return { x, y, width: right - x, height: bottom - y };
+    };
+    const _svgPoints = (points) => {
+        if (!points.length) return null;
+        const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+        const x = Math.min(...xs), y = Math.min(...ys);
+        return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+    };
+    // Path boxes use the end point of every segment; curve control points
+    // are left out.
+    const _SVG_PATH_ARITY = { M: 2, L: 2, T: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, A: 7, Z: 0 };
+    // The pen position after one segment of a path command.
+    const _svgPathStep = (pen, up, rel, seg) => {
+        const at = (base, v) => (rel ? base + v : v);
+        if (up === "H") return [at(pen[0], seg[0]), pen[1]];
+        if (up === "V") return [pen[0], at(pen[1], seg[0])];
+        return [at(pen[0], seg[seg.length - 2]), at(pen[1], seg[seg.length - 1])];
+    };
+    const _svgPathBox = (d) => {
+        const points = [];
+        let pen = [0, 0];
+        for (const [, cmd, args] of String(d).matchAll(/([MLHVCSQTAZ])([^MLHVCSQTAZ]*)/gi)) {
+            const up = cmd.toUpperCase();
+            const nums = (args.match(/-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi) || []).map(Number);
+            const n = _SVG_PATH_ARITY[up];
+            for (let i = 0; n && i + n <= nums.length; i += n) {
+                pen = _svgPathStep(pen, up, cmd !== up, nums.slice(i, i + n));
+                points.push(pen);
+            }
+        }
+        return _svgPoints(points);
+    };
+    const _svgBoxAttrs = (el) =>
+        ({ x: _svgNum(el, "x"), y: _svgNum(el, "y"), width: _svgNum(el, "width"), height: _svgNum(el, "height") });
+    const _svgEllipseBox = (el, rx, ry) =>
+        ({ x: _svgNum(el, "cx") - rx, y: _svgNum(el, "cy") - ry, width: 2 * rx, height: 2 * ry });
+    const _svgPolyBox = (el) => {
+        const nums = (el.getAttribute("points") || "").trim().split(/[\s,]+/).map(Number);
+        const points = [];
+        for (let i = 0; i + 1 < nums.length; i += 2) points.push([nums[i], nums[i + 1]]);
+        return _svgPoints(points);
+    };
+    const _svgTextBox = (el) => {
+        const size = _svgFontSize(el);
+        return { x: _svgNum(el, "x"), y: _svgNum(el, "y") - Math.round(0.96 * size),
+            width: _svgTextWidth(el), height: Math.round(1.28 * size) };
+    };
+    const _svgBoxByTag = {
+        rect: _svgBoxAttrs, image: _svgBoxAttrs, foreignObject: _svgBoxAttrs, use: _svgBoxAttrs,
+        circle: (el) => _svgEllipseBox(el, _svgNum(el, "r"), _svgNum(el, "r")),
+        ellipse: (el) => _svgEllipseBox(el, _svgNum(el, "rx"), _svgNum(el, "ry")),
+        line: (el) => _svgPoints([[_svgNum(el, "x1"), _svgNum(el, "y1")], [_svgNum(el, "x2"), _svgNum(el, "y2")]]),
+        polyline: _svgPolyBox, polygon: _svgPolyBox,
+        path: (el) => _svgPathBox(el.getAttribute("d") || ""),
+        text: _svgTextBox, tspan: _svgTextBox,
+    };
+    // Containers take the union of their children's boxes.
+    const _svgBoxOf = (el) => {
+        const own = _svgBoxByTag[el.localName];
+        return own ? own(el) : _svgUnion(Array.from(el.children).map(_svgBoxOf));
+    };
+
+    class SVGGraphicsElement extends SVGElement {
+        // Only an element in the rendered document has a box.
+        getBBox() {
+            return _svgRect(_rootOf(this) === _document ? _svgBoxOf(this) : null);
+        }
+    }
+    class SVGGeometryElement extends SVGGraphicsElement {}
+    class SVGTextContentElement extends SVGGraphicsElement {
+        getComputedTextLength() { return _rootOf(this) === _document ? _svgTextWidth(this) : 0; }
+        getNumberOfChars() { return (this.textContent || "").length; }
+    }
+    class SVGTextPositioningElement extends SVGTextContentElement {}
+
+    // Chrome's SVG element interfaces, each with its parent and the tags
+    // it serves.
+    const _svgTagToClass = {};
+    const _svgClasses = { SVGElement, SVGGraphicsElement, SVGGeometryElement, SVGTextContentElement, SVGTextPositioningElement };
+    for (const [name, parent, tags] of [
+        ["SVGSVGElement", SVGGraphicsElement, "svg"],
+        ["SVGGElement", SVGGraphicsElement, "g"],
+        ["SVGDefsElement", SVGGraphicsElement, "defs"],
+        ["SVGUseElement", SVGGraphicsElement, "use"],
+        ["SVGImageElement", SVGGraphicsElement, "image"],
+        ["SVGForeignObjectElement", SVGGraphicsElement, "foreignObject"],
+        ["SVGAElement", SVGGraphicsElement, "a"],
+        ["SVGSwitchElement", SVGGraphicsElement, "switch"],
+        ["SVGRectElement", SVGGeometryElement, "rect"],
+        ["SVGCircleElement", SVGGeometryElement, "circle"],
+        ["SVGEllipseElement", SVGGeometryElement, "ellipse"],
+        ["SVGLineElement", SVGGeometryElement, "line"],
+        ["SVGPathElement", SVGGeometryElement, "path"],
+        ["SVGPolygonElement", SVGGeometryElement, "polygon"],
+        ["SVGPolylineElement", SVGGeometryElement, "polyline"],
+        ["SVGTextElement", SVGTextPositioningElement, "text"],
+        ["SVGTSpanElement", SVGTextPositioningElement, "tspan"],
+        ["SVGTextPathElement", SVGTextContentElement, "textPath"],
+        ["SVGStyleElement", SVGElement, "style"],
+        ["SVGTitleElement", SVGElement, "title"],
+        ["SVGDescElement", SVGElement, "desc"],
+        ["SVGMetadataElement", SVGElement, "metadata"],
+        ["SVGClipPathElement", SVGElement, "clipPath"],
+        ["SVGMaskElement", SVGElement, "mask"],
+        ["SVGSymbolElement", SVGElement, "symbol"],
+        ["SVGPatternElement", SVGElement, "pattern"],
+        ["SVGMarkerElement", SVGElement, "marker"],
+        ["SVGFilterElement", SVGElement, "filter"],
+        ["SVGStopElement", SVGElement, "stop"],
+        ["SVGScriptElement", SVGElement, "script"],
+    ]) {
+        const cls = { [name]: class extends parent {} }[name];
+        _svgClasses[name] = cls;
+        _svgTagToClass[tags] = cls;
+    }
+
     // Create the global document
     const _document = new HTMLDocument(ops.op_dom_document_node());
     _nodeCache.set(ops.op_dom_document_node(), new WeakRef(_document));
@@ -2004,7 +2199,8 @@
     _tag(ShadowRoot, "ShadowRoot");
     _tag(Document, "Document");
     _tag(HTMLDocument, "HTMLDocument");
-    _tag(SVGElement, "SVGElement");
+    for (const name in _svgClasses) _tag(_svgClasses[name], name);
+    _tag(SVGRect, "SVGRect");
     _tag(DOMRectReadOnly, "DOMRectReadOnly");
     _tag(DOMRect, "DOMRect");
     _tag(DOMPointReadOnly, "DOMPointReadOnly");
@@ -2073,7 +2269,8 @@
     globalThis.HTMLTemplateElement = HTMLTemplateElement;
     globalThis.HTMLPreElement = HTMLPreElement;
     globalThis.HTMLQuoteElement = HTMLQuoteElement;
-    globalThis.SVGElement = SVGElement;
+    for (const name in _svgClasses) globalThis[name] = _svgClasses[name];
+    globalThis.SVGRect = SVGRect;
     globalThis.CharacterData = CharacterData;
     globalThis.Text = Text;
     globalThis.Comment = Comment;
