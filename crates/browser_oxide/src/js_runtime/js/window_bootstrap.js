@@ -3864,11 +3864,8 @@
             this.responseText = "";
             this.response = "";
             this.responseURL = "";
-            try {
-                const ev = new Event("readystatechange");
-                if (typeof this.dispatchEvent === 'function') this.dispatchEvent(ev);
-                if (this.onreadystatechange) this.onreadystatechange.call(this, ev);
-            } catch {}
+            // dispatchEvent also runs the onreadystatechange handler.
+            this.dispatchEvent(new Event("readystatechange"));
         }
         setRequestHeader(name, value) {
             this._headers[String(name)] = String(value);
@@ -3878,13 +3875,11 @@
             console.log(`[XHR] send ${this._method} ${this._url}`);
             const xhr = this;
             if (xhr._aborted) return;
+            // dispatchEvent runs the on<type> handler as well as the listeners.
+            // A throwing listener must not turn a delivered response into
+            // an error, so its exception is reported and dropped here.
             const fireEvent = (type) => {
-                try {
-                    const ev = new Event(type);
-                    if (typeof xhr.dispatchEvent === 'function') xhr.dispatchEvent(ev);
-                    const handler = xhr['on' + type];
-                    if (typeof handler === 'function') handler.call(xhr, ev);
-                } catch {}
+                try { xhr.dispatchEvent(new Event(type)); } catch (e) { console.error(e); }
             };
 
             // Encode body for the sync op (marker-prefixed like op_fetch).
@@ -4025,11 +4020,7 @@
         abort() {
             this._aborted = true;
             this.readyState = 0;
-            try {
-                const ev = new Event("abort");
-                if (typeof this.dispatchEvent === 'function') this.dispatchEvent(ev);
-                if (this.onabort) this.onabort.call(this, ev);
-            } catch {}
+            this.dispatchEvent(new Event("abort"));
         }
         getResponseHeader(name) {
             return this._respHeaders[String(name).toLowerCase()] || null;

@@ -1196,6 +1196,34 @@ async fn worker_import_scripts_from_data_url() {
 }
 
 #[tokio::test]
+async fn xhr_runs_each_handler_once_per_event() {
+    // Chrome 148: every readystatechange, load and loadend reaches the
+    // handler property once. A challenge script that reads the response in
+    // onreadystatechange processes it twice when a handler runs twice.
+    let mut page = Page::from_html(
+        r#"<html><body><div id="out"></div><script>
+            const ev = [];
+            const x = new XMLHttpRequest();
+            x.onreadystatechange = () => ev.push('rsc' + x.readyState);
+            x.onload = () => ev.push('load:' + x.responseText);
+            x.onloadend = () => {
+                ev.push('loadend');
+                document.getElementById('out').textContent = ev.join(',');
+            };
+            x.open('GET', URL.createObjectURL(new Blob(['hi'])));
+            x.send();
+        </script></body></html>"#,
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        page.text_of("#out"),
+        Some("rsc1,rsc2,rsc3,rsc4,load:hi,loadend".to_string())
+    );
+}
+
+#[tokio::test]
 async fn worker_imported_script_frames_carry_its_url() {
     // Chrome compiles an importScripts file as a script named by its URL,
     // so a frame inside it reads "at <url>:line:col", not "at eval (...)".
