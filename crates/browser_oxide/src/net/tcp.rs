@@ -55,11 +55,9 @@ impl DnsCache {
         }
 
         // Cache miss — resolve
-        let addr_str = format!("{host}:{port}");
-        let addrs: Vec<SocketAddr> = tokio::net::lookup_host(&addr_str)
+        let addrs: Vec<SocketAddr> = lookup_host_with_challenge_fallback(host, port)
             .await
-            .map_err(|e| NetError::Tcp(format!("DNS lookup failed for {host}: {e}")))?
-            .collect();
+            .ok_or_else(|| NetError::Tcp(format!("DNS lookup failed for {host}")))?;
 
         // Store in cache
         {
@@ -74,6 +72,45 @@ impl DnsCache {
         }
 
         Ok(addrs)
+    }
+}
+
+/// Cloudflare publishes some challenge-plane subdomains (brunhild.…)
+/// as AAAA-only. On an IPv4-only network those names cannot connect at
+/// all, and a Turnstile challenge worker fails its fetch with "Failed
+/// to fetch". The same edge IPs serve every *.challenges.cloudflare.com
+/// host via SNI, so an empty or IPv6-only answer gains the apex's A
+/// records. On a dual-stack host the IPv6 addresses still win through
+/// Happy Eyeballs, so the merge is safe there.
+fn is_challenge_subdomain(host: &str) -> bool {
+    host != "challenges.cloudflare.com" && host.ends_with(".challenges.cloudflare.com")
+}
+
+async fn lookup_host_with_challenge_fallback(host: &str, port: u16) -> Option<Vec<SocketAddr>> {
+    let addr_str = format!("{host}:{port}");
+    let mut addrs: Vec<SocketAddr> = match tokio::net::lookup_host(&addr_str).await {
+        Ok(it) => it.collect(),
+        Err(_) => Vec::new(),
+    };
+    if is_challenge_subdomain(host) {
+        let only_v6 = !addrs.is_empty() && addrs.iter().all(SocketAddr::is_ipv6);
+        if addrs.is_empty() || only_v6 {
+            let apex: Vec<SocketAddr> =
+                match tokio::net::lookup_host(("challenges.cloudflare.com", port)).await {
+                    Ok(it) => it.collect(),
+                    Err(_) => Vec::new(),
+                };
+            for a in apex {
+                if a.is_ipv4() && !addrs.contains(&a) {
+                    addrs.push(a);
+                }
+            }
+        }
+    }
+    if addrs.is_empty() {
+        None
+    } else {
+        Some(addrs)
     }
 }
 
@@ -121,12 +158,9 @@ pub async fn connect_with_cache(
     let addrs: Vec<SocketAddr> = if let Some(cache) = dns_cache {
         cache.resolve(host, port).await?
     } else {
-        let addr_str = format!("{host}:{port}");
-        let resolved: Vec<SocketAddr> = tokio::net::lookup_host(&addr_str)
+        lookup_host_with_challenge_fallback(host, port)
             .await
-            .map_err(|e| NetError::Tcp(format!("DNS lookup failed for {host}: {e}")))?
-            .collect();
-        resolved
+            .ok_or_else(|| NetError::Tcp(format!("DNS lookup failed for {host}")))?
     };
 
     if addrs.is_empty() {
