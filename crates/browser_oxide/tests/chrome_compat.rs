@@ -6984,6 +6984,22 @@ async fn class_list_is_one_indexable_ordered_token_set() {
 }
 
 #[tokio::test]
+async fn native_functions_are_never_async_functions() {
+    // Measured in Chrome 147: fetch and the Response body readers are plain
+    // functions, so their tag is Function and their prototype is
+    // Function.prototype.
+    let js = r#"
+        (() => {
+            const fns = [fetch, Response.prototype.json, Response.prototype.text, Response.prototype.arrayBuffer, Response.prototype.blob, WebAssembly.compileStreaming, WebAssembly.instantiateStreaming];
+            return JSON.stringify(fns.map((f) => [Object.prototype.toString.call(f), Object.getPrototypeOf(f) === Function.prototype, f.constructor === Function, typeof f.prototype]).concat([fetch('data:,x') instanceof Promise]));
+        })()
+    "#;
+    let one = r#"["[object Function]",true,true,"undefined"]"#;
+    let expected = format!("[{}]", [one; 7].join(",") + ",true");
+    assert_eq!(check(js).await, expected);
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.

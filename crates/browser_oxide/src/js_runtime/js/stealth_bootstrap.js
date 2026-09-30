@@ -53,9 +53,17 @@
     });
 
     // --- Native code masking ---
+    // A native function is never an async function: Chrome's fetch or
+    // Response.json inherit from Function.prototype and print
+    // `[object Function]`. An engine function written `async` inherits from
+    // AsyncFunction.prototype, whose toStringTag reads `AsyncFunction`.
+    const _AsyncFunctionProto = Object.getPrototypeOf(async function () {});
     const _maskFunction = (fn, name) => {
         if (!fn) return fn;
         try {
+            if (Object.getPrototypeOf(fn) === _AsyncFunctionProto) {
+                Object.setPrototypeOf(fn, Function.prototype);
+            }
             // Native fns have an own configurable `name` (Chrome-correct).
             Object.defineProperty(fn, 'name', { value: name, configurable: true });
             // Symbol tag — read by the patched Function.prototype.toString
