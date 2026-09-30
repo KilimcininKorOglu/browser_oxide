@@ -3496,6 +3496,27 @@ async fn error_stacks_hide_engine_bootstrap_frames() {
 }
 
 #[tokio::test]
+async fn template_keeps_its_children_in_content() {
+    // Chrome 148: template.content is a DocumentFragment that receives the
+    // parsed innerHTML, the element itself has no children, and a deep
+    // clone copies the content.
+    assert_eq!(
+        check(
+            "(() => { \
+              const t = document.createElement('template'); \
+              t.innerHTML = '<div id=\"a\"><span>x</span></div><p></p>'; \
+              const c = t.cloneNode(true); \
+              return [Object.prototype.toString.call(t.content), t.content.childNodes.length, \
+                t.childNodes.length, t.content.querySelector('span').textContent, t.innerHTML, \
+                c.content.childNodes.length, t.content === t.content].join('|'); \
+             })()"
+        )
+        .await,
+        "[object DocumentFragment]|2|0|x|<div id=\"a\"><span>x</span></div><p></p>|2|true"
+    );
+}
+
+#[tokio::test]
 async fn perf_now_is_strictly_monotonic() {
     // HRT spec requires monotonic non-decreasing. PerfState's clamp is a
     // non-decreasing map of the monotonic clock, so 1000 samples must have

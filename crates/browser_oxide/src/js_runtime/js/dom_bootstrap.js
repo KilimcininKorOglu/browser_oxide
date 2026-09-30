@@ -1291,7 +1291,45 @@
     class HTMLTableSectionElement extends HTMLElement {}
     class HTMLLabelElement extends HTMLElement {}
     class HTMLOptionElement extends HTMLElement {}
-    class HTMLTemplateElement extends HTMLElement {}
+    // The parser and the innerHTML setter put a template's children under
+    // the element itself; Chrome keeps them in a separate DocumentFragment,
+    // `content`, and leaves the element without children. The first read of
+    // `content` moves them there.
+    const _templateContents = new WeakMap();
+    class HTMLTemplateElement extends HTMLElement {
+        get content() {
+            let frag = _templateContents.get(this);
+            if (!frag) {
+                frag = _document.createDocumentFragment();
+                _templateContents.set(this, frag);
+            }
+            let child;
+            while ((child = this.firstChild)) frag.appendChild(child);
+            return frag;
+        }
+        get innerHTML() { return ops.op_dom_get_inner_html(_getNodeId(this.content)); }
+        set innerHTML(val) {
+            const frag = this.content;
+            let child;
+            while ((child = frag.firstChild)) frag.removeChild(child);
+            ops.op_dom_set_inner_html(_getNodeId(this), String(val));
+            this.content;
+        }
+        get outerHTML() {
+            const inner = this.innerHTML;
+            const close = '</template>';
+            const outer = ops.op_dom_get_outer_html(_getNodeId(this));
+            return outer.slice(0, outer.length - close.length) + inner + close;
+        }
+        cloneNode(deep) {
+            const content = this.content;
+            const copy = super.cloneNode(false);
+            if (deep) {
+                for (const node of content.childNodes) copy.content.appendChild(node.cloneNode(true));
+            }
+            return copy;
+        }
+    }
     class HTMLPreElement extends HTMLElement {}
     class HTMLQuoteElement extends HTMLElement {}
 
