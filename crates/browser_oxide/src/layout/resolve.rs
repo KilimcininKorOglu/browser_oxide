@@ -1,6 +1,7 @@
 use crate::css_values::types::length::*;
 
 /// Context for resolving relative CSS units to absolute pixels.
+#[derive(Clone)]
 pub struct ResolveContext {
     pub font_size: f32,      // current element's font-size in px
     pub root_font_size: f32, // <html> font-size in px (for rem)

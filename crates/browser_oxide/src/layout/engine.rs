@@ -195,16 +195,19 @@ impl LayoutEngine {
         root: NodeId,
         ctx: &ResolveContext,
     ) -> Option<taffy::NodeId> {
+        // Each work item carries the resolve context of its enclosing
+        // element, so font-size inheritance reaches text measurement and
+        // em/% units resolve against the parent, not the document default.
         enum Work {
-            Visit(NodeId),
-            Finish(NodeId),
+            Visit(NodeId, Box<ResolveContext>),
+            Finish(NodeId, Box<ResolveContext>),
         }
-        let mut stack: Vec<Work> = vec![Work::Visit(root)];
+        let mut stack: Vec<Work> = vec![Work::Visit(root, Box::new(ctx.clone()))];
         let mut visited: HashSet<NodeId> = HashSet::with_capacity(64);
         let mut steps: usize = 0;
         while let Some(work) = stack.pop() {
             match work {
-                Work::Visit(node_id) => {
+                Work::Visit(node_id, parent_ctx) => {
                     if !visited.insert(node_id) {
                         continue;
                     }
@@ -216,20 +219,50 @@ impl LayoutEngine {
                             visited.len()
                         );
                     }
+                    let own_ctx = Box::new(self.node_ctx(dom, node_id, &parent_ctx));
                     // Schedule Finish first so it pops after all children.
-                    stack.push(Work::Finish(node_id));
+                    stack.push(Work::Finish(node_id, own_ctx.clone()));
                     // Push children in reverse for document order on pop.
                     let kids = dom.children(node_id);
                     for c in kids.into_iter().rev() {
-                        stack.push(Work::Visit(c));
+                        stack.push(Work::Visit(c, own_ctx.clone()));
                     }
                 }
-                Work::Finish(node_id) => {
-                    self.finish_node(dom, node_id, ctx);
+                Work::Finish(node_id, own_ctx) => {
+                    self.finish_node(dom, node_id, &own_ctx);
                 }
             }
         }
         self.dom_to_taffy.get(&root.to_raw()).copied()
+    }
+
+    /// The resolve context a node passes to its own style resolution and
+    /// its children. Only elements can change `font_size`; everything else
+    /// inherits the parent's context unchanged.
+    fn node_ctx(&self, dom: &Dom, node_id: NodeId, parent: &ResolveContext) -> ResolveContext {
+        let mut ctx = parent.clone();
+        if let Some(node) = dom.get(node_id) {
+            if let NodeData::Element(elem) = &node.data {
+                let mut declared = ua_declarations(elem);
+                declared.extend(self.cascaded(dom, node_id));
+                declared.extend(self.parse_inline_style(elem));
+                let computed = ComputedStyle::resolve(&declared, None);
+                if let Some(CssValue::LengthPercentage(lp)) = computed.get(&PropertyId::FontSize) {
+                    use crate::css_values::types::length::LengthPercentage as CssLP;
+                    match lp {
+                        // em/% on font-size resolve against the parent's size.
+                        CssLP::Length(l) => {
+                            ctx.font_size = crate::layout::resolve::resolve_length(l, parent);
+                        }
+                        CssLP::Percentage(p) => {
+                            ctx.font_size = parent.font_size * *p as f32 / 100.0;
+                        }
+                        CssLP::Calc(_) => {}
+                    }
+                }
+            }
+        }
+        ctx
     }
 
     /// Build the taffy node for `node_id` using already-built children
@@ -270,10 +303,33 @@ impl LayoutEngine {
                 declared.extend(self.cascaded(dom, node_id));
                 declared.extend(self.parse_inline_style(elem));
                 let computed = ComputedStyle::resolve(&declared, None);
-                if let Some(CssValue::Display(Display::None)) = computed.get(&PropertyId::Display) {
+                let display = computed.get(&PropertyId::Display);
+                if let Some(CssValue::Display(Display::None)) = display {
                     return;
                 }
-                let taffy_style = computed_to_taffy(&computed, ctx);
+                let mut taffy_style = computed_to_taffy(&computed, ctx);
+                // Inline boxes shrink to their content; taffy block layout
+                // would otherwise stretch an auto width to the container
+                // (a span full of text read 1920px — the body width).
+                if matches!(
+                    display,
+                    Some(CssValue::Display(Display::Inline | Display::InlineBlock))
+                ) && taffy_style.size.width == taffy::Dimension::auto()
+                {
+                    let text_width: f32 = dom
+                        .children(node_id)
+                        .into_iter()
+                        .filter_map(|cid| {
+                            dom.get(cid).and_then(|n| match &n.data {
+                                NodeData::Text(t) => {
+                                    Some(t.chars().count() as f32 * ctx.font_size * 0.6)
+                                }
+                                _ => None,
+                            })
+                        })
+                        .sum();
+                    taffy_style.size.width = Dimension::length(text_width);
+                }
                 match self.tree.new_with_children(taffy_style, &children) {
                     Ok(id) => id,
                     Err(_) => return,
@@ -405,13 +461,48 @@ fn parse_style_rules(css: &str) -> Vec<StyleRule> {
 /// The UA stylesheet's `display: none`, which author rules override.
 /// With scripting on, Chrome creates no box for `noscript` either.
 fn ua_declarations(elem: &crate::dom::node::ElementData) -> HashMap<PropertyId, CssValue> {
-    let hidden = crate::css_cascade::ua::element_ua_display(elem) == "none"
-        || elem.name.local.eq_ignore_ascii_case("noscript");
     let mut map = HashMap::new();
-    if hidden {
+    // Chrome's UA stylesheet assigns every element a display value; without
+    // one here the cascade fills in the CSS initial value (`inline`), which
+    // used to be masked by the everything-is-Block taffy mapping and now
+    // feeds inline shrink-to-fit sizing.
+    let ua = crate::css_cascade::ua::element_ua_display(elem);
+    if let Some(display) = ua_display_value(ua) {
+        map.insert(PropertyId::Display, CssValue::Display(display));
+    }
+    if elem.name.local.eq_ignore_ascii_case("noscript") {
         map.insert(PropertyId::Display, CssValue::Display(Display::None));
     }
     map
+}
+
+/// Map the UA stylesheet's display keyword to its enum value. An unknown
+/// keyword keeps `None` so the cascade default applies.
+fn ua_display_value(ua: &str) -> Option<Display> {
+    Some(match ua {
+        "block" => Display::Block,
+        "inline" => Display::Inline,
+        "none" => Display::None,
+        "inline-block" => Display::InlineBlock,
+        "flex" => Display::Flex,
+        "inline-flex" => Display::InlineFlex,
+        "grid" => Display::Grid,
+        "inline-grid" => Display::InlineGrid,
+        "table" => Display::Table,
+        "inline-table" => Display::InlineTable,
+        "list-item" => Display::ListItem,
+        "flow-root" => Display::FlowRoot,
+        "contents" => Display::Contents,
+        "table-row" => Display::TableRow,
+        "table-cell" => Display::TableCell,
+        "table-column" => Display::TableColumn,
+        "table-column-group" => Display::TableColumnGroup,
+        "table-header-group" => Display::TableHeaderGroup,
+        "table-footer-group" => Display::TableFooterGroup,
+        "table-row-group" => Display::TableRowGroup,
+        "table-caption" => Display::TableCaption,
+        _ => return None,
+    })
 }
 
 fn has_pseudo_element(selector: &Selector) -> bool {
