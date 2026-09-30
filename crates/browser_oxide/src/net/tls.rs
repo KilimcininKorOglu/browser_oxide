@@ -471,6 +471,7 @@ pub fn chrome_connector(profile: &StealthProfile) -> Result<SslConnector, NetErr
             .map_err(|e| NetError::Tls(format!("failed to parse root cert: {e}")))?;
         let _ = cert_store.add_cert(x509);
     }
+    add_env_root_certs(&mut cert_store)?;
     builder.set_cert_store(cert_store.build());
 
     let connector = builder.build();
@@ -601,6 +602,38 @@ pub async fn connect_tls(
         .map_err(|e| NetError::Tls(format!("TLS handshake failed: {e}")))
 }
 
+/// Adds the PEM roots named by `SSL_CERT_FILE` to `store`, the same variable
+/// OpenSSL and curl read. A TLS-intercepting proxy signs every server
+/// certificate with its own CA, which the embedded Mozilla roots do not hold.
+fn add_env_root_certs(store: &mut X509StoreBuilder) -> Result<(), NetError> {
+    let Some(path) = std::env::var_os("SSL_CERT_FILE") else {
+        return Ok(());
+    };
+    let pem = std::fs::read(&path).map_err(|e| {
+        NetError::Tls(format!(
+            "failed to read SSL_CERT_FILE {}: {e}",
+            path.to_string_lossy()
+        ))
+    })?;
+    add_pem_root_certs(store, &pem)
+}
+
+fn add_pem_root_certs(store: &mut X509StoreBuilder, pem: &[u8]) -> Result<(), NetError> {
+    let certs = X509::stack_from_pem(pem)
+        .map_err(|e| NetError::Tls(format!("failed to parse SSL_CERT_FILE: {e}")))?;
+    if certs.is_empty() {
+        return Err(NetError::Tls(
+            "SSL_CERT_FILE holds no PEM certificate".to_string(),
+        ));
+    }
+    for cert in certs {
+        store
+            .add_cert(cert)
+            .map_err(|e| NetError::Tls(format!("failed to add SSL_CERT_FILE root: {e}")))?;
+    }
+    Ok(())
+}
+
 /// Returns the negotiated ALPN protocol from a TLS stream, if any.
 pub fn negotiated_alpn(stream: &SslStream<TcpStream>) -> Option<&[u8]> {
     stream.ssl().selected_alpn_protocol()
@@ -609,6 +642,18 @@ pub fn negotiated_alpn(stream: &SslStream<TcpStream>) -> Option<&[u8]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A proxy CA bundle often repeats a Mozilla root, so a root already in
+    /// the store must not fail the connector; garbage must.
+    #[test]
+    fn pem_root_certs_accept_duplicates_and_reject_garbage() {
+        let der = webpki_root_certs::TLS_SERVER_ROOT_CERTS[0].as_ref();
+        let pem = X509::from_der(der).unwrap().to_pem().unwrap();
+        let mut store = X509StoreBuilder::new().unwrap();
+        store.add_cert(X509::from_der(der).unwrap()).unwrap();
+        add_pem_root_certs(&mut store, &pem).unwrap();
+        assert!(add_pem_root_certs(&mut store, b"not a certificate").is_err());
+    }
 
     /// Self-verifying JA4 drift guard + UA/TLS coherence assert.
     /// Network-free.
