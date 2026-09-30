@@ -436,7 +436,9 @@ pub fn op_worker_poll_from_worker(#[smi] worker_id: i32) -> String {
     let reg = worker_registry().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(slot) = reg.get(&(worker_id as u32)) {
         match slot.from_worker.try_recv() {
-            Ok(msg) => return msg,
+            Ok(msg) => {
+                return msg;
+            }
             Err(_) => return String::new(),
         }
     }

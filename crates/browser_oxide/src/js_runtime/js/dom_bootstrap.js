@@ -1170,7 +1170,81 @@
         get() { return true; }, 
         enumerable: true, configurable: true
     });
-    HTMLImageElement.prototype.decode = function() { return Promise.resolve(); };
+    // --- <img> loading. Real Chrome fetches every img src and fires
+    // load/error with the decoded intrinsic size. Challenge scripts
+    // (Turnstile's image entry) load an image, wait for `load`, and
+    // measure the pixels — a never-loading image stalls their flow.
+    const _imgStates = new WeakMap();
+    function _startImageLoad(el, raw) {
+        if (!raw) return;
+        let url = raw;
+        try {
+            const base = globalThis.location && globalThis.location.href;
+            if (base && base !== "about:blank") url = new URL(raw, base).href;
+        } catch (_) { /* keep raw */ }
+        _imgStates.set(el, { done: false, w: 0, h: 0, status: 0 });
+        const origin = (globalThis.location && globalThis.location.origin !== "null")
+            ? globalThis.location.origin : "";
+        Promise.resolve(ops.op_image_load(url, origin))
+            .then((res) => {
+                let r;
+                try { r = JSON.parse(res); } catch (_) { r = { error: "bad image op reply" }; }
+                const st = _imgStates.get(el);
+                if (st) {
+                    st.done = true;
+                    st.status = r.status || 0;
+                    st.w = r.w || 0;
+                    st.h = r.h || 0;
+                }
+                const failed = r.error || !r.status || r.status < 200 || r.status >= 300;
+                el.dispatchEvent(new Event(failed ? "error" : "load"));
+            })
+            .catch(() => {
+                const st = _imgStates.get(el);
+                if (st) st.done = true;
+                el.dispatchEvent(new Event("error"));
+            });
+    }
+    const _imgSetAttribute = Element.prototype.setAttribute;
+    HTMLImageElement.prototype.setAttribute = function (name, value) {
+        _imgSetAttribute.call(this, name, value);
+        if (String(name).toLowerCase() === "src") _startImageLoad(this, String(value));
+    };
+    Object.defineProperty(HTMLImageElement.prototype, "naturalWidth", {
+        get() {
+            const st = _imgStates.get(this);
+            return st && st.done ? st.w : 0;
+        },
+        enumerable: true, configurable: true
+    });
+    Object.defineProperty(HTMLImageElement.prototype, "naturalHeight", {
+        get() {
+            const st = _imgStates.get(this);
+            return st && st.done ? st.h : 0;
+        },
+        enumerable: true, configurable: true
+    });
+    Object.defineProperty(HTMLImageElement.prototype, "complete", {
+        get() {
+            const src = this.getAttribute("src");
+            if (!src) return false;
+            const st = _imgStates.get(this);
+            return !!st && st.done;
+        },
+        enumerable: true, configurable: true
+    });
+    HTMLImageElement.prototype.decode = function() {
+        const src = this.getAttribute("src");
+        if (!src) return Promise.reject(new DOMException("no src", "EncodingError"));
+        const st = _imgStates.get(this);
+        if (st && st.done) {
+            return st.status >= 200 && st.status < 300 ? Promise.resolve() : Promise.reject(new DOMException("broken", "EncodingError"));
+        }
+        return new Promise((resolve, reject) => {
+            this.addEventListener("load", () => resolve(), { once: true });
+            this.addEventListener("error", () => reject(new DOMException("broken", "EncodingError")), { once: true });
+        });
+    };
     class HTMLInputElement extends HTMLElement {}
     class HTMLFormElement extends HTMLElement {
         submit() {

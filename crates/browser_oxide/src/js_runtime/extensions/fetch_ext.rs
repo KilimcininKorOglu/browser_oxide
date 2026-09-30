@@ -406,6 +406,64 @@ pub async fn op_fetch(
     Ok(final_resp)
 }
 
+/// Load an image URL for an <img> element: fetch the bytes and return the
+/// decoded dimensions. Real Chrome loads every `<img src>`; challenge scripts
+/// (Turnstile's image entry) measure the pixels and wait for `load`, so a
+/// never-loading image stalls their whole flow. Returns JSON
+/// `{"status":200,"w":..,"h":..}` on success, `{"status":404,"w":0,"h":0}`
+/// for an HTTP error, `{"error":".."}` for a transport failure.
+#[op2]
+#[string]
+pub async fn op_image_load(#[string] url: String, #[string] origin: String) -> String {
+    let installed_client = FETCH_CLIENT.with(|c| c.borrow().clone());
+    let client = match installed_client.as_ref() {
+        Some(c) => c,
+        None => return r#"{"error":"no client"}"#.to_string(),
+    };
+    let profile = client.profile().clone();
+    let mut headers = crate::net::headers::chrome_headers_fetch(
+        &profile,
+        &url,
+        if origin.is_empty() {
+            None
+        } else {
+            Some(origin.as_str())
+        },
+    );
+    headers.push((
+        "accept".into(),
+        "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8".into(),
+    ));
+    headers.push(("sec-fetch-dest".into(), "image".into()));
+    headers.push(("sec-fetch-mode".into(), "no-cors".into()));
+    headers.push((
+        "sec-fetch-site".into(),
+        if origin.is_empty() {
+            "none".into()
+        } else {
+            "cross-site".into()
+        },
+    ));
+    let resp = match client.get_with_headers(&url, &headers).await {
+        Ok(r) => r,
+        Err(e) => return serde_json::json!({"error": e.to_string()}).to_string(),
+    };
+    let status = resp.status;
+    let (w, h) = if (200..300).contains(&status) && !resp.body.is_empty() {
+        let cursor = std::io::Cursor::new(&resp.body[..]);
+        match image::ImageReader::new(cursor).with_guessed_format() {
+            Ok(reader) => match reader.into_dimensions() {
+                Ok((w, h)) => (w, h),
+                Err(_) => (0u32, 0u32),
+            },
+            Err(_) => (0u32, 0u32),
+        }
+    } else {
+        (0u32, 0u32)
+    };
+    serde_json::json!({ "status": status, "w": w, "h": h }).to_string()
+}
+
 /// Get the cookie string for a URL from the shared HTTP client's cookie jar.
 /// Returns "name=value; name2=value2" — the format document.cookie expects.
 #[op2(async(lazy), fast)]
@@ -795,6 +853,7 @@ deno_core::extension!(
         op_cookie_set_sync,
         op_net_fetch_sync,
         op_net_xhr_sync,
-        op_drain_csp_violations
+        op_drain_csp_violations,
+        op_image_load
     ],
 );

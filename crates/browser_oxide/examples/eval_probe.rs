@@ -44,7 +44,12 @@ async fn main() {
             // is captured into __probe_result before idle.
             const WRAP_TAIL: &str = ".then(r => { globalThis.__probe_result = r; })\
              .catch(e => { globalThis.__probe_result = 'ERR:' + (e && e.message || e); })";
-            let wrapped = format!("globalThis.__probe_result = undefined; ({js}){WRAP_TAIL}");
+            let raw = std::env::var("OX_RAW").is_ok();
+            let wrapped = if raw {
+                js.clone()
+            } else {
+                format!("globalThis.__probe_result = undefined; Promise.resolve().then(() => ({js})){WRAP_TAIL}")
+            };
             match page.evaluate_async(&wrapped, Duration::from_secs(10)).await {
                 Ok(reason) => eprintln!("idle: {reason:?}"),
                 Err(e) => {
