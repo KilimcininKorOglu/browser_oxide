@@ -381,32 +381,96 @@
         }
     }
 
+    // DOMTokenList (DOM Standard §7.1) over an element's class attribute:
+    // an ordered set of tokens, one list per element, indexable like an
+    // array. The element is kept in a WeakMap because the list is a Proxy
+    // and a private field cannot be read through one.
+    const _tokenListOwner = new WeakMap();
+    const _tokenLists = new WeakMap();
+    const _tokensOf = (list) => {
+        const raw = ops.op_dom_get_attribute(_getNodeId(_tokenListOwner.get(list)), "class") ?? "";
+        return [...new Set(raw.split(/[\t\n\f\r ]+/).filter(Boolean))];
+    };
+    function _checkToken(method, token) {
+        const t = String(token);
+        if (t === "") {
+            throw new DOMException("Failed to execute '" + method + "' on 'DOMTokenList': The token provided must not be empty.", "SyntaxError");
+        }
+        if (/[\t\n\f\r ]/.test(t)) {
+            throw new DOMException("Failed to execute '" + method + "' on 'DOMTokenList': The token provided ('" + t + "') contains HTML space characters, which are not valid in tokens.", "InvalidCharacterError");
+        }
+        return t;
+    }
+    // The update steps: no class attribute stays absent while the set is
+    // empty; otherwise the attribute becomes the serialized set.
+    function _writeTokens(list, tokens) {
+        const el = _tokenListOwner.get(list);
+        if (tokens.length === 0 && !el.hasAttribute("class")) return;
+        el.setAttribute("class", tokens.join(" "));
+    }
+    function _tokenListFor(el) {
+        let list = _tokenLists.get(el);
+        if (list) return list;
+        list = new Proxy(Object.create(DOMTokenList.prototype), {
+            get: (t, p, r) => (_isIndex(p) ? _tokensOf(list)[+p] : Reflect.get(t, p, r)),
+            has: (t, p) => (_isIndex(p) ? +p < _tokensOf(list).length : Reflect.has(t, p)),
+            ownKeys: (t) => _tokensOf(list).map((_, i) => String(i)).concat(Reflect.ownKeys(t)),
+            getOwnPropertyDescriptor: (t, p) => {
+                if (!_isIndex(p)) return Reflect.getOwnPropertyDescriptor(t, p);
+                const v = _tokensOf(list)[+p];
+                return v === undefined ? undefined : { value: v, writable: false, enumerable: true, configurable: true };
+            },
+        });
+        _tokenListOwner.set(list, el);
+        _tokenLists.set(el, list);
+        return list;
+    }
+    const _isIndex = (p) => typeof p === "string" && /^(0|[1-9]\d*)$/.test(p);
+
     class DOMTokenList {
-        #nodeId;
-        constructor(nodeId) { this.#nodeId = nodeId; }
-        add(cls) { ops.op_dom_class_list_add(this.#nodeId, cls); }
-        remove(cls) { ops.op_dom_class_list_remove(this.#nodeId, cls); }
-        toggle(cls) {
-            if (this.contains(cls)) { this.remove(cls); return false; }
-            this.add(cls); return true;
+        constructor() { throw new TypeError("Failed to construct 'DOMTokenList': Illegal constructor"); }
+        add(...tokens) {
+            const set = _tokensOf(this);
+            for (const t of tokens.map((x) => _checkToken("add", x))) if (!set.includes(t)) set.push(t);
+            _writeTokens(this, set);
         }
-        contains(cls) {
-            const attr = ops.op_dom_get_attribute(this.#nodeId, "class");
-            return attr ? attr.split(/\s+/).includes(cls) : false;
+        remove(...tokens) {
+            const drop = tokens.map((x) => _checkToken("remove", x));
+            _writeTokens(this, _tokensOf(this).filter((t) => !drop.includes(t)));
         }
-        get value() { return ops.op_dom_get_attribute(this.#nodeId, "class") || ""; }
-        get length() { return this.value.split(/\s+/).filter(Boolean).length; }
+        toggle(token, force) {
+            const t = _checkToken("toggle", token);
+            const set = _tokensOf(this);
+            const has = set.includes(t);
+            if (has && force !== true) { _writeTokens(this, set.filter((x) => x !== t)); return false; }
+            if (!has && force !== false) { set.push(t); _writeTokens(this, set); return true; }
+            return has;
+        }
+        replace(token, newToken) {
+            const t = _checkToken("replace", token);
+            const n = _checkToken("replace", newToken);
+            const set = _tokensOf(this);
+            const i = set.indexOf(t);
+            if (i < 0) return false;
+            set[i] = n;
+            _writeTokens(this, set.filter((x, j) => x !== n || j === set.indexOf(n)));
+            return true;
+        }
+        supports() {
+            throw new TypeError("Failed to execute 'supports' on 'DOMTokenList': DOMTokenList has no supported tokens.");
+        }
+        contains(token) { return _tokensOf(this).includes(String(token)); }
+        get value() { return _tokenListOwner.get(this).getAttribute("class") ?? ""; }
+        set value(v) { _tokenListOwner.get(this).setAttribute("class", String(v)); }
+        get length() { return _tokensOf(this).length; }
         toString() { return this.value; }
-        item(index) {
-            const tokens = this.value.split(/\s+/).filter(Boolean);
-            return tokens[index] != null ? tokens[index] : null;
-        }
+        item(index) { return _tokensOf(this)[index] ?? null; }
         // Real Chrome DOMTokenList is iterable; iterating yields each token
         // string. Some scripts spread element.classList — without
         // Symbol.iterator we throw "non-iterable" while Chrome returns the
         // token array.
         [Symbol.iterator]() {
-            const tokens = this.value.split(/\s+/).filter(Boolean);
+            const tokens = _tokensOf(this);
             let i = 0;
             return {
                 next() {
@@ -417,7 +481,7 @@
             };
         }
         entries() {
-            const tokens = this.value.split(/\s+/).filter(Boolean);
+            const tokens = _tokensOf(this);
             let i = 0;
             return {
                 next() {
@@ -440,7 +504,7 @@
         }
         values() { return this[Symbol.iterator](); }
         forEach(cb, thisArg) {
-            const tokens = this.value.split(/\s+/).filter(Boolean);
+            const tokens = _tokensOf(this);
             for (let i = 0; i < tokens.length; i++) {
                 cb.call(thisArg, tokens[i], i, this);
             }
@@ -738,7 +802,8 @@
         set integrity(val) { this.setAttribute("integrity", String(val)); }
         get referrerPolicy() { return this.getAttribute("referrerpolicy") || ""; }
         set referrerPolicy(val) { this.setAttribute("referrerpolicy", String(val)); }
-        get classList() { return new DOMTokenList(_getNodeId(this)); }
+        get classList() { return _tokenListFor(this); }
+        set classList(v) { this.className = v; }
         get innerHTML() { return ops.op_dom_get_inner_html(_getNodeId(this)); }
         set innerHTML(val) { ops.op_dom_set_inner_html(_getNodeId(this), String(val)); }
         get outerHTML() { return ops.op_dom_get_outer_html(_getNodeId(this)); }
@@ -1528,7 +1593,6 @@
     // select.options: one live HTMLOptionsCollection per select.
     const _optionsOwner = new WeakMap();
     const _optionsCollections = new WeakMap();
-    const _isIndex = (p) => typeof p === 'string' && /^(0|[1-9]\d*)$/.test(p);
     function _optionsCollection(sel) {
         let coll = _optionsCollections.get(sel);
         if (coll) return coll;

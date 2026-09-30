@@ -6953,6 +6953,37 @@ async fn select_and_option_track_selectedness() {
 }
 
 #[tokio::test]
+async fn class_list_is_one_indexable_ordered_token_set() {
+    // Measured in Chrome 147: classList is the same indexable list on every
+    // read, its tokens are a deduplicated set, add and remove take several
+    // tokens, toggle takes a force, and a bad token throws.
+    let js = r#"
+        (() => {
+            const out = [];
+            const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.message); } };
+            const el = (c) => { const d = document.createElement('div'); if (c != null) d.className = c; return d; };
+            t('index', () => { const l = el('a  b a').classList; return [l.length, l[0], l[1], l[2], 0 in l, 2 in l, Object.keys(l), l.value, String(l)]; });
+            t('same', () => { const d = el('a'); return [d.classList === d.classList, Object.prototype.toString.call(d.classList)]; });
+            t('multi', () => { const d = el(); d.classList.add('x', 'y', 'x'); const r = [d.className]; d.classList.remove('x', 'z'); r.push(d.className); return r; });
+            t('toggleForce', () => { const d = el('a'); return [d.classList.toggle('a', true), d.className, d.classList.toggle('b', false), d.className, d.classList.toggle('a'), d.className]; });
+            t('replace', () => { const d = el('a b'); return [d.classList.replace('a', 'c'), d.className, d.classList.replace('q', 'r'), d.className]; });
+            t('dedupe', () => { const d = el(' a  b a '); d.classList.add('c'); return d.className; });
+            t('valueSet', () => { const d = el('a'); d.classList.value = 'p q'; return [d.className, d.classList.length]; });
+            t('errors', () => { const d = el(); const r = []; for (const f of [() => d.classList.add(''), () => d.classList.add('a b'), () => d.classList.contains('')]) { try { r.push(f()); } catch (e) { r.push(e.name); } } return r; });
+            t('live', () => { const d = el('a'); const l = d.classList; d.className = 'b c'; return [l.length, l[1]]; });
+            t('supports', () => { try { return el().classList.supports('x'); } catch (e) { return e.name + ':' + e.message; } });
+            t('removeEmpty', () => { const d = el(); d.classList.remove('x'); return [d.hasAttribute('class'), d.outerHTML]; });
+            t('ctor', () => { try { new DOMTokenList(); } catch (e) { return e.name + ':' + e.message; } });
+            return out.join(' ;; ');
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"index=[2,"a","b",null,true,false,["0","1"],"a  b a","a  b a"] ;; same=[true,"[object DOMTokenList]"] ;; multi=["x y","y"] ;; toggleForce=[true,"a",false,"a",false,""] ;; replace=[true,"c b",false,"c b"] ;; dedupe="a b c" ;; valueSet=["p q",2] ;; errors=["SyntaxError","InvalidCharacterError",false] ;; live=[2,"c"] ;; supports="TypeError:Failed to execute 'supports' on 'DOMTokenList': DOMTokenList has no supported tokens." ;; removeEmpty=[false,"<div></div>"] ;; ctor="TypeError:Failed to construct 'DOMTokenList': Illegal constructor""#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
