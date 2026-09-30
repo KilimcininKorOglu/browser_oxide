@@ -253,6 +253,39 @@ pub fn op_dom_get_prev_sibling(state: &mut OpState, #[smi] node_id: i32) -> i32 
         .unwrap_or(-1)
 }
 
+/// Query under a root that is not an element (Document, DocumentFragment,
+/// ShadowRoot). Every element child is a candidate itself, then its subtree,
+/// in tree order; `first_only` stops at the first match.
+fn query_non_element_root(
+    dom: &crate::dom::Dom,
+    id: NodeId,
+    selector: &str,
+    first_only: bool,
+) -> Vec<i32> {
+    let Ok(selectors) = crate::css_selectors::parse_selector_list(selector) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for child in dom.child_elements(id) {
+        let Some(el) = DomElement::new(dom, child) else {
+            continue;
+        };
+        if crate::css_selectors::matches_any(&el, &selectors) {
+            out.push(child.to_raw() as i32);
+        }
+        if first_only && !out.is_empty() {
+            return out;
+        }
+        let found = crate::css_selectors::query_selector_all(&el, selector).unwrap_or_default();
+        out.extend(found.iter().map(|e| e.node_id().to_raw() as i32));
+        if first_only && !out.is_empty() {
+            out.truncate(1);
+            return out;
+        }
+    }
+    out
+}
+
 #[op2(fast)]
 #[smi]
 pub fn op_dom_query_selector(
@@ -262,25 +295,11 @@ pub fn op_dom_query_selector(
 ) -> i32 {
     let state = state.borrow::<DomState>();
     let id = NodeId::from_raw(node_id as u32);
-    let element = match DomElement::new(&state.dom, id) {
-        Some(el) => el,
-        None => {
-            // For Document node, search from first element child
-            let children = state.dom.child_elements(id);
-            if children.is_empty() {
-                return -1;
-            }
-            match DomElement::new(&state.dom, children[0]) {
-                Some(el) => {
-                    // Search from root element
-                    if let Ok(Some(found)) = crate::css_selectors::query_selector(&el, selector) {
-                        return found.node_id().to_raw() as i32;
-                    }
-                    return -1;
-                }
-                None => return -1,
-            }
-        }
+    let Some(element) = DomElement::new(&state.dom, id) else {
+        return query_non_element_root(&state.dom, id, selector, true)
+            .first()
+            .copied()
+            .unwrap_or(-1);
     };
     match crate::css_selectors::query_selector(&element, selector) {
         Ok(Some(found)) => found.node_id().to_raw() as i32,
@@ -297,21 +316,14 @@ pub fn op_dom_query_selector_all(
 ) -> Vec<i32> {
     let state = state.borrow::<DomState>();
     let id = NodeId::from_raw(node_id as u32);
-    // For document or element, try to build a DomElement for querying
-    let root_el = DomElement::new(&state.dom, id).or_else(|| {
-        let children = state.dom.child_elements(id);
-        children
-            .first()
-            .and_then(|&c| DomElement::new(&state.dom, c))
-    });
-    match root_el {
-        Some(el) => crate::css_selectors::query_selector_all(&el, &selector)
-            .unwrap_or_default()
-            .iter()
-            .map(|e| e.node_id().to_raw() as i32)
-            .collect(),
-        None => vec![],
-    }
+    let Some(root_el) = DomElement::new(&state.dom, id) else {
+        return query_non_element_root(&state.dom, id, &selector, false);
+    };
+    crate::css_selectors::query_selector_all(&root_el, &selector)
+        .unwrap_or_default()
+        .iter()
+        .map(|e| e.node_id().to_raw() as i32)
+        .collect()
 }
 
 #[op2(fast)]

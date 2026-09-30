@@ -1032,6 +1032,7 @@
             // whenever attachShadow was actually called — observable to
             // scripts that exercise Shadow DOM.
             const shadowRoot = _wrapNode(shadowId);
+            Object.setPrototypeOf(shadowRoot, ShadowRoot.prototype);
             // ShadowRoot inherits Node methods (appendChild, querySelector, etc.)
             Object.defineProperties(shadowRoot, {
                 mode: { value: mode, enumerable: true },
@@ -1395,9 +1396,35 @@
         }
     }
 
-    class DocumentFragment extends Node {}
     class Comment extends CharacterData {}
 
+    // ParentNode members of DocumentFragment (and ShadowRoot, which extends
+    // it): a widget that keeps its iframe in a shadow root looks it up here.
+    class DocumentFragment extends Node {
+        querySelector(sel) {
+            const id = ops.op_dom_query_selector(_getNodeId(this), sel);
+            return id !== null ? _wrapNode(id) : null;
+        }
+        querySelectorAll(sel) {
+            return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
+        }
+        getElementById(id) {
+            return this.querySelector('[id="' + CSS.escape(String(id)) + '"]');
+        }
+        get children() {
+            return new NodeList(ops.op_dom_get_child_elements(_getNodeId(this)));
+        }
+        get childElementCount() { return ops.op_dom_get_child_elements(_getNodeId(this)).length; }
+        get firstElementChild() {
+            const els = ops.op_dom_get_child_elements(_getNodeId(this));
+            return els.length > 0 ? _wrapNode(els[0]) : null;
+        }
+        get lastElementChild() {
+            const els = ops.op_dom_get_child_elements(_getNodeId(this));
+            return els.length > 0 ? _wrapNode(els[els.length - 1]) : null;
+        }
+    }
+    class ShadowRoot extends DocumentFragment {}
 
     let _currentScript = null;
     function _setCurrentScript(el) { _currentScript = el; }
@@ -1854,6 +1881,7 @@
     _tag(Text, "Text");
     _tag(Comment, "Comment");
     _tag(DocumentFragment, "DocumentFragment");
+    _tag(ShadowRoot, "ShadowRoot");
     // Chrome exposes document as HTMLDocument (which extends Document).
     _tag(Document, "HTMLDocument");
     _tag(NodeList, "NodeList");
@@ -1879,6 +1907,9 @@
     globalThis.HTMLDocument = Document;
     globalThis.Node = Node;
     globalThis.Element = Element;
+    // Widgets check `root instanceof ShadowRoot`; the interface stub is not
+    // the class attachShadow returns.
+    globalThis.ShadowRoot = ShadowRoot;
     // Expose the real HTMLElement subclasses — the prototype chain is
     // EventTarget ← Node ← Element ← HTMLElement ← HTML*Element so that
     // `el instanceof HTMLDivElement` etc. works as in real Chrome.
