@@ -909,12 +909,7 @@
         }
         get offsetParent() { return this.parentElement; }
         // --- Modern DOM manipulation ---
-        remove() {
-            const parent = ops.op_dom_get_parent(_getNodeId(this));
-            if (parent !== -1 && parent !== null) {
-                ops.op_dom_remove_child(parent, _getNodeId(this));
-            }
-        }
+        remove() { _childNodeRemove(this); }
         append(...nodes) {
             for (const node of nodes) {
                 if (typeof node === "string") {
@@ -935,41 +930,9 @@
                 }
             }
         }
-        after(...nodes) {
-            const parent = this.parentNode;
-            if (!parent) return;
-            const next = this.nextSibling;
-            for (const node of nodes) {
-                const n = typeof node === "string" ? _document.createTextNode(node) : node;
-                if (next) {
-                    parent.insertBefore(n, next);
-                } else {
-                    parent.appendChild(n);
-                }
-            }
-        }
-        before(...nodes) {
-            const parent = this.parentNode;
-            if (!parent) return;
-            for (const node of nodes) {
-                const n = typeof node === "string" ? _document.createTextNode(node) : node;
-                parent.insertBefore(n, this);
-            }
-        }
-        replaceWith(...nodes) {
-            const parent = this.parentNode;
-            if (!parent) return;
-            const next = this.nextSibling;
-            this.remove();
-            for (const node of nodes) {
-                const n = typeof node === "string" ? _document.createTextNode(node) : node;
-                if (next) {
-                    parent.insertBefore(n, next);
-                } else {
-                    parent.appendChild(n);
-                }
-            }
-        }
+        after(...nodes) { _childNodeAfter(this, nodes); }
+        before(...nodes) { _childNodeBefore(this, nodes); }
+        replaceWith(...nodes) { _childNodeReplaceWith(this, nodes); }
         replaceChildren(...nodes) {
             // Remove all existing children
             while (this.firstChild) this.removeChild(this.firstChild);
@@ -1871,7 +1834,65 @@
             "': The offset " + offset + " is greater than the node's length (" + length + ").", "IndexSizeError");
     }
 
+    // ChildNode mixin (DOM Standard §4.2.8). Strings become Text nodes and several
+    // nodes travel as one fragment, so an insertion is a single mutation. The
+    // viable sibling skips the arguments, which a move would take out of place.
+    function _childNodeConvert(nodes) {
+        const make = (n) => typeof n === "string" ? _document.createTextNode(n) : n;
+        if (nodes.length === 1) return make(nodes[0]);
+        const frag = _document.createDocumentFragment();
+        for (const n of nodes) frag.appendChild(make(n));
+        return frag;
+    }
+
+    function _childNodeViable(start, step, nodes) {
+        let n = start;
+        while (n && nodes.includes(n)) n = n[step];
+        return n;
+    }
+
+    function _childNodeBefore(self, nodes) {
+        const parent = self.parentNode;
+        if (!parent) return;
+        const prev = _childNodeViable(self.previousSibling, "previousSibling", nodes);
+        const node = _childNodeConvert(nodes);
+        parent.insertBefore(node, prev ? prev.nextSibling : parent.firstChild);
+    }
+
+    function _childNodeAfter(self, nodes) {
+        const parent = self.parentNode;
+        if (!parent) return;
+        const next = _childNodeViable(self.nextSibling, "nextSibling", nodes);
+        parent.insertBefore(_childNodeConvert(nodes), next);
+    }
+
+    function _childNodeReplaceWith(self, nodes) {
+        const parent = self.parentNode;
+        if (!parent) return;
+        const next = _childNodeViable(self.nextSibling, "nextSibling", nodes);
+        const node = _childNodeConvert(nodes);
+        if (self.parentNode === parent) parent.replaceChild(node, self);
+        else parent.insertBefore(node, next);
+    }
+
+    function _childNodeRemove(self) {
+        const parent = self.parentNode;
+        if (parent) parent.removeChild(self);
+    }
+
+    function _siblingElement(self, step) {
+        let n = self[step];
+        while (n && n.nodeType !== 1) n = n[step];
+        return n || null;
+    }
+
     class CharacterData extends Node {
+        before(...nodes) { _childNodeBefore(this, nodes); }
+        after(...nodes) { _childNodeAfter(this, nodes); }
+        replaceWith(...nodes) { _childNodeReplaceWith(this, nodes); }
+        remove() { _childNodeRemove(this); }
+        get nextElementSibling() { return _siblingElement(this, "nextSibling"); }
+        get previousElementSibling() { return _siblingElement(this, "previousSibling"); }
         get data() { return ops.op_dom_get_text_content(_getNodeId(this)); }
         set data(val) { ops.op_dom_set_text_content(_getNodeId(this), val === null ? "" : String(val)); }
         get length() { return this.data.length; }

@@ -7645,3 +7645,34 @@ async fn every_global_function_prints_native_code() {
     "#;
     assert_eq!(check(js).await, "");
 }
+
+// Text and Comment carry the ChildNode mixin: before, after, replaceWith,
+// remove and the element-sibling getters. Expected values follow the DOM
+// Standard's ChildNode algorithms.
+#[tokio::test]
+async fn character_data_has_the_child_node_mixin() {
+    let js = r#"(() => {
+        const d = document.createElement('div');
+        d.innerHTML = '<b></b>T<i></i>';
+        const t = d.childNodes[1];
+        const out = [t.previousElementSibling.localName, t.nextElementSibling.localName];
+        t.before('x', document.createElement('u'));
+        t.after('y');
+        out.push(d.innerHTML);
+        t.replaceWith('z', t);
+        out.push(d.innerHTML);
+        t.remove();
+        out.push(d.innerHTML, t.parentNode);
+        t.remove();
+        const c = document.createComment('c');
+        c.before('ignored');
+        d.append(c);
+        c.after(document.createElement('s'));
+        out.push(d.innerHTML, c.nextElementSibling.localName);
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r#"["b","i","<b></b>x<u></u>Ty<i></i>","<b></b>x<u></u>zTy<i></i>","<b></b>x<u></u>zy<i></i>",null,"<b></b>x<u></u>zy<i></i><!--c--><s></s>","s"]"#
+    );
+}
