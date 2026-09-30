@@ -23,6 +23,21 @@
         return root;
     }
 
+    // An element's NamedNodeMap, and the Attr objects it has handed out.
+    const _attrMaps = new WeakMap();
+    const _attrNodes = new WeakMap();
+    const _attrData = new WeakMap();
+    function _attrFor(el, name) {
+        let byName = _attrNodes.get(el);
+        if (!byName) { byName = new Map(); _attrNodes.set(el, byName); }
+        if (!byName.has(name)) {
+            const attr = Object.create(Attr.prototype);
+            _attrData.set(attr, { el, name });
+            byName.set(name, attr);
+        }
+        return byName.get(name);
+    }
+
     // The content type of every document DOMParser has produced.
     const _parsedDocTypes = new WeakMap();
 
@@ -931,19 +946,22 @@
             this.setAttribute(name, ""); return true;
         }
         // --- Attribute helpers ---
+        getAttributeNames() { return ops.op_dom_get_attribute_names(_getNodeId(this)); }
+        hasAttributes() { return this.getAttributeNames().length > 0; }
         get attributes() {
             // NamedNodeMap-like object. Uses op_dom_get_attribute_names to
             // enumerate real attributes; previous shim hardcoded length: 0
             // which violates the V8 Proxy invariant ownKeys ⇔ has and made
             // per-element attribute audits do redundant work.
+            // Chrome hands out the same map, and the same Attr per name, on
+            // every read.
+            const cached = _attrMaps.get(this);
+            if (cached) return cached;
             const el = this;
             const id = _getNodeId(this);
             const namesOf = () => ops.op_dom_get_attribute_names(id);
-            const itemFor = (name) => {
-                const val = ops.op_dom_get_attribute(id, name);
-                return val ? { name, value: val, specified: true } : null;
-            };
-            return new Proxy([], {
+            const itemFor = (name) => (ops.op_dom_has_attribute(id, name) ? _attrFor(el, name) : null);
+            const map = new Proxy([], {
                 get(target, prop) {
                     // Real Chrome reports
                     // Object.prototype.toString.call(el.attributes) ===
@@ -993,6 +1011,8 @@
                     return undefined;
                 }
             });
+            _attrMaps.set(this, map);
+            return map;
         }
         get dataset() {
             const el = this;
@@ -1501,6 +1521,28 @@
     function _qualifiedTagName(el) {
         const tag = ops.op_dom_get_tag_name(_getNodeId(el));
         return _namespaceOf(el) === _HTML_NS ? tag.toUpperCase() : tag;
+    }
+
+    // Attr (DOM Standard §4.9.2): a live view of one attribute of its
+    // element. The Rust DOM keeps attributes on the element, not as nodes.
+    class Attr extends Node {
+        get name() { return _attrData.get(this).name; }
+        get localName() { return this.name; }
+        get nodeName() { return this.name; }
+        get nodeType() { return 2; }
+        get value() { return _attrData.get(this).el.getAttribute(this.name) ?? ""; }
+        set value(v) { _attrData.get(this).el.setAttribute(this.name, String(v)); }
+        get nodeValue() { return this.value; }
+        set nodeValue(v) { this.value = v; }
+        get textContent() { return this.value; }
+        set textContent(v) { this.value = v; }
+        get ownerElement() { return _attrData.get(this).el; }
+        get ownerDocument() { return _attrData.get(this).el.ownerDocument; }
+        get namespaceURI() { return null; }
+        get prefix() { return null; }
+        get specified() { return true; }
+        get parentNode() { return null; }
+        get isConnected() { return false; }
     }
 
     // CharacterData (DOM Standard §4.10): the shared base of Text and Comment.
@@ -2205,6 +2247,7 @@
     _tag(HTMLTemplateElement, "HTMLTemplateElement");
     _tag(HTMLPreElement, "HTMLPreElement");
     _tag(HTMLQuoteElement, "HTMLQuoteElement");
+    _tag(Attr, "Attr");
     _tag(Text, "Text");
     _tag(Comment, "Comment");
     _tag(DocumentFragment, "DocumentFragment");
@@ -2283,6 +2326,7 @@
     globalThis.HTMLQuoteElement = HTMLQuoteElement;
     for (const name in _svgClasses) globalThis[name] = _svgClasses[name];
     globalThis.SVGRect = SVGRect;
+    globalThis.Attr = Attr;
     globalThis.CharacterData = CharacterData;
     globalThis.Text = Text;
     globalThis.Comment = Comment;

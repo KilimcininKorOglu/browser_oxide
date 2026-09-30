@@ -6830,6 +6830,25 @@ async fn dom_parser_returns_a_separate_document() {
 }
 
 #[tokio::test]
+async fn attributes_are_live_attr_nodes() {
+    // Measured in Chrome 147: element.attributes holds Attr nodes, an
+    // attribute with an empty value is still listed, the same Attr comes
+    // back on every read, and getAttributeNames/hasAttributes exist.
+    let js = r#"
+        (() => {
+            const d = document.createElement('input'); d.setAttribute('disabled', ''); d.setAttribute('data-x', 'v');
+            const a = d.attributes[0], b = d.attributes.getNamedItem('data-x');
+            const safe = (f) => { try { const r = f(); return r === undefined ? 'undefined' : r; } catch (e) { return 'ERR ' + e.message; } };
+            return JSON.stringify([Object.prototype.toString.call(a), a.name, a.value, a.nodeName, a.nodeType, a.localName, a.nodeValue, a.textContent, a.specified, a.ownerElement === d, a.namespaceURI, a.prefix, a.parentNode, a instanceof Node, Object.getPrototypeOf(Attr.prototype) === Node.prototype, d.attributes[0] === a, b.value, d.getAttributeNames(), d.hasAttributes(), document.createElement('p').hasAttributes(), safe(() => d.attributes.item(5)), safe(() => d.attributes[5]), safe(() => d.attributes.getNamedItem('nope')), Object.keys(a).length, a.ownerDocument === document, a.isConnected, safe(() => { a.value = 'z'; return d.getAttribute('disabled'); })]);
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"["[object Attr]","disabled","","disabled",2,"disabled","","",true,true,null,null,null,true,true,true,"v",["disabled","data-x"],true,false,null,"undefined",null,0,true,false,"z"]"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
