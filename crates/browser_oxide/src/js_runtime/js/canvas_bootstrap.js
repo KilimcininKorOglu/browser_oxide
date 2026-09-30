@@ -220,8 +220,9 @@
             // See `_fontFamilyWidthDelta` for rationale.
             const fam = _primaryFontFamily(this._font);
             const deltaPerChar = _fontFamilyWidthDelta(fam);
+            // An empty string measures 0 wide in every font.
             const len = (typeof text === "string") ? text.length : 0;
-            const widthDelta = deltaPerChar * Math.max(1, len) * 0.25;
+            const widthDelta = deltaPerChar * len * 0.25;
             return _makeTextMetrics({
                 width: m.width + widthDelta,
                 actualBoundingBoxLeft: m.actual_bounding_box_left,

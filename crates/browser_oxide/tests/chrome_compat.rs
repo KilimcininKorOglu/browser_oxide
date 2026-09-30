@@ -7025,6 +7025,18 @@ async fn svg_text_box_spans_the_rounded_line() {
 }
 
 #[tokio::test]
+async fn an_empty_string_measures_zero_wide_in_every_font() {
+    // Measured in Chrome 147: measureText('') is 0 wide whatever the font.
+    let js = r#"
+        (() => {
+            const c = document.createElement('canvas').getContext('2d');
+            return JSON.stringify(['20px "Times New Roman"', '12px Arial', '16px "Courier New"', '20px serif'].map((f) => { c.font = f; const m = c.measureText(''); return [m.width, m.actualBoundingBoxRight]; }));
+        })()
+    "#;
+    assert_eq!(check(js).await, "[[0,0],[0,0],[0,0],[0,0]]");
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
