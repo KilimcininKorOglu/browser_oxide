@@ -7728,3 +7728,34 @@ async fn element_lists_are_html_collections() {
         r#"["function",true,false,true,true,"undefined","undefined","b","i",null,"i",null,"bi"]"#
     );
 }
+
+// The global attributes of HTMLElement reflect to their content attributes,
+// on the prototype and not as own properties. Expected values follow the
+// HTML Standard's reflection rules.
+#[tokio::test]
+async fn html_element_global_attributes_reflect() {
+    let js = r#"(() => {
+        const d = document.createElement('div');
+        const out = [Object.getOwnPropertyNames(d).length,
+            'title' in HTMLElement.prototype, d.hasOwnProperty('title')];
+        d.title = 't'; d.lang = 'tr'; d.accessKey = 'k'; d.autofocus = true;
+        out.push(d.getAttribute('title'), d.getAttribute('lang'),
+            d.getAttribute('accesskey'), d.getAttribute('autofocus'));
+        d.setAttribute('dir', 'RTL');
+        out.push(d.dir, (d.dir = 'bogus', d.dir), d.getAttribute('dir'));
+        out.push(d.hidden, (d.hidden = true, d.getAttribute('hidden')),
+            (d.hidden = 'until-found', d.hidden), (d.hidden = false, d.hasAttribute('hidden')));
+        d.inputMode = 'Numeric'; d.enterKeyHint = 'nope';
+        out.push(d.inputMode, d.enterKeyHint);
+        const a = document.createElement('a');
+        out.push(d.tabIndex, document.createElement('button').tabIndex, a.tabIndex);
+        a.href = '/x';
+        d.tabIndex = 3.9;
+        out.push(a.tabIndex, d.tabIndex, d.getAttribute('tabindex'));
+        return JSON.stringify(out);
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        r#"[0,true,false,"t","tr","k","","rtl","","bogus",false,"","until-found",false,"numeric","",-1,0,-1,0,3,"3"]"#
+    );
+}

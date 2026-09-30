@@ -1253,6 +1253,56 @@
             enumerable: true, configurable: true,
         });
     };
+    // An enumerated attribute: the getter answers the matching keyword in its
+    // canonical case, or the empty string for a missing or unknown value.
+    const _reflectEnum = (proto, prop, keywords, attr = prop.toLowerCase()) => {
+        Object.defineProperty(proto, prop, {
+            get() {
+                const v = (this.getAttribute(attr) ?? '').toLowerCase();
+                return keywords.includes(v) ? v : '';
+            },
+            set(v) { this.setAttribute(attr, String(v)); },
+            enumerable: true, configurable: true,
+        });
+    };
+    // The global attributes of HTMLElement (HTML §3.2.6) that had no IDL
+    // property, so a script that set one only left an own data property.
+    _reflectStr(HTMLElement.prototype, 'title');
+    _reflectStr(HTMLElement.prototype, 'lang');
+    _reflectStr(HTMLElement.prototype, 'accessKey', 'accesskey');
+    _reflectBool(HTMLElement.prototype, 'autofocus');
+    _reflectEnum(HTMLElement.prototype, 'dir', ['ltr', 'rtl', 'auto']);
+    _reflectEnum(HTMLElement.prototype, 'inputMode',
+        ['none', 'text', 'tel', 'url', 'email', 'numeric', 'decimal', 'search']);
+    _reflectEnum(HTMLElement.prototype, 'enterKeyHint',
+        ['enter', 'done', 'go', 'next', 'previous', 'search', 'send']);
+    // hidden is a boolean whose one keyword, until-found, reads back as itself.
+    Object.defineProperty(HTMLElement.prototype, 'hidden', {
+        get() {
+            const v = this.getAttribute('hidden');
+            if (v === null) return false;
+            return v.toLowerCase() === 'until-found' ? 'until-found' : true;
+        },
+        set(v) {
+            if (v === 'until-found') this.setAttribute('hidden', 'until-found');
+            else if (v) this.setAttribute('hidden', '');
+            else this.removeAttribute('hidden');
+        },
+        enumerable: true, configurable: true,
+    });
+    // Elements a user can focus by default sit in the tab order at 0; the rest
+    // sit at -1 until tabindex says otherwise.
+    const _tabbableTags = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'IFRAME']);
+    Object.defineProperty(HTMLElement.prototype, 'tabIndex', {
+        get() {
+            const n = Number.parseInt(this.getAttribute('tabindex') ?? '', 10);
+            if (Number.isFinite(n)) return n;
+            const linked = (this.tagName === 'A' || this.tagName === 'AREA') && this.hasAttribute('href');
+            return linked || _tabbableTags.has(this.tagName) ? 0 : -1;
+        },
+        set(v) { this.setAttribute('tabindex', String(Math.trunc(Number(v)) || 0)); },
+        enumerable: true, configurable: true,
+    });
     // The value and checkedness of a form control (HTML §4.10.5.4). Setting
     // the property makes it dirty, and from then on the attribute is only
     // the default: el.value = 'x' leaves getAttribute('value') alone.
