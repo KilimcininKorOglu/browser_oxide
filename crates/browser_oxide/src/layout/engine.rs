@@ -1,8 +1,14 @@
+use crate::css_cascade::cascade::{cascade_sort, CascadeEntry, Origin};
 use crate::css_cascade::ComputedStyle;
-use crate::css_values::property::{CssValue, PropertyId};
+use crate::css_parser::ast::Rule;
+use crate::css_selectors::{
+    matches_selector, parse_selector_list, Component, Selector, SimpleSelector,
+};
+use crate::css_values::property::{CssValue, PropertyDeclaration, PropertyId};
 use crate::css_values::types::display::Display;
 use crate::dom::node::{NodeData, NodeId};
-use crate::dom::Dom;
+use crate::dom::{Dom, DomElement};
+use crate::js_runtime::utils::tokens_to_string;
 use crate::layout::query::DOMRect;
 use crate::layout::resolve::ResolveContext;
 use crate::layout::style_map::computed_to_taffy;
@@ -24,6 +30,13 @@ pub struct LayoutEngine {
     viewport: Viewport,
     dirty: bool,
     root_taffy: Option<taffy::NodeId>,
+    rules: Vec<StyleRule>,
+}
+
+/// A top-level style rule of an author sheet, parsed for layout.
+struct StyleRule {
+    selectors: Vec<Selector>,
+    declarations: Vec<PropertyDeclaration>,
 }
 
 impl LayoutEngine {
@@ -34,12 +47,50 @@ impl LayoutEngine {
             viewport,
             dirty: true,
             root_taffy: None,
+            rules: Vec::new(),
         }
     }
 
     /// Mark layout as dirty (needs recomputation).
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+
+    /// Replace the author sheets whose rules the layout applies.
+    pub fn set_stylesheets(&mut self, sheets: &[String]) {
+        self.rules = sheets
+            .iter()
+            .flat_map(|css| parse_style_rules(css))
+            .collect();
+        self.dirty = true;
+    }
+
+    /// The declarations the author rules give an element, cascaded by
+    /// specificity and source order.
+    fn cascaded(&self, dom: &Dom, node_id: NodeId) -> HashMap<PropertyId, CssValue> {
+        let Some(element) = DomElement::new(dom, node_id) else {
+            return HashMap::new();
+        };
+        let mut entries = Vec::new();
+        for (order, rule) in self.rules.iter().enumerate() {
+            let Some(specificity) = rule
+                .selectors
+                .iter()
+                .filter(|s| matches_selector(&element, s))
+                .map(|s| s.specificity())
+                .max()
+            else {
+                continue;
+            };
+            entries.extend(rule.declarations.iter().map(|d| CascadeEntry {
+                declaration: d.clone(),
+                origin: Origin::Author,
+                layer: None,
+                specificity,
+                source_order: order as u32,
+            }));
+        }
+        cascade_sort(&mut entries)
     }
 
     /// Compute layout for the entire DOM tree.
@@ -215,13 +266,9 @@ impl LayoutEngine {
                 }
             }
             NodeData::Element(elem) => {
-                let computed = ComputedStyle::resolve(&HashMap::new(), None);
-                let inline_style = self.parse_inline_style(elem);
-                let computed = if !inline_style.is_empty() {
-                    ComputedStyle::resolve(&inline_style, None)
-                } else {
-                    computed
-                };
+                let mut declared = self.cascaded(dom, node_id);
+                declared.extend(self.parse_inline_style(elem));
+                let computed = ComputedStyle::resolve(&declared, None);
                 if let Some(CssValue::Display(Display::None)) = computed.get(&PropertyId::Display) {
                     return;
                 }
@@ -321,10 +368,75 @@ impl LayoutEngine {
     }
 }
 
+/// The top-level style rules of a sheet. A selector that names a
+/// pseudo-element styles that pseudo-element, not the element, so it
+/// is left out.
+fn parse_style_rules(css: &str) -> Vec<StyleRule> {
+    let (sheet, _errors) = crate::css_parser::parse_stylesheet(css);
+    sheet
+        .rules
+        .iter()
+        .filter_map(|rule| {
+            let Rule::Qualified(qr) = rule else {
+                return None;
+            };
+            let selectors: Vec<Selector> = parse_selector_list(&tokens_to_string(&qr.prelude))
+                .ok()?
+                .into_iter()
+                .filter(|s| !has_pseudo_element(s))
+                .collect();
+            let declarations: Vec<PropertyDeclaration> = qr
+                .declarations
+                .iter()
+                .filter_map(|d| {
+                    crate::css_values::parse_property(d.name, &d.value, d.important).ok()
+                })
+                .flatten()
+                .collect();
+            (!selectors.is_empty() && !declarations.is_empty()).then_some(StyleRule {
+                selectors,
+                declarations,
+            })
+        })
+        .collect()
+}
+
+fn has_pseudo_element(selector: &Selector) -> bool {
+    selector
+        .components()
+        .iter()
+        .any(|c| matches!(c, Component::Simple(SimpleSelector::PseudoElement(_))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dom::node::{Attribute, QualName};
+
+    #[test]
+    fn stylesheet_rules_size_the_element() {
+        let mut dom = Dom::new();
+        let body = dom.create_element(QualName::new("body"), vec![]);
+        dom.append_child(NodeId::DOCUMENT, body);
+        let attr = |name: &str, value: &str| Attribute {
+            name: QualName::new(name),
+            value: value.to_string(),
+        };
+        let div = dom.create_element(
+            QualName::new("div"),
+            vec![attr("class", "box"), attr("style", "height: 5px")],
+        );
+        dom.append_child(body, div);
+        let mut engine = LayoutEngine::new(Viewport::new(1920.0, 1080.0));
+        engine.set_stylesheets(&[
+            ".box { width: 37px; height: 11px } div.box { width: 41px }".to_string(),
+            ".box::before { width: 99px }".to_string(),
+        ]);
+        let rect = engine.get_bounding_rect(&dom, div);
+        // The higher specificity rule sets the width; the inline style
+        // beats every rule; the pseudo-element rule does not apply.
+        assert_eq!((rect.width, rect.height), (41.0, 5.0));
+    }
 
     fn make_dom_with_styled_div(style: &str) -> Dom {
         let mut dom = Dom::new();

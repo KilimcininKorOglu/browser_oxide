@@ -1018,6 +1018,61 @@ async fn document_fonts_is_a_chrome_font_face_set() {
     );
 }
 
+// A <style> element in the document owns a CSSStyleSheet whose rules
+// script can edit, and the rules it adds reach getComputedStyle and the
+// layout. Every expected value was measured in Chrome 146.
+#[tokio::test]
+async fn style_sheet_rules_reach_the_layout() {
+    let js = r#"(() => {
+        const out = [];
+        const t = (f) => { try { out.push(JSON.stringify(f())); } catch (e) { out.push(e.name + ':' + e.message); } };
+        const s = document.createElement('style');
+        t(() => s.sheet);
+        s.textContent = 'a { color: red }  .q{margin:0}';
+        document.head.appendChild(s);
+        const sh = s.sheet;
+        t(() => [Object.prototype.toString.call(sh), sh === s.sheet, sh.ownerNode === s, sh.type, sh.href, sh.title, sh.disabled, sh.media.mediaText, sh.parentStyleSheet, sh.ownerRule]);
+        t(() => [sh.cssRules.length, sh.cssRules[0].cssText, Object.prototype.toString.call(sh.cssRules), sh.rules === sh.cssRules]);
+        t(() => [sh.insertRule('.x1 { width: 37px; height: 11px }'), sh.insertRule('.x2{top:1px}', 3), sh.cssRules.length, sh.cssRules[0].cssText, sh.cssRules[3].cssText]);
+        t(() => sh.insertRule('b{}'));
+        t(() => s.textContent);
+        t(() => sh.insertRule('this is bad'));
+        t(() => sh.insertRule('i{}', 99));
+        t(() => sh.insertRule('i{} j{}'));
+        t(() => sh.insertRule());
+        t(() => [sh.deleteRule(0), sh.cssRules.length, sh.cssRules[0].cssText]);
+        t(() => sh.deleteRule(50));
+        t(() => { const r = sh.cssRules[0]; return [Object.prototype.toString.call(r), r.selectorText, r.style.cssText, r.type, r.parentStyleSheet === sh]; });
+        const d = document.createElement('div'); d.className = 'x1'; document.body.appendChild(d);
+        t(() => { const r = d.getBoundingClientRect(); return [r.width, r.height, getComputedStyle(d).width, getComputedStyle(d).height]; });
+        t(() => [document.styleSheets.length, document.styleSheets[0] === sh]);
+        s.remove();
+        t(() => [s.sheet, sh.ownerNode]);
+        return out.join('|');
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        concat!(
+            "null|",
+            r#"["[object CSSStyleSheet]",true,true,"text/css",null,null,false,"",null,null]|"#,
+            r#"[2,"a { color: red; }","[object CSSRuleList]",true]|"#,
+            r#"[0,3,4,".x1 { width: 37px; height: 11px; }",".x2 { top: 1px; }"]|"#,
+            "0|",
+            r#""a { color: red }  .q{margin:0}"|"#,
+            "SyntaxError:Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule 'this is bad'.|",
+            "IndexSizeError:Failed to execute 'insertRule' on 'CSSStyleSheet': The index provided (99) is larger than the maximum index (5).|",
+            "SyntaxError:Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule 'i{} j{}'.|",
+            "TypeError:Failed to execute 'insertRule' on 'CSSStyleSheet': 1 argument required, but only 0 present.|",
+            r#"[null,4,".x1 { width: 37px; height: 11px; }"]|"#,
+            "IndexSizeError:Failed to execute 'deleteRule' on 'CSSStyleSheet': The index provided (50) is larger than the maximum index (3).|",
+            r#"["[object CSSStyleRule]",".x1","width: 37px; height: 11px;",1,true]|"#,
+            r#"[37,11,"37px","11px"]|"#,
+            "[1,true]|",
+            "[null,null]",
+        )
+    );
+}
+
 // MediaSource
 #[tokio::test]
 async fn cls_media_source() {

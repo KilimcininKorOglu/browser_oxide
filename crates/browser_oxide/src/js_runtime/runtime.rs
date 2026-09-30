@@ -27,7 +27,9 @@ use std::collections::HashMap;
 pub struct BrowserRuntimeOptions {
     pub base_url: Option<url::Url>,
     pub stealth_profile: Option<StealthProfile>,
-    pub stylesheets: Vec<String>,
+    /// CSS fetched for the document's `<link rel="stylesheet">` elements.
+    /// The `<style>` elements are read from the DOM itself.
+    pub external_stylesheets: Vec<String>,
     /// Scripts evaluated AFTER all built-in bootstraps but BEFORE any
     /// parsed-HTML `<script>` tags. Mirrors Chromium's
     /// `Page.addScriptToEvaluateOnNewDocument` CDP command — the driver
@@ -183,14 +185,14 @@ pub fn create_runtime_with_signals(
     options: BrowserRuntimeOptions,
 ) -> (JsRuntime, NavSignal) {
     let mut state = DomState::new(dom);
-    state.stylesheets = options.stylesheets;
+    state.external_stylesheets = options.external_stylesheets;
     if let Some(storage) = options.storage {
         state.storage = storage;
     }
     if let Some(url) = options.base_url {
         state = state.with_base_url(url);
     }
-    state.update_cached_rules();
+    state.refresh_styles();
 
     // P2 — ES-module loader for document `<script type="module">`. Resolves
     // relative specifiers + fetches the import graph through the shared HTTP

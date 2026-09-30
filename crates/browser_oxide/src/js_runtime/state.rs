@@ -1,3 +1,4 @@
+use crate::dom::node::NodeId;
 use crate::dom::Dom;
 use crate::layout::{LayoutEngine, Viewport};
 use std::collections::HashMap;
@@ -12,10 +13,19 @@ pub struct DomState {
     pub console_output: Vec<ConsoleMessage>,
     /// localStorage / sessionStorage (in-memory)
     pub storage: HashMap<String, HashMap<String, String>>,
-    /// CSS from `<style>` blocks, used by getComputedStyle
+    /// CSS fetched for the document's `<link rel="stylesheet">` elements.
+    pub external_stylesheets: Vec<String>,
+    /// Rule lists of the `<style>` sheets that script edited through
+    /// CSSOM, keyed by the style element.
+    pub sheet_rules: HashMap<NodeId, SheetRules>,
+    /// The sheets in effect: every connected `<style>` element in
+    /// document order, then the external sheets. Rebuilt by
+    /// `refresh_styles` after the DOM changes.
     pub stylesheets: Vec<String>,
     /// Parsed and simplified CSS rules for fast lookup
     pub cached_rules: Vec<CachedRule>,
+    /// Set by a DOM mutation; `refresh_styles` then rebuilds the sheets.
+    pub styles_dirty: bool,
     pub stealth_profile: Option<crate::stealth::StealthProfile>,
     /// Active Content Security Policy. Built from the response
     /// `Content-Security-Policy` header(s) plus any
@@ -38,6 +48,14 @@ pub struct CachedRule {
     pub selector_str: String,
     pub selectors: crate::css_selectors::SelectorList,
     pub declarations: HashMap<String, String>,
+}
+
+/// A `<style>` sheet's CSSOM rule list, valid while the element's
+/// text stays `source`. Chrome builds a new sheet when the text changes.
+#[derive(Debug, Clone)]
+pub struct SheetRules {
+    pub source: String,
+    pub rules: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,12 +84,51 @@ impl DomState {
             base_url: None,
             console_output: Vec::new(),
             storage,
+            external_stylesheets: Vec::new(),
+            sheet_rules: HashMap::new(),
             stylesheets: Vec::new(),
             cached_rules: Vec::new(),
+            styles_dirty: true,
             stealth_profile: None,
             csp_policy: None,
             csp_origin: None,
             resource_timings: Vec::new(),
+        }
+    }
+
+    /// Record a DOM change: the sheets and the layout are rebuilt on the
+    /// next read.
+    pub fn invalidate_styles(&mut self) {
+        self.styles_dirty = true;
+        self.layout_engine.mark_dirty();
+    }
+
+    /// Rebuild the sheets in effect when the DOM changed since the last
+    /// call, and hand them to the layout engine when they differ.
+    pub fn refresh_styles(&mut self) {
+        if !self.styles_dirty {
+            return;
+        }
+        self.styles_dirty = false;
+        let nodes = crate::stylesheet_collector::style_elements(&self.dom);
+        let dom = &self.dom;
+        self.sheet_rules
+            .retain(|id, sheet| nodes.contains(id) && dom.text_content(*id) == sheet.source);
+        let mut sheets: Vec<String> = nodes.iter().map(|id| self.sheet_text(*id)).collect();
+        sheets.extend(self.external_stylesheets.iter().cloned());
+        if sheets != self.stylesheets {
+            self.stylesheets = sheets;
+            self.update_cached_rules();
+            self.layout_engine.set_stylesheets(&self.stylesheets);
+        }
+    }
+
+    /// The CSS a `<style>` element contributes: its CSSOM rules when
+    /// script edited them, else its text.
+    pub fn sheet_text(&self, id: NodeId) -> String {
+        match self.sheet_rules.get(&id) {
+            Some(sheet) => sheet.rules.join("\n"),
+            None => self.dom.text_content(id),
         }
     }
 

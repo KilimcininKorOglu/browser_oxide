@@ -2,9 +2,9 @@ use crate::css_values::calc::resolve_computed_value;
 use crate::css_values::types::length::CalcContext;
 use crate::dom::node::NodeId;
 use crate::dom::DomElement;
+use crate::js_runtime::cssom::{parse_one_rule, rule_json, split_rules, CSSRuleJson};
 use crate::js_runtime::native_fns::{install_native_fp_tostring, IframeRealmStore};
-use crate::js_runtime::state::DomState;
-use crate::js_runtime::utils::tokens_to_string;
+use crate::js_runtime::state::{DomState, SheetRules};
 use deno_core::op2;
 use deno_core::v8;
 use deno_core::JsRuntime;
@@ -436,7 +436,7 @@ pub fn op_dom_append_child(state: &mut OpState, #[smi] parent: i32, #[smi] child
         NodeId::from_raw(parent as u32),
         NodeId::from_raw(child as u32),
     );
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
@@ -452,14 +452,14 @@ pub fn op_dom_insert_before(
         NodeId::from_raw(child as u32),
         NodeId::from_raw(reference as u32),
     );
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
 pub fn op_dom_remove_child(state: &mut OpState, #[smi] _parent: i32, #[smi] child: i32) {
     let state = state.borrow_mut::<DomState>();
     state.dom.detach(NodeId::from_raw(child as u32));
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
@@ -487,9 +487,8 @@ pub fn op_dom_set_attribute(
             }
         }
     }
-    if name.eq_ignore_ascii_case("style") || name.eq_ignore_ascii_case("class") {
-        state.layout_engine.mark_dirty();
-    }
+    // Any attribute can take part in a selector.
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
@@ -502,9 +501,8 @@ pub fn op_dom_remove_attribute(state: &mut OpState, #[smi] node_id: i32, #[strin
                 .retain(|a| !a.name.local.eq_ignore_ascii_case(name));
         }
     }
-    if name.eq_ignore_ascii_case("style") || name.eq_ignore_ascii_case("class") {
-        state.layout_engine.mark_dirty();
-    }
+    // Any attribute can take part in a selector.
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
@@ -513,7 +511,7 @@ pub fn op_dom_set_text_content(state: &mut OpState, #[smi] node_id: i32, #[strin
     state
         .dom
         .set_text_content(NodeId::from_raw(node_id as u32), text);
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
@@ -539,7 +537,7 @@ pub fn op_dom_set_inner_html(state: &mut OpState, #[smi] node_id: i32, #[string]
             state.dom.append_child(id, new_child);
         }
     }
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
 }
 
 /// Clone a node. If deep=true, clone all descendants too.
@@ -712,7 +710,7 @@ pub fn op_dom_insert_adjacent_html(
         }
         _ => {}
     }
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
 }
 
 #[op2]
@@ -741,7 +739,7 @@ pub fn op_dom_document_write(state: &mut OpState, #[string] html: &str) -> Vec<i
             new_ids.push(new_child.to_raw() as i32);
         }
     }
-    state.layout_engine.mark_dirty();
+    state.invalidate_styles();
     new_ids
 }
 
@@ -774,6 +772,7 @@ pub fn op_dom_class_list_add(state: &mut OpState, #[smi] node_id: i32, #[string]
             }
         }
     }
+    state.invalidate_styles();
 }
 
 #[op2(fast)]
@@ -793,6 +792,7 @@ pub fn op_dom_class_list_remove(state: &mut OpState, #[smi] node_id: i32, #[stri
             }
         }
     }
+    state.invalidate_styles();
 }
 
 /// Get computed style for an element.
@@ -812,9 +812,7 @@ pub fn op_dom_get_all_computed_styles(
     #[smi] node_id: i32,
 ) -> HashMap<String, String> {
     let state = state.borrow_mut::<DomState>();
-    if state.cached_rules.is_empty() && !state.stylesheets.is_empty() {
-        state.update_cached_rules();
-    }
+    state.refresh_styles();
     let id = NodeId::from_raw(node_id as u32);
     let dom_el = if let Some(el) = DomElement::new(&state.dom, id) {
         el
@@ -881,9 +879,7 @@ pub fn op_dom_get_computed_style(
     #[string] property: &str,
 ) -> String {
     let state = state.borrow_mut::<DomState>();
-    if state.cached_rules.is_empty() && !state.stylesheets.is_empty() {
-        state.update_cached_rules();
-    }
+    state.refresh_styles();
     let id = NodeId::from_raw(node_id as u32);
     let ctx = calc_context_from(state);
 
@@ -1052,57 +1048,122 @@ pub fn op_dom_get_shadow_root(state: &mut OpState, #[smi] node_id: i32) -> i32 {
 
 // --- CSSOM ops ---
 
-#[op2(fast)]
-pub fn op_dom_get_stylesheet_count(state: &mut OpState) -> i32 {
-    let state = state.borrow::<DomState>();
-    state.stylesheets.len() as i32
-}
-
-#[derive(serde::Serialize)]
-pub struct CSSRuleJson {
-    pub selector_text: String,
-    pub css_text: String,
-    pub rule_type: u8,
-}
-
-/// Get parsed rules for a stylesheet by index.
+/// The `<style>` elements that own a sheet, in document order.
 #[op2]
 #[serde]
-pub fn op_dom_get_stylesheet_rules(state: &mut OpState, #[smi] index: i32) -> Vec<CSSRuleJson> {
+pub fn op_cssom_style_owners(state: &mut OpState) -> Vec<i32> {
     let state = state.borrow::<DomState>();
-    let idx = index as usize;
-    if idx >= state.stylesheets.len() {
-        return vec![];
+    crate::stylesheet_collector::style_elements(&state.dom)
+        .into_iter()
+        .map(|id| id.to_raw() as i32)
+        .collect()
+}
+
+#[op2(fast)]
+pub fn op_cssom_external_count(state: &mut OpState) -> i32 {
+    let state = state.borrow::<DomState>();
+    state.external_stylesheets.len() as i32
+}
+
+/// The CSS of the external sheet at `index`.
+#[op2]
+#[string]
+pub fn op_cssom_external_css(state: &mut OpState, #[smi] index: i32) -> String {
+    let state = state.borrow::<DomState>();
+    state
+        .external_stylesheets
+        .get(index as usize)
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// The rules of `css`, each as the CSS text of one rule.
+#[op2]
+#[serde]
+pub fn op_cssom_split_rules(#[string] css: &str) -> Vec<String> {
+    split_rules(css)
+}
+
+/// The CSS text of `rule` when it holds exactly one rule, else "".
+#[op2]
+#[string]
+pub fn op_cssom_parse_rule(#[string] rule: &str) -> String {
+    parse_one_rule(rule).unwrap_or_default()
+}
+
+/// Describe rules held as CSS text.
+#[op2]
+#[serde]
+pub fn op_cssom_describe(#[serde] rules: Vec<String>) -> Vec<CSSRuleJson> {
+    rules.iter().map(|r| rule_json(r)).collect()
+}
+
+/// The rules of the sheet a `<style>` element owns.
+#[op2]
+#[serde]
+pub fn op_cssom_rules(state: &mut OpState, #[smi] node_id: i32) -> Vec<CSSRuleJson> {
+    let state = state.borrow::<DomState>();
+    let id = NodeId::from_raw(node_id as u32);
+    let source = state.dom.text_content(id);
+    let rules = match state.sheet_rules.get(&id) {
+        Some(sheet) if sheet.source == source => sheet.rules.clone(),
+        _ => split_rules(&source),
+    };
+    rules.iter().map(|r| rule_json(r)).collect()
+}
+
+/// The editable rule list of a `<style>` element's sheet, built from its
+/// text the first time script edits it.
+fn edited_rules(state: &mut DomState, id: NodeId) -> &mut Vec<String> {
+    let source = state.dom.text_content(id);
+    let sheet = state.sheet_rules.entry(id).or_insert_with(|| SheetRules {
+        source: source.clone(),
+        rules: split_rules(&source),
+    });
+    if sheet.source != source {
+        sheet.rules = split_rules(&source);
+        sheet.source = source;
     }
-    let (stylesheet, _errors) = crate::css_parser::parse_stylesheet(&state.stylesheets[idx]);
-    let mut rules = Vec::new();
-    for rule in &stylesheet.rules {
-        if let crate::css_parser::ast::Rule::Qualified(qr) = rule {
-            let selector_text = tokens_to_string(&qr.prelude);
-            if selector_text.is_empty() {
-                continue;
-            }
-            let decl_parts: Vec<String> = qr
-                .declarations
-                .iter()
-                .map(|d| {
-                    let val = tokens_to_string(&d.value).trim().to_string();
-                    if d.important {
-                        format!("{}: {} !important", d.name, val)
-                    } else {
-                        format!("{}: {}", d.name, val)
-                    }
-                })
-                .collect();
-            let css_text = format!("{} {{ {} }}", selector_text, decl_parts.join("; "));
-            rules.push(CSSRuleJson {
-                selector_text: selector_text.trim().to_string(),
-                css_text,
-                rule_type: 1, // CSSStyleRule
-            });
-        }
+    &mut sheet.rules
+}
+
+/// `CSSStyleSheet.insertRule`. Returns the index, -2 when `index` is past
+/// the end, or -1 when `rule` is not exactly one rule.
+#[op2(fast)]
+pub fn op_cssom_insert_rule(
+    state: &mut OpState,
+    #[smi] node_id: i32,
+    #[string] rule: &str,
+    #[smi] index: i32,
+) -> i32 {
+    let state = state.borrow_mut::<DomState>();
+    let id = NodeId::from_raw(node_id as u32);
+    let rules = edited_rules(state, id);
+    let at = index as usize;
+    if at > rules.len() {
+        return -2;
     }
-    rules
+    let Some(text) = parse_one_rule(rule) else {
+        return -1;
+    };
+    rules.insert(at, text);
+    state.invalidate_styles();
+    index
+}
+
+/// `CSSStyleSheet.deleteRule`. False when `index` is past the end.
+#[op2(fast)]
+pub fn op_cssom_delete_rule(state: &mut OpState, #[smi] node_id: i32, #[smi] index: i32) -> bool {
+    let state = state.borrow_mut::<DomState>();
+    let id = NodeId::from_raw(node_id as u32);
+    let rules = edited_rules(state, id);
+    let at = index as usize;
+    if at >= rules.len() {
+        return false;
+    }
+    rules.remove(at);
+    state.invalidate_styles();
+    true
 }
 
 #[op2]
@@ -1509,8 +1570,15 @@ deno_core::extension!(
         op_dom_class_list_remove,
         op_dom_get_computed_style,
         op_dom_get_all_computed_styles,
-        op_dom_get_stylesheet_count,
-        op_dom_get_stylesheet_rules,
+        op_cssom_style_owners,
+        op_cssom_external_count,
+        op_cssom_external_css,
+        op_cssom_split_rules,
+        op_cssom_parse_rule,
+        op_cssom_describe,
+        op_cssom_rules,
+        op_cssom_insert_rule,
+        op_cssom_delete_rule,
         op_dom_attach_shadow,
         op_dom_get_shadow_root,
         op_dom_get_base_url,

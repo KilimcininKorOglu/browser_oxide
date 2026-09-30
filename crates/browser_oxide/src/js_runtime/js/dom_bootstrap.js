@@ -1503,7 +1503,9 @@
         return ops.op_canvas_to_data_url(this._canvasId);
     };
     class HTMLScriptElement extends HTMLElement {}
-    class HTMLStyleElement extends HTMLElement {}
+    class HTMLStyleElement extends HTMLElement {
+        get sheet() { return _styleElementSheet(this); }
+    }
     class HTMLLinkElement extends HTMLElement {}
     class HTMLMetaElement extends HTMLElement {}
     class HTMLTableElement extends HTMLElement {}
@@ -2244,14 +2246,7 @@
         get links() { return this.getElementsByTagName("a"); }
         get embeds() { return this.getElementsByTagName("embed"); }
         get anchors() { return this.querySelectorAll("a[name]"); }
-        get styleSheets() {
-            const count = ops.op_dom_get_stylesheet_count();
-            const sheets = [];
-            for (let i = 0; i < count; i++) {
-                sheets.push(new CSSStyleSheet(i));
-            }
-            return sheets;
-        }
+        get styleSheets() { return _documentStyleSheets(); }
         get fullscreenElement() { return null; }
         get pointerLockElement() { return null; }
         exitFullscreen() { return Promise.resolve(); }
@@ -2259,46 +2254,237 @@
     }
 
     // --- CSSOM ---
-    class CSSStyleSheet {
-        constructor(index) { this._index = index; }
-        get type() { return "text/css"; }
-        get disabled() { return false; }
-        get ownerNode() { return null; }
-        get parentStyleSheet() { return null; }
-        get title() { return null; }
-        get media() { return { length: 0, mediaText: "" }; }
-        get cssRules() {
-            const raw = ops.op_dom_get_stylesheet_rules(this._index);
-            return raw.map(r => new CSSStyleRule(r));
+    // A sheet owned by a <style> element keeps its rules in the Rust DOM
+    // state, where getComputedStyle and layout read them. A constructed
+    // or external sheet keeps a local copy of its rule texts.
+    const _cssomKey = Symbol("cssom");
+    const _sheetStates = new WeakMap();
+    const _ruleStates = new WeakMap();
+
+    function _sheetState(sheet, method) {
+        const st = _sheetStates.get(sheet);
+        if (!st) {
+            throw new TypeError(method ? "Failed to execute '" + method + "' on 'CSSStyleSheet': Illegal invocation" : "Illegal invocation");
         }
-        get rules() { return this.cssRules; }
-        insertRule(_rule, _index) { return 0; }
-        deleteRule(_index) {}
+        return st;
     }
 
-    class CSSStyleRule {
-        constructor({ selector_text, css_text, rule_type }) {
-            this.selectorText = selector_text;
-            this.cssText = css_text;
-            this.type = rule_type;
-            // Parse declarations into style-like object
-            const styleObj = {};
-            const declMatch = css_text.match(/\{([^}]*)\}/);
-            if (declMatch) {
-                for (const part of declMatch[1].split(";")) {
-                    const [prop, ...vals] = part.split(":");
-                    if (prop && vals.length) {
-                        const p = prop.trim();
-                        const v = vals.join(":").trim();
-                        styleObj[p] = v;
-                        // Also set camelCase version
-                        const camel = p.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-                        if (camel !== p) styleObj[camel] = v;
-                    }
-                }
-            }
-            this.style = styleObj;
+    function _illegalConstructor(key, name) {
+        if (key !== _cssomKey) {
+            throw new TypeError("Failed to construct '" + name + "': Illegal constructor");
         }
+    }
+
+    function _makeSheet(owner, external) {
+        const sheet = Object.create(CSSStyleSheet.prototype);
+        _sheetStates.set(sheet, { owner, external, texts: null, list: null });
+        return sheet;
+    }
+
+    // Rule descriptions: {selector_text, css_text, rule_type}.
+    function _describeRules(st) {
+        if (st.texts) return ops.op_cssom_describe(st.texts);
+        if (st.owner) return ops.op_cssom_rules(_getNodeId(st.owner));
+        return ops.op_cssom_describe(_ownTexts(st));
+    }
+
+    function _ownTexts(st) {
+        if (!st.texts) {
+            st.texts = st.external >= 0 ? ops.op_cssom_split_rules(ops.op_cssom_external_css(st.external)) : [];
+        }
+        return st.texts;
+    }
+
+    function _sheetError(method, message, name) {
+        return new DOMException("Failed to execute '" + method + "' on 'CSSStyleSheet': " + message, name);
+    }
+
+    function _requireArgs(method, count, given) {
+        if (given < count) {
+            throw new TypeError("Failed to execute '" + method + "' on 'CSSStyleSheet': " + count + " argument" + (count > 1 ? "s" : "") + " required, but only " + given + " present.");
+        }
+    }
+
+    function _insertRule(st, text, at) {
+        const length = _describeRules(st).length;
+        if (at > length) {
+            throw _sheetError("insertRule", "The index provided (" + at + ") is larger than the maximum index (" + length + ").", "IndexSizeError");
+        }
+        const inserted = st.owner && !st.texts
+            ? ops.op_cssom_insert_rule(_getNodeId(st.owner), text, at) >= 0
+            : _insertOwnText(st, text, at);
+        if (!inserted) {
+            throw _sheetError("insertRule", "Failed to parse the rule '" + text + "'.", "SyntaxError");
+        }
+        return at;
+    }
+
+    function _insertOwnText(st, text, at) {
+        const parsed = ops.op_cssom_parse_rule(text);
+        if (parsed === "") return false;
+        _ownTexts(st).splice(at, 0, parsed);
+        return true;
+    }
+
+    function _deleteRule(st, at) {
+        const length = _describeRules(st).length;
+        const deleted = at < length && (st.owner && !st.texts
+            ? ops.op_cssom_delete_rule(_getNodeId(st.owner), at)
+            : _ownTexts(st).splice(at, 1).length === 1);
+        if (!deleted) {
+            throw _sheetError("deleteRule", "The index provided (" + at + ") is larger than the maximum index (" + (length - 1) + ").", "IndexSizeError");
+        }
+    }
+
+    class CSSStyleSheet {
+        constructor() {
+            _sheetStates.set(this, { owner: null, external: -1, texts: [], list: null });
+        }
+        get type() { _sheetState(this); return "text/css"; }
+        get href() { _sheetState(this); return null; }
+        get title() { const st = _sheetState(this); return (st.owner && st.owner.getAttribute("title")) || null; }
+        get disabled() { _sheetState(this); return false; }
+        get ownerNode() { const st = _sheetState(this); return st.owner && st.owner.isConnected ? st.owner : null; }
+        get parentStyleSheet() { _sheetState(this); return null; }
+        get ownerRule() { _sheetState(this); return null; }
+        get media() {
+            _sheetState(this);
+            return { length: 0, mediaText: "", toString() { return ""; } };
+        }
+        get cssRules() {
+            const st = _sheetState(this);
+            if (!st.list) st.list = new CSSRuleList(_cssomKey);
+            _fillRuleList(st.list, _describeRules(st), this);
+            return st.list;
+        }
+        get rules() { return this.cssRules; }
+        insertRule(rule, index) {
+            const st = _sheetState(this, "insertRule");
+            _requireArgs("insertRule", 1, arguments.length);
+            return _insertRule(st, String(rule), index === undefined ? 0 : index >>> 0);
+        }
+        deleteRule(index) {
+            const st = _sheetState(this, "deleteRule");
+            _requireArgs("deleteRule", 1, arguments.length);
+            _deleteRule(st, index >>> 0);
+        }
+        addRule(selector, style, index) {
+            const st = _sheetState(this, "addRule");
+            const at = index === undefined ? _describeRules(st).length : index >>> 0;
+            _insertRule(st, String(selector) + " { " + String(style === undefined ? "" : style) + " }", at);
+            return -1;
+        }
+        removeRule(index) {
+            _deleteRule(_sheetState(this, "removeRule"), index === undefined ? 0 : index >>> 0);
+        }
+        replaceSync(text) {
+            const st = _sheetState(this, "replaceSync");
+            _requireArgs("replaceSync", 1, arguments.length);
+            if (st.owner || st.external >= 0) {
+                throw _sheetError("replaceSync", "Can't call replaceSync on non-constructed CSSStyleSheets.", "NotAllowedError");
+            }
+            st.texts = ops.op_cssom_split_rules(String(text));
+        }
+        replace(text) {
+            try {
+                this.replaceSync(text);
+                return Promise.resolve(this);
+            } catch (e) {
+                return Promise.reject(e);
+            }
+        }
+    }
+
+    // Fill the live list, keeping a rule object while its text is unchanged.
+    function _fillRuleList(list, described, sheet) {
+        const previous = _ruleStates.get(list) || [];
+        const rules = described.map((d, i) => {
+            const kept = previous[i];
+            return kept && kept.cssText === d.css_text ? kept : _makeRule(d, sheet);
+        });
+        for (let i = rules.length; i < previous.length; i++) delete list[i];
+        rules.forEach((rule, i) => {
+            Object.defineProperty(list, i, { value: rule, enumerable: true, configurable: true });
+        });
+        _ruleStates.set(list, rules);
+    }
+
+    class CSSRuleList {
+        constructor(key) { _illegalConstructor(key, "CSSRuleList"); }
+        get length() { return (_ruleStates.get(this) || []).length; }
+        item(index) { return (_ruleStates.get(this) || [])[index >>> 0] || null; }
+        [Symbol.iterator]() { return (_ruleStates.get(this) || [])[Symbol.iterator](); }
+    }
+
+    function _makeRule(d, sheet) {
+        const rule = Object.create((d.rule_type === 1 ? CSSStyleRule : CSSRule).prototype);
+        _ruleStates.set(rule, { d, sheet, style: null });
+        return rule;
+    }
+
+    function _ruleState(rule) {
+        const st = _ruleStates.get(rule);
+        if (!st || !st.d) throw new TypeError("Illegal invocation");
+        return st;
+    }
+
+    class CSSRule {
+        constructor(key) { _illegalConstructor(key, "CSSRule"); }
+        get type() { return _ruleState(this).d.rule_type; }
+        get cssText() { return _ruleState(this).d.css_text; }
+        get parentStyleSheet() { return _ruleState(this).sheet; }
+        get parentRule() { _ruleState(this); return null; }
+    }
+
+    class CSSStyleRule extends CSSRule {
+        get selectorText() { return _ruleState(this).d.selector_text; }
+        get style() {
+            const st = _ruleState(this);
+            if (!st.style) st.style = _ruleStyle(st.d.css_text);
+            return st.style;
+        }
+    }
+
+    // A read-only declaration block for a rule's `style`.
+    function _ruleStyle(cssText) {
+        const body = cssText.slice(cssText.indexOf("{") + 1, cssText.lastIndexOf("}")).trim();
+        const values = {};
+        for (const part of body.split(";")) {
+            const colon = part.indexOf(":");
+            if (colon > 0) values[part.slice(0, colon).trim()] = part.slice(colon + 1).trim();
+        }
+        const style = { cssText: body, length: Object.keys(values).length };
+        style.getPropertyValue = (name) => values[String(name)] || "";
+        for (const [name, value] of Object.entries(values)) {
+            style[name] = value;
+            style[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
+        }
+        return style;
+    }
+
+    // The sheet a <style> element owns while it is in the document.
+    // Chrome builds a new sheet when the element's text changes.
+    const _ownedSheets = new WeakMap();
+    function _styleElementSheet(el) {
+        const type = el.getAttribute("type");
+        if (!el.isConnected || (type !== null && type !== "" && type !== "text/css")) return null;
+        const text = el.textContent;
+        const cached = _ownedSheets.get(el);
+        if (cached && cached.text === text) return cached.sheet;
+        const sheet = _makeSheet(el, -1);
+        _ownedSheets.set(el, { text, sheet });
+        return sheet;
+    }
+
+    const _externalSheets = [];
+    function _documentStyleSheets() {
+        const sheets = ops.op_cssom_style_owners().map(id => _styleElementSheet(_wrapNode(id)));
+        const externals = ops.op_cssom_external_count();
+        for (let i = 0; i < externals; i++) {
+            if (!_externalSheets[i]) _externalSheets[i] = _makeSheet(null, i);
+            sheets.push(_externalSheets[i]);
+        }
+        return sheets;
     }
 
     // --- Range (minimal) ---
@@ -2659,6 +2845,18 @@
     _tag(DOMPoint, "DOMPoint");
     _tag(NodeList, "NodeList");
     _tag(DOMTokenList, "DOMTokenList");
+    _tag(CSSStyleSheet, "CSSStyleSheet");
+    _tag(CSSRuleList, "CSSRuleList");
+    _tag(CSSRule, "CSSRule");
+    _tag(CSSStyleRule, "CSSStyleRule");
+    // Chrome: CSSStyleSheet extends StyleSheet.
+    if (typeof globalThis.StyleSheet === "function") {
+        Object.setPrototypeOf(CSSStyleSheet.prototype, globalThis.StyleSheet.prototype);
+    }
+    globalThis.CSSStyleSheet = CSSStyleSheet;
+    globalThis.CSSRuleList = CSSRuleList;
+    globalThis.CSSRule = CSSRule;
+    globalThis.CSSStyleRule = CSSStyleRule;
 
     // documentElement (HTMLHtmlElement) and body (HTMLBodyElement) layout
     // dimensions in standards mode are viewport-clipped, NOT full document.

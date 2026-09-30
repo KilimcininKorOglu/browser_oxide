@@ -568,14 +568,11 @@ impl Page {
     ) -> Result<Self, deno_core::error::AnyError> {
         let dom = crate::html_parser::parse_html(html);
         let scripts = script_runner::find_scripts(&dom);
-        let stylesheet_entries = stylesheet_collector::find_stylesheets(&dom);
-        let stylesheets = stylesheet_collector::resolve_inline_only(&stylesheet_entries);
 
         let runtime = BrowserJsRuntime::with_options(
             dom,
             BrowserRuntimeOptions {
                 stealth_profile: Some(profile.clone()),
-                stylesheets,
                 is_secure_context: is_secure_url(url),
                 ..Default::default()
             },
@@ -631,11 +628,9 @@ impl Page {
     pub fn reload_html(&mut self, html: &str, url: &str) {
         let dom = crate::html_parser::parse_html(html);
         let scripts = script_runner::find_scripts(&dom);
-        let stylesheet_entries = stylesheet_collector::find_stylesheets(&dom);
-        let stylesheets = stylesheet_collector::resolve_inline_only(&stylesheet_entries);
 
         // Swap DOM in existing runtime (no new V8 isolate needed)
-        self.event_loop.runtime_mut().replace_dom(dom, stylesheets);
+        self.event_loop.runtime_mut().replace_dom(dom, Vec::new());
 
         // Drop old iframe children
         self.children.clear();
@@ -708,16 +703,13 @@ impl Page {
             }
         }
 
-        // Find scripts and stylesheets before handing DOM to runtime
+        // Find scripts before handing DOM to runtime
         let scripts = script_runner::find_scripts(&dom);
-        let stylesheet_entries = stylesheet_collector::find_stylesheets(&dom);
-        let stylesheets = stylesheet_collector::resolve_inline_only(&stylesheet_entries);
 
         let runtime = BrowserJsRuntime::with_options(
             dom,
             BrowserRuntimeOptions {
                 stealth_profile: profile.clone(),
-                stylesheets,
                 is_secure_context: is_secure_url(url),
                 require_trusted_types:
                     crate::js_runtime::extensions::fetch_ext::active_csp_requires_trusted_types(),
@@ -1787,14 +1779,10 @@ impl Page {
         // Parallel fetch external CSS + external scripts. Mirrors the
         // cold build path; we only inline the bits we actually need
         // here so this method stays self-contained.
-        let mut inline_css: Vec<String> = Vec::new();
         let css_futures: Vec<_> = stylesheet_entries
             .iter()
             .filter_map(|entry| match entry {
-                stylesheet_collector::StylesheetEntry::Inline(css) => {
-                    inline_css.push(css.clone());
-                    None
-                }
+                stylesheet_collector::StylesheetEntry::Inline(_) => None,
                 stylesheet_collector::StylesheetEntry::External(href) => {
                     let full_url = Self::resolve_url(&resp_url, href)?;
                     let client = client.clone();
@@ -1895,7 +1883,7 @@ impl Page {
         wmark!("subresources fetched");
 
         let mut all_timings = vec![timings];
-        let mut stylesheets = inline_css;
+        let mut stylesheets = Vec::new();
         for r in fetched_css.into_iter().flatten() {
             stylesheets.push(r.0);
             all_timings.push(r.1);
@@ -3487,14 +3475,10 @@ impl Page {
         mark!("parse_html + find_scripts + find_stylesheets");
 
         // Fetch ALL external stylesheets in parallel
-        let mut inline_css = Vec::new();
         let css_futures: Vec<_> = stylesheet_entries
             .iter()
             .filter_map(|entry| match entry {
-                stylesheet_collector::StylesheetEntry::Inline(css) => {
-                    inline_css.push(css.clone());
-                    None
-                }
+                stylesheet_collector::StylesheetEntry::Inline(_) => None,
                 stylesheet_collector::StylesheetEntry::External(href) => {
                     let full_url = Self::resolve_url(url, href)?;
                     let client = client.clone();
@@ -3642,8 +3626,9 @@ impl Page {
 
         let mut all_timings = Vec::new();
 
-        // Build stylesheet list: inline first, then fetched external
-        let mut stylesheets = inline_css;
+        // The `<style>` elements are read from the DOM; only the fetched
+        // external sheets are handed over.
+        let mut stylesheets = Vec::new();
         for (css, timings) in fetched_css_results.into_iter().flatten() {
             stylesheets.push(css);
             all_timings.push(timings);
@@ -3660,7 +3645,7 @@ impl Page {
             dom,
             BrowserRuntimeOptions {
                 stealth_profile: Some(profile.clone()),
-                stylesheets,
+                external_stylesheets: stylesheets,
                 init_scripts: init_scripts.to_vec(),
                 storage,
                 is_secure_context: is_secure_url(url),

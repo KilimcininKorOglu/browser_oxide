@@ -47,14 +47,11 @@ impl ChildIframe {
     ) -> Result<Self, deno_core::error::AnyError> {
         let dom = crate::html_parser::parse_html(html);
         let scripts = crate::script_runner::find_scripts(&dom);
-        let stylesheet_entries = crate::stylesheet_collector::find_stylesheets(&dom);
-        let stylesheets = crate::stylesheet_collector::resolve_inline_only(&stylesheet_entries);
 
         let runtime = BrowserJsRuntime::with_options(
             dom,
             BrowserRuntimeOptions {
                 stealth_profile: Some(profile.clone()),
-                stylesheets,
                 ..Default::default()
             },
         );
@@ -155,9 +152,7 @@ impl ChildIframe {
         let mut stylesheets = Vec::new();
         for entry in &stylesheet_entries {
             match entry {
-                crate::stylesheet_collector::StylesheetEntry::Inline(css) => {
-                    stylesheets.push(css.clone());
-                }
+                crate::stylesheet_collector::StylesheetEntry::Inline(_) => {}
                 crate::stylesheet_collector::StylesheetEntry::External(href) => {
                     let full_url = if href.starts_with("http") {
                         href.clone()
@@ -188,7 +183,7 @@ impl ChildIframe {
         }
 
         let mut options = BrowserRuntimeOptions {
-            stylesheets,
+            external_stylesheets: stylesheets,
             is_secure_context: crate::page::is_secure_url(url),
             frame_parent_origin: parent_origin.map(str::to_string),
             // The document URL comes from the runtime state; assigning

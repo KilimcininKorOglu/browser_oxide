@@ -16,11 +16,19 @@ pub struct DOMRectJson {
     pub left: f64,
 }
 
+/// The DOM state with its sheets brought up to date, so the layout
+/// applies the rules a DOM change added or removed.
+fn styled_state(state: &mut OpState) -> &mut DomState {
+    let state = state.borrow_mut::<DomState>();
+    state.refresh_styles();
+    state
+}
+
 /// Get bounding rect using real taffy layout computation.
 #[op2]
 #[serde]
 pub fn op_layout_get_bounding_rect(state: &mut OpState, #[smi] node_id: i32) -> DOMRectJson {
-    let state = state.borrow_mut::<DomState>();
+    let state = styled_state(state);
     let nid = NodeId::from_raw(node_id as u32);
     let rect = state.layout_engine.get_bounding_rect(&state.dom, nid);
     DOMRectJson {
@@ -38,7 +46,7 @@ pub fn op_layout_get_bounding_rect(state: &mut OpState, #[smi] node_id: i32) -> 
 #[op2(fast)]
 #[smi]
 pub fn op_layout_get_offset_width(state: &mut OpState, #[smi] node_id: i32) -> i32 {
-    let state = state.borrow_mut::<DomState>();
+    let state = styled_state(state);
     let nid = NodeId::from_raw(node_id as u32);
     state
         .layout_engine
@@ -49,7 +57,7 @@ pub fn op_layout_get_offset_width(state: &mut OpState, #[smi] node_id: i32) -> i
 #[op2(fast)]
 #[smi]
 pub fn op_layout_get_offset_height(state: &mut OpState, #[smi] node_id: i32) -> i32 {
-    let state = state.borrow_mut::<DomState>();
+    let state = styled_state(state);
     let nid = NodeId::from_raw(node_id as u32);
     state
         .layout_engine
@@ -60,7 +68,7 @@ pub fn op_layout_get_offset_height(state: &mut OpState, #[smi] node_id: i32) -> 
 #[op2(fast)]
 #[smi]
 pub fn op_layout_get_offset_top(state: &mut OpState, #[smi] node_id: i32) -> i32 {
-    let state = state.borrow_mut::<DomState>();
+    let state = styled_state(state);
     let nid = NodeId::from_raw(node_id as u32);
     state.layout_engine.get_offset_top(&state.dom, nid).round() as i32
 }
@@ -68,7 +76,7 @@ pub fn op_layout_get_offset_top(state: &mut OpState, #[smi] node_id: i32) -> i32
 #[op2(fast)]
 #[smi]
 pub fn op_layout_get_offset_left(state: &mut OpState, #[smi] node_id: i32) -> i32 {
-    let state = state.borrow_mut::<DomState>();
+    let state = styled_state(state);
     let nid = NodeId::from_raw(node_id as u32);
     state.layout_engine.get_offset_left(&state.dom, nid).round() as i32
 }

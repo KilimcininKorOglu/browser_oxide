@@ -2,6 +2,7 @@
 //!
 //! MIT/Apache-2.0 licensed. Part of the browser_oxide project.
 
+pub mod cssom;
 pub mod extensions;
 pub mod module_loader;
 pub mod native_fns;
@@ -318,13 +319,13 @@ impl BrowserJsRuntime {
 
     /// Replace the DOM in this runtime with a new one.
     /// Used for CDP Page.navigate to avoid recreating the V8 isolate.
-    pub fn replace_dom(&mut self, dom: Dom, stylesheets: Vec<String>) {
+    pub fn replace_dom(&mut self, dom: Dom, external_stylesheets: Vec<String>) {
         let state = self.inner.op_state();
         let mut state = state.borrow_mut();
         // Replace DomState — ops will pick up the new DOM on next call
         let mut dom_state = DomState::new(dom);
-        dom_state.stylesheets = stylesheets;
-        dom_state.update_cached_rules();
+        dom_state.external_stylesheets = external_stylesheets;
+        dom_state.refresh_styles();
         state.put(dom_state);
         // Reset timer state (clear pending timers from old page)
         state.put(extensions::timer_ext::TimerState::new());
