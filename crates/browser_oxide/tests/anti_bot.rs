@@ -382,7 +382,11 @@ async fn offset_width_positive() {
 
 #[tokio::test]
 async fn offset_height_positive() {
-    assert_eq!(eval("document.body.offsetHeight > 0").await, "true");
+    // An empty body is 0px high in standards mode; content gives it height.
+    assert_eq!(
+        eval("(() => { const d = document.createElement('div'); d.textContent = 'x'; document.body.appendChild(d); return document.body.offsetHeight > 0; })()").await,
+        "true"
+    );
 }
 
 #[tokio::test]
