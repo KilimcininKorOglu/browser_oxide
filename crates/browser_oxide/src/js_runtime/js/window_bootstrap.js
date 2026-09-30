@@ -5807,14 +5807,11 @@
     };
 
     // ================================================================
-    // performance.now() — humanized via op_perf_now_humanized.
+    // performance.now() — clamped via op_perf_now_humanized.
     //
-    // Real Chrome 130 quantizes to 100 µs but with hardware/scheduler jitter
-    // around the step. A perfect 100 µs grid (Math.round * 10 / 10) gives
-    // `set(diffs).size === 1` for hot loops, which differs from real Chrome.
-    //
-    // The op applies LogNormal(μ=ln 8 µs, σ=0.4) jitter clamped [0,35] µs
-    // plus rare exponential spike. Installed on Performance.prototype so the
+    // Chrome returns multiples of 100 µs (5 µs when cross-origin isolated);
+    // its jitter only moves where each bucket switches to the next value.
+    // See perf_ext.rs. Installed on Performance.prototype so the
     // own-descriptor probe still returns undefined on the instance.
     // ================================================================
     if (typeof globalThis.Performance === 'function' && globalThis.performance) {

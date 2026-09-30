@@ -3387,14 +3387,13 @@ async fn biquad_get_frequency_response_writes_n_values() {
 }
 
 // ================================================================
-// performance.now() humanized jitter
+// performance.now() clamping
 // ----------------------------------------------------------------
-// Real Chrome shows ~10–30 µs jitter around the 100 µs grid step. A
-// pure quantizer (set(diffs).size === 1) is detectable. We verify:
+// Chrome returns multiples of 100 µs; its jitter only moves the point
+// where a bucket switches to the next value. We verify:
 //   - Returns finite number
-//   - Is monotonic across calls (the underlying clock floor + non-negative
-//     jitter ensures this for any practical inter-call spacing)
-//   - Hot loop produces multiple distinct values (jitter is real)
+//   - Is monotonic across calls
+//   - Every value of a hot loop sits on the 100 µs grid
 // ================================================================
 
 #[tokio::test]
@@ -3420,15 +3419,14 @@ async fn perf_now_is_finite_non_negative() {
 }
 
 #[tokio::test]
-async fn perf_now_hot_loop_produces_distinct_values() {
-    // 500 hot calls; expect more than 10 distinct values (real Chrome shows
-    // dozens-to-hundreds; pure quantizer shows ~1).
+async fn perf_now_hot_loop_stays_on_the_100us_grid() {
+    // Chrome 148, 20 000 hot calls: every value is a multiple of 0.1 ms.
     assert_eq!(
         check(
             "(() => { \
               const xs = []; \
-              for (let i = 0; i < 500; i++) xs.push(performance.now()); \
-              return new Set(xs).size > 10; \
+              for (let i = 0; i < 20000; i++) xs.push(performance.now()); \
+              return xs.every(x => Math.abs(x * 10 - Math.round(x * 10)) < 1e-6); \
              })()"
         )
         .await,
@@ -3438,9 +3436,9 @@ async fn perf_now_hot_loop_produces_distinct_values() {
 
 #[tokio::test]
 async fn perf_now_is_strictly_monotonic() {
-    // HRT spec requires monotonic non-decreasing. The PerfState clamps
-    // each return to >= last value, so 1000 samples must have zero
-    // backward jumps.
+    // HRT spec requires monotonic non-decreasing. PerfState's clamp is a
+    // non-decreasing map of the monotonic clock, so 1000 samples must have
+    // zero backward jumps.
     assert_eq!(
         check(
             "(() => { \

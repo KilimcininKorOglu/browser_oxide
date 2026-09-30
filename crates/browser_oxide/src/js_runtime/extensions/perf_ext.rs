@@ -1,31 +1,28 @@
-//! Humanized `performance.now()`.
+//! Clamped `performance.now()`, the way Chromium's `TimeClamper` does it.
 //!
-//! Real Chrome 130 quantizes `performance.now()` to 100 µs (or 5 µs with
-//! cross-origin isolation), but the resolution is not the whole story —
-//! the **jitter shape** across many calls in a tight loop also differs
-//! from a software clock. Real hardware shows ~10–30 µs gaussian-ish
-//! noise around the quantized step from kernel scheduling, TSC drift, and
-//! V8's own quantization-with-noise applied on top of `CLOCK_MONOTONIC`.
+//! Chrome returns only multiples of the resolution: 100 µs, or 5 µs in a
+//! cross-origin-isolated document. Its jitter moves the point inside each
+//! bucket where the clock switches to the next grid value, a fixed
+//! pseudo-random threshold per bucket; it never adds noise to the value.
+//! Measured in Chrome 148: every value of a 20 000-call loop sits on the
+//! 100 µs grid and the only non-zero step is 0.1 ms.
 //!
-//! Pure software clocks return a perfect 100 µs grid with one distinct
-//! step value — `set(diffs).size === 1`, which a real browser never shows.
-//!
-//! Distribution (per Schwarz et al. "Drawn Apart" 2021 + Jin 2024 measurements
-//! on Chromium 124 stable):
-//!   q       = floor(now_us / 100) * 100              // 100 µs grid
-//!   jitter  ~ LogNormal(μ = ln 8 µs, σ = 0.4)        // clamped [0, 35] µs
-//!   spike   = with prob 1/1024, sample Exp(λ=1/200 µs) clamped ≤ 1500 µs
-//!   result  = (q + jitter + spike) ms
+//!   lower     = floor(now_us / res) * res
+//!   threshold = lower + res * fraction(bucket)     // keyed hash, [0, 1)
+//!   result    = (now_us >= threshold ? lower + res : lower) ms
 
+use crate::js_runtime::extensions::stealth_ext::StealthState;
 use crate::js_runtime::state::DomState;
 use deno_core::op2;
 use deno_core::OpState;
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
-use rand_distr::{Distribution, Exp, LogNormal};
 use std::time::Instant;
 
-/// Per-runtime state for the humanized clock.
+/// Clamp resolution of a document that is not cross-origin isolated.
+const RESOLUTION_US: f64 = 100.0;
+/// Clamp resolution of a cross-origin-isolated document.
+const ISOLATED_RESOLUTION_US: f64 = 5.0;
+
+/// Per-runtime state for the clamped clock.
 pub struct PerfState {
     /// Process-relative origin; `performance.now()` returns ms since this
     /// instant (matches DOM HighResolutionTime contract for the document).
@@ -38,13 +35,8 @@ pub struct PerfState {
     /// detectable skew between `performance.timeOrigin + performance.now()`
     /// and `Date.now()`.
     origin_unix_ms: f64,
-    rng: StdRng,
-    log_normal: LogNormal<f64>,
-    spike_exp: Exp<f64>,
-    /// Last returned value in µs — enforces monotonicity per HRT spec.
-    /// Without this, adjacent calls can go backward when the clock barely
-    /// advances and the second call samples lower jitter.
-    last_us: f64,
+    /// Key of the per-bucket threshold hash.
+    key: u64,
 }
 
 impl PerfState {
@@ -59,33 +51,42 @@ impl PerfState {
         Self {
             origin: Instant::now(),
             origin_unix_ms,
-            rng: StdRng::seed_from_u64(seed),
-            // μ=ln(8 µs) ≈ 2.079
-            log_normal: LogNormal::new(2.079_441_541_679_835, 0.4).expect("valid lognormal"),
-            // Exp(1/200 µs) — mean 200 µs heavy-tail
-            spike_exp: Exp::new(1.0 / 200.0).expect("valid exp"),
-            last_us: 0.0,
+            key: seed,
         }
     }
 
-    /// Returns elapsed ms since origin with Chrome-130-shaped jitter.
-    /// Monotonicity enforced per HRT spec: result is clamped to be >=
-    /// the previous return value, so the per-call jitter cannot create
-    /// a backward step.
-    pub fn now_ms(&mut self) -> f64 {
-        let raw_us = self.origin.elapsed().as_nanos() as f64 / 1000.0;
-        let q = (raw_us / 100.0).floor() * 100.0;
-        let jitter = self.log_normal.sample(&mut self.rng).clamp(0.0, 35.0);
-        let spike = if self.rng.random_bool(1.0 / 1024.0) {
-            self.spike_exp.sample(&mut self.rng).min(1500.0)
+    /// Returns elapsed ms since origin, clamped to the resolution grid.
+    pub fn now_ms(&self, cross_origin_isolated: bool) -> f64 {
+        let resolution_us = if cross_origin_isolated {
+            ISOLATED_RESOLUTION_US
         } else {
-            0.0
+            RESOLUTION_US
         };
-        let candidate = q + jitter + spike;
-        // Monotonic clamp — Chrome's quantizer never goes backward.
-        let value = candidate.max(self.last_us);
-        self.last_us = value;
-        value / 1000.0
+        let raw_us = self.origin.elapsed().as_nanos() as f64 / 1000.0;
+        self.clamp_us(raw_us, resolution_us) / 1000.0
+    }
+
+    /// Map a raw time onto the grid. The map is non-decreasing, because each
+    /// bucket's threshold is fixed, so the clock never goes backward.
+    fn clamp_us(&self, raw_us: f64, resolution_us: f64) -> f64 {
+        let bucket = (raw_us / resolution_us).floor();
+        let lower = bucket * resolution_us;
+        let threshold = lower + resolution_us * self.bucket_fraction(bucket as u64);
+        if raw_us >= threshold {
+            lower + resolution_us
+        } else {
+            lower
+        }
+    }
+
+    /// A keyed hash of the bucket index (SplitMix64 finalizer), in [0, 1).
+    fn bucket_fraction(&self, bucket: u64) -> f64 {
+        let mut z = bucket ^ self.key;
+        z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 53) as f64
     }
 }
 
@@ -97,8 +98,10 @@ impl Default for PerfState {
 
 #[op2(fast)]
 pub fn op_perf_now_humanized(s: &mut OpState) -> f64 {
-    let s = s.borrow_mut::<PerfState>();
-    s.now_ms()
+    let isolated = s
+        .try_borrow::<StealthState>()
+        .is_some_and(|st| st.cross_origin_isolated);
+    s.borrow::<PerfState>().now_ms(isolated)
 }
 
 /// Returns the UNIX-epoch ms corresponding to `PerfState.origin` (the
@@ -172,63 +175,58 @@ deno_core::extension!(
 mod tests {
     use super::*;
 
-    #[test]
-    fn distribution_has_distinct_jitter_values() {
-        let mut s = PerfState::with_seed(7);
-        // The monotonicity clamp + a tight hot loop on a fast CPU means many
-        // adjacent calls clamp to last_us (the underlying clock advances by
-        // far less than the inter-call gap). A real browser's hot-loop diff
-        // *cardinality* is well above 1; anything above ~5 distinct values
-        // is realistic versus the software-clock `set(diffs).size === 1`
-        // signature. We assert >10 here for headroom.
-        let mut samples: Vec<f64> = (0..500).map(|_| s.now_ms()).collect();
-        samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        samples.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-        assert!(
-            samples.len() > 10,
-            "expected >10 distinct values, got {}",
-            samples.len()
-        );
+    /// Walk raw times through several buckets in sub-microsecond steps.
+    fn sweep(s: &PerfState, resolution_us: f64) -> Vec<(f64, f64)> {
+        (0..200_000)
+            .map(|i| {
+                let raw = i as f64 * 0.37;
+                (raw, s.clamp_us(raw, resolution_us))
+            })
+            .collect()
     }
 
     #[test]
-    fn jitter_is_bounded_and_non_negative() {
-        let mut s = PerfState::with_seed(0xDEADBEEF);
-        for _ in 0..10_000 {
-            let v = s.log_normal.sample(&mut s.rng).clamp(0.0, 35.0);
-            assert!((0.0..=35.0).contains(&v));
+    fn clamped_values_sit_on_the_grid_next_to_the_raw_time() {
+        let s = PerfState::with_seed(7);
+        for res in [RESOLUTION_US, ISOLATED_RESOLUTION_US] {
+            for (raw, v) in sweep(&s, res) {
+                let steps = v / res;
+                assert_eq!(steps, steps.round(), "{v} is off the {res} µs grid");
+                let lower = (raw / res).floor() * res;
+                assert!(v == lower || v == lower + res, "raw {raw} clamped to {v}");
+            }
         }
     }
 
     #[test]
-    fn deterministic_across_runs_with_same_seed() {
-        let mut a = PerfState::with_seed(123);
-        let mut b = PerfState::with_seed(123);
-        let ja: Vec<f64> = (0..100).map(|_| a.log_normal.sample(&mut a.rng)).collect();
-        let jb: Vec<f64> = (0..100).map(|_| b.log_normal.sample(&mut b.rng)).collect();
-        assert_eq!(ja, jb);
+    fn clamped_clock_never_goes_backward() {
+        let s = PerfState::with_seed(0xDEAD_BEEF);
+        let values = sweep(&s, RESOLUTION_US);
+        assert!(values.windows(2).all(|w| w[1].1 >= w[0].1));
     }
 
     #[test]
-    fn occasional_heavy_tail_spikes() {
-        // Over 100k samples we should see at least one >250 µs jitter event
-        // (the Bernoulli(1/1024) Exp tail). Absence indicates the spike path
-        // never fires.
-        let mut s = PerfState::with_seed(0xBEEF);
-        let mut max_jitter_us = 0.0_f64;
-        for _ in 0..100_000 {
-            let j = s.log_normal.sample(&mut s.rng).clamp(0.0, 35.0);
-            let spike = if s.rng.random_bool(1.0 / 1024.0) {
-                s.spike_exp.sample(&mut s.rng).min(1500.0)
-            } else {
-                0.0
-            };
-            max_jitter_us = max_jitter_us.max(j + spike);
-        }
+    fn switch_over_point_differs_between_buckets() {
+        // Chrome's jitter lives in the per-bucket threshold. A fixed
+        // threshold would make every bucket switch at the same offset.
+        let s = PerfState::with_seed(123);
+        let mut fractions: Vec<f64> = (0..64).map(|b| s.bucket_fraction(b)).collect();
+        assert!(fractions.iter().all(|f| (0.0..1.0).contains(f)));
+        fractions.sort_by(f64::total_cmp);
+        fractions.dedup();
         assert!(
-            max_jitter_us > 250.0,
-            "expected at least one spike >250 µs, got max {} µs",
-            max_jitter_us
+            fractions.len() > 60,
+            "only {} distinct thresholds",
+            fractions.len()
         );
+    }
+
+    #[test]
+    fn now_ms_is_a_multiple_of_a_tenth_of_a_millisecond() {
+        let s = PerfState::new();
+        for _ in 0..1000 {
+            let tenths = s.now_ms(false) * 10.0;
+            assert!((tenths - tenths.round()).abs() < 1e-6, "{tenths}");
+        }
     }
 }

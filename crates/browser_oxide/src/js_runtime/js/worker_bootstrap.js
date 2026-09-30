@@ -182,7 +182,7 @@
         self.navigator = workerNavigator;
     }
 
-    // --- performance.now() humanization (matches window_bootstrap) ---
+    // --- performance.now() clamping (matches window_bootstrap) ---
     if (!globalThis.performance) {
         globalThis.performance = {
             now() { return ops.op_perf_now_humanized(); },
