@@ -6804,6 +6804,32 @@ async fn svg_elements_carry_their_namespace_interface_and_box() {
 }
 
 #[tokio::test]
+async fn dom_parser_returns_a_separate_document() {
+    // Measured in Chrome 147: text/html gives an HTMLDocument with its own
+    // body and lookups, image/svg+xml an XMLDocument rooted at the SVG
+    // element, and neither leaks into the page's document.
+    let js = r#"
+        (() => {
+            const tag = (o) => Object.prototype.toString.call(o);
+            const P = new DOMParser();
+            const h = P.parseFromString('<p id="a">x</p><svg><text id="t">y</text></svg>', 'text/html');
+            const s = P.parseFromString('<svg xmlns="http://www.w3.org/2000/svg"><g id="g"><text>z</text></g></svg>', 'image/svg+xml');
+            return JSON.stringify({
+                h: [tag(h), h.documentElement.nodeName, tag(h.body), h.body.childNodes.length, tag(h.getElementById('a')), h.getElementById('a').ownerDocument === h, document.getElementById('a'), tag(h.getElementById('t')), h.contentType, h.nodeType],
+                s: [tag(s), s.documentElement.nodeName, tag(s.documentElement), tag(s.getElementById('g')), s.contentType, s.body === undefined ? 'undef' : s.body, s.documentElement.childNodes.length, s.getElementsByTagName('text').length],
+                imp: (() => { const n = document.importNode(s.documentElement, true); return [tag(n), n.ownerDocument === document, n.parentNode]; })(),
+                adopt: (() => { const n = s.getElementById('g'); document.body.appendChild(n); return [n.ownerDocument === document, s.getElementById('g')]; })(),
+                bad: (() => { try { P.parseFromString('', 'text/plain'); return 'no error'; } catch (e) { return e.name; } })(),
+            });
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"{"h":["[object HTMLDocument]","HTML","[object HTMLBodyElement]",2,"[object HTMLParagraphElement]",true,null,"[object SVGTextElement]","text/html",9],"s":["[object XMLDocument]","svg","[object SVGSVGElement]","[object SVGGElement]","image/svg+xml",null,1,1],"imp":["[object SVGSVGElement]",true,null],"adopt":[true,null],"bad":"TypeError"}"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.

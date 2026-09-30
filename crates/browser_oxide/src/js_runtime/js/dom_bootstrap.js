@@ -23,6 +23,9 @@
         return root;
     }
 
+    // The content type of every document DOMParser has produced.
+    const _parsedDocTypes = new WeakMap();
+
     function _getNodeId(node) {
         if (node === null || node === undefined) return -1;
         if (node === globalThis || node === globalThis.window) return -999;
@@ -476,8 +479,11 @@
             const type = this.nodeType;
             if (type === 3 || type === 8) ops.op_dom_set_text_content(_getNodeId(this), String(val));
         }
+        // A node under a DOMParser document belongs to that document.
         get ownerDocument() {
-            return this.nodeType === 9 ? null : _document;
+            if (this.nodeType === 9) return null;
+            const root = _rootOf(this);
+            return root !== this && _parsedDocTypes.has(root) ? root : _document;
         }
         get isConnected() {
             let n = this;
@@ -1631,8 +1637,11 @@
         get webkitFullscreenEnabled() { return true; }
         get webkitIsFullScreen() { return false; }
 
+        // A DOMParser document keeps its tree under a detached fragment, so
+        // every lookup below starts from this document's own node.
+        get nodeType() { return 9; }
         get documentElement() {
-            const els = ops.op_dom_get_child_elements(ops.op_dom_document_node());
+            const els = ops.op_dom_get_child_elements(_getNodeId(this));
             return els.length > 0 ? _wrapNode(els[0]) : null;
         }
         get head() { return this.querySelector("head"); }
@@ -1646,21 +1655,24 @@
             if (el) { el.textContent = val; }
         }
         getElementById(id) {
+            if (this !== _document) {
+                return this.querySelector('[id="' + String(id).replace(/["\\]/g, "\\$&") + '"]');
+            }
             const nodeId = ops.op_dom_get_element_by_id(id);
             return nodeId !== null ? _wrapNode(nodeId) : null;
         }
         getElementsByTagName(tag) {
-            return new NodeList(ops.op_dom_get_elements_by_tag_name(ops.op_dom_document_node(), tag));
+            return new NodeList(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
         }
         getElementsByClassName(cls) {
-            return new NodeList(ops.op_dom_get_elements_by_class_name(ops.op_dom_document_node(), cls));
+            return new NodeList(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
         }
         querySelector(sel) {
-            const id = ops.op_dom_query_selector(ops.op_dom_document_node(), sel);
+            const id = ops.op_dom_query_selector(_getNodeId(this), sel);
             return id !== null ? _wrapNode(id) : null;
         }
         querySelectorAll(sel) {
-            return new NodeList(ops.op_dom_query_selector_all(ops.op_dom_document_node(), sel));
+            return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
         }
         createElement(tag) {
             const el = _wrapNode(ops.op_dom_create_element(tag));
@@ -1834,7 +1846,7 @@
         // (which reports "windows-1252").
         get characterSet() { return "windows-1252"; }
         get charset() { return "windows-1252"; }
-        get contentType() { return "text/html"; }
+        get contentType() { return _parsedDocTypes.get(this) || "text/html"; }
         get compatMode() { return "CSS1Compat"; }
         // document.implementation — the DOMImplementation API. fpCollect and
         // several bot tests call createHTMLDocument() to verify the surface.
@@ -2293,21 +2305,55 @@
         return el;
     };
 
-    // DOMParser
+    // DOMParser. The engine holds one document, so a parsed document is a
+    // Document object over a detached fragment: text/html gets an HTMLDocument
+    // with <html>, <head> and <body>, the XML types an XMLDocument whose
+    // root is the markup's first element. XML is read by the HTML parser,
+    // which keeps SVG in its namespace but lowercases other tag names.
+    class XMLDocument extends Document {}
+    _tag(XMLDocument, "XMLDocument");
+    globalThis.XMLDocument = XMLDocument;
+    const _DOMPARSER_TYPES = ["text/html", "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml"];
     globalThis.DOMParser = class DOMParser {
         parseFromString(str, type) {
-            // Returns a minimal document-like object
-            const frag = _document.createElement("div");
-            frag.innerHTML = str;
-            return {
-                documentElement: frag,
-                body: frag,
-                querySelector(sel) { return frag.querySelector(sel); },
-                querySelectorAll(sel) { return frag.querySelectorAll(sel); },
-                getElementById(id) { return frag.querySelector("#" + id); },
-            };
+            const kind = String(type);
+            if (!_DOMPARSER_TYPES.includes(kind)) {
+                throw new TypeError("Failed to execute 'parseFromString' on 'DOMParser': The provided value '" + kind +
+                    "' is not a valid enum value of type DOMParserSupportedType.");
+            }
+            const html = kind === "text/html";
+            const fragId = ops.op_dom_create_document_fragment();
+            const doc = new (html ? HTMLDocument : XMLDocument)(fragId);
+            _nodeCache.set(fragId, new WeakRef(doc));
+            _parsedDocTypes.set(doc, kind);
+            if (html) _parseHtmlDocument(fragId, String(str));
+            else _parseXmlDocument(fragId, String(str));
+            return doc;
         }
     };
+    // The engine's fragment parser builds no <head> or <body>, so the
+    // document skeleton is made here and the markup's <head> section, when
+    // it has one, is parsed into <head> and the rest into <body>.
+    function _parseHtmlDocument(fragId, markup) {
+        const root = _document.createElement("html");
+        const head = _document.createElement("head");
+        const body = _document.createElement("body");
+        root.appendChild(head);
+        root.appendChild(body);
+        const headPart = /<head[^>]*>([\s\S]*?)<\/head>/i.exec(markup);
+        if (headPart) {
+            head.innerHTML = headPart[1];
+            markup = markup.replace(headPart[0], "");
+        }
+        body.innerHTML = markup;
+        ops.op_dom_append_child(fragId, _getNodeId(root));
+    }
+    function _parseXmlDocument(fragId, markup) {
+        const holder = _document.createElement("div");
+        holder.innerHTML = markup;
+        const root = holder.firstElementChild;
+        if (root) ops.op_dom_append_child(fragId, _getNodeId(root));
+    }
 
     // --- MutationObserver (real implementation) ---
     const _moObservers = []; // { observer, target, options }
