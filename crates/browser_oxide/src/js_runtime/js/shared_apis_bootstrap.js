@@ -257,7 +257,10 @@
         URLSearchParams.prototype.values = function() { return _uspMap.get(this).map(([, v]) => v)[Symbol.iterator](); };
         URLSearchParams.prototype.entries = function() { return _uspMap.get(this)[Symbol.iterator](); };
         URLSearchParams.prototype[Symbol.iterator] = function() { return this.entries(); };
-        Object.defineProperty(URLSearchParams.prototype, 'size', { get: function() { return _uspMap.get(this).length; } });
+        Object.defineProperty(URLSearchParams.prototype, 'size', {
+            get: Object.getOwnPropertyDescriptor({ get size() { return _uspMap.get(this).length; } }, 'size').get,
+            enumerable: true, configurable: true,
+        });
         Object.defineProperty(URLSearchParams, 'name', { value: 'URLSearchParams', configurable: true });
         try {
             Object.defineProperty(globalThis, 'URLSearchParams', { value: URLSearchParams, writable: true, configurable: true, enumerable: false });

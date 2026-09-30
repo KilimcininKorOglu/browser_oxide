@@ -91,6 +91,45 @@
         return fn;
     };
 
+    // A native method, getter or setter is not a constructor: it has no own
+    // `prototype`, and reading its `arguments` or `caller` throws. A
+    // `function` expression has both, so one masked as native is told apart
+    // (Chrome's `get webdriver` throws on `.arguments`; ours returned null).
+    // `_callableLike` swaps such a function for a method-shaped one that
+    // forwards to it. A constructor (a class, or a capitalised name) is left
+    // alone. One function installed in two places gets one stand-in, so
+    // identity between the places holds.
+    const _apply = Reflect.apply;
+    const _isPlainFunction = (fn) => typeof fn === 'function' && _hasOwn(fn, 'prototype');
+    const _isConstructorLike = (fn, name) =>
+        /^[A-Z]/.test(String(name)) || /^[A-Z]/.test(String(fn.name)) || /^class\b/.test(_origFnToStr.call(fn));
+    const _standIns = new WeakMap();
+    const _callableLike = (fn, kind) => {
+        let w = _standIns.get(fn);
+        if (w) return w;
+        if (kind === 'get') {
+            w = Object.getOwnPropertyDescriptor({ get x() { return _apply(fn, this, []); } }, 'x').get;
+        } else if (kind === 'set') {
+            w = Object.getOwnPropertyDescriptor({ set x(/** @type {any} */ v) { _apply(fn, this, [v]); } }, 'x').set;
+        } else {
+            w = ({ x(...args) { return _apply(fn, this, args); } }).x;
+            Object.defineProperty(w, 'length', { value: fn.length, configurable: true });
+        }
+        _standIns.set(fn, w);
+        return w;
+    };
+    const _nativeShaped = (desc, name) => {
+        let changed = false;
+        for (const kind of ['get', 'set']) {
+            if (_isPlainFunction(desc[kind])) { desc[kind] = _callableLike(desc[kind], kind); changed = true; }
+        }
+        if (_isPlainFunction(desc.value) && !_isConstructorLike(desc.value, name)) {
+            desc.value = _callableLike(desc.value, 'value');
+            changed = true;
+        }
+        return changed;
+    };
+
     const _maskAsNative = (obj, ...names) => {
         for (const name of names) {
             try {
@@ -103,6 +142,7 @@
                 }
 
                 if (desc) {
+                    if (desc.configurable && _nativeShaped(desc, name)) Object.defineProperty(target, name, desc);
                     if (desc.get) _maskFunction(desc.get, `get ${name}`);
                     if (desc.set) _maskFunction(desc.set, `set ${name}`);
                     if (typeof desc.value === 'function') _maskFunction(desc.value, name);

@@ -579,20 +579,23 @@
     // statics still printed their JS source. Mask each one that does not
     // already print native code, under the name Chrome gives it.
     try {
-        const _mask = globalThis._maskFunction;
+        // `_maskAsNative` also gives a masked non-constructor the shape of a
+        // native one (no `prototype`, `.arguments` throws); a constructor
+        // that already prints native code keeps its own name.
+        const _mask = globalThis._maskAsNative;
         const _toStr = Function.prototype.toString;
         const _native = /\{\s*\[native code\]\s*\}$/;
-        const _fix = (fn, name) => {
-            if (typeof fn !== 'function') return;
-            if (!_native.test(_toStr.call(fn))) _mask(fn, name);
+        const _hasOwnProp = Function.prototype.call.bind(Object.prototype.hasOwnProperty);
+        const _needsMask = (fn, name) => typeof fn === 'function' &&
+            (!_native.test(_toStr.call(fn)) ||
+                (_hasOwnProp(fn, 'prototype') && !/^[A-Z]/.test(fn.name) && !/^[A-Z]/.test(name)));
+        const _fix = (obj, name) => {
+            const _d = Object.getOwnPropertyDescriptor(obj, name);
+            if (_needsMask(_d.get, name) || _needsMask(_d.set, name) || _needsMask(_d.value, name)) _mask(obj, name);
         };
         const _fixMembers = (obj, skip) => {
             for (const _n of Object.getOwnPropertyNames(obj)) {
-                if (skip.has(_n)) continue;
-                const _d = Object.getOwnPropertyDescriptor(obj, _n);
-                _fix(_d.get, `get ${_n}`);
-                _fix(_d.set, `set ${_n}`);
-                _fix(_d.value, _n);
+                if (!skip.has(_n)) _fix(obj, _n);
             }
         };
         if (typeof _mask === 'function') {
@@ -602,12 +605,9 @@
                 // Frame indices and the engine's own `_` internals are not
                 // Chrome interfaces.
                 if (/^\d+$/.test(_g) || _g.startsWith('_')) continue;
-                const _d = Object.getOwnPropertyDescriptor(globalThis, _g);
-                _fix(_d.get, `get ${_g}`);
-                _fix(_d.set, `set ${_g}`);
-                if (typeof _d.value !== 'function') continue;
-                _fix(_d.value, _g);
-                _fixMembers(_d.value, _statics);
+                _fix(globalThis, _g);
+                const _v = Object.getOwnPropertyDescriptor(globalThis, _g).value;
+                if (typeof _v === 'function') _fixMembers(_v, _statics);
             }
             for (const _ns of ['Intl', 'WebAssembly', 'CSS', 'console']) {
                 const _o = globalThis[_ns];

@@ -7264,6 +7264,47 @@ async fn performance_memory_reports_the_live_heap() {
 }
 
 #[tokio::test]
+async fn masked_functions_have_the_native_shape() {
+    // Measured in Chrome 146: a native method, getter or setter has no own
+    // `prototype`, reading its `arguments` throws, and `new` refuses it.
+    // A lie detector reads `.arguments` on each function it inspects.
+    let js = r#"(() => {
+        const g = (o, k, w) => Object.getOwnPropertyDescriptor(o, k)[w];
+        const fns = {
+            webdriver: g(Navigator.prototype, 'webdriver', 'get'), atob, requestAnimationFrame,
+            scrollXget: g(window, 'scrollX', 'get'), scrollXset: g(window, 'scrollX', 'set'),
+            dpr: g(window, 'devicePixelRatio', 'get'), uspSize: g(URLSearchParams.prototype, 'size', 'get'),
+            uspAppend: URLSearchParams.prototype.append, createElement: document.createElement,
+        };
+        const r = [];
+        for (const [k, f] of Object.entries(fns)) {
+            let args; try { void f.arguments; args = 'ok'; } catch (e) { args = 'throws'; }
+            let ctor; try { new f(); ctor = 'ok'; } catch (e) { ctor = e.message; }
+            r.push(k + ':' + ['prototype' in f, args, Object.getOwnPropertyNames(f).join('+'), f.length, ctor].join(','));
+        }
+        const d = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size');
+        r.push('usp:' + JSON.stringify([d.enumerable, d.configurable, new URLSearchParams('a=1&b=2').size]));
+        r.push('same:' + (window.atob === atob && typeof requestAnimationFrame(() => {})));
+        return r.join('|');
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        concat!(
+            "webdriver:false,throws,length+name,0,f is not a constructor|",
+            "atob:false,throws,length+name,1,f is not a constructor|",
+            "requestAnimationFrame:false,throws,length+name,1,f is not a constructor|",
+            "scrollXget:false,throws,length+name,0,f is not a constructor|",
+            "scrollXset:false,throws,length+name,1,f is not a constructor|",
+            "dpr:false,throws,length+name,0,f is not a constructor|",
+            "uspSize:false,throws,length+name,0,f is not a constructor|",
+            "uspAppend:false,throws,length+name,2,f is not a constructor|",
+            "createElement:false,throws,length+name,1,f is not a constructor|",
+            "usp:[true,true,2]|same:number",
+        )
+    );
+}
+
+#[tokio::test]
 async fn string_timer_runs_as_a_global_classic_script() {
     // Measured in Chrome: the string compiles as an unnamed script of its
     // own in the global scope, so `var` declares a global, `this` is the
