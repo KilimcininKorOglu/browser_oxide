@@ -5353,9 +5353,42 @@
         const _fonts = _fontsByOS[_osName] || _fontsByOS["Linux"];
         const _fontSet = new Set(_fonts.map(f => f.toLowerCase()));
 
+        // A local() face whose family is not in the profile's font list fails
+        // the way Chrome's font loader does: status "error" and a
+        // NetworkError. Other sources load.
+        const _localFaceMissing = (source) => {
+            const parts = String(source).split(",").map(p => p.trim()).filter(Boolean);
+            if (!parts.length || !parts.every(p => /^local\(/i.test(p))) return false;
+            return !parts.some(p => _fontSet.has(
+                p.replace(/^local\(\s*/i, "").replace(/\s*\)$/, "").replace(/^(['"])(.*)\1$/, "$2").toLowerCase()));
+        };
         globalThis.FontFace = class FontFace {
-            constructor(family, source) { this.family = family; this.status = "loaded"; }
-            load() { return Promise.resolve(this); }
+            #loaded = null;
+            constructor(family, source) {
+                this.family = family;
+                this.status = "unloaded";
+                this._source = typeof source === "string" ? source : "";
+            }
+            get loaded() {
+                if (!this.#loaded) this.#loaded = new Promise((resolve, reject) => { this._settle = { resolve, reject }; });
+                return this.#loaded;
+            }
+            load() {
+                const loaded = this.loaded;
+                if (this.status !== "unloaded") return loaded;
+                this.status = "loading";
+                const missing = _localFaceMissing(this._source);
+                queueMicrotask(() => {
+                    if (missing) {
+                        this.status = "error";
+                        this._settle.reject(new DOMException("A network error occurred.", "NetworkError"));
+                    } else {
+                        this.status = "loaded";
+                        this._settle.resolve(this);
+                    }
+                });
+                return loaded;
+            }
         };
 
         // document.fonts (FontFaceSet) — iterator yields actual FontFace
