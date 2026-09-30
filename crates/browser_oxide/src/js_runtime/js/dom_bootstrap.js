@@ -1339,6 +1339,58 @@
         q: HTMLQuoteElement.prototype,
     };
 
+    // Reflected attributes every HTML interface carries in Chrome. A missing
+    // one reads as undefined where a page expects a string or a boolean.
+    (function _defineReflectedHtmlAttributes() {
+        const define = (proto, name, get, set) => {
+            if (Object.getOwnPropertyDescriptor(proto, name)) return;
+            Object.defineProperty(proto, name, { get, set, enumerable: true, configurable: true });
+        };
+        const str = (proto, name, attr) => define(proto, name,
+            function () { return this.getAttribute(attr) ?? ""; },
+            function (v) { this.setAttribute(attr, String(v)); });
+        const bool = (proto, name, attr) => define(proto, name,
+            function () { return this.hasAttribute(attr); },
+            function (v) { if (v) this.setAttribute(attr, ""); else this.removeAttribute(attr); });
+        // An enumerated attribute: a true keyword, a false keyword, and a
+        // default computed from the element when the attribute says neither.
+        const keyword = (proto, name, yes, no, dflt) => define(proto, name,
+            function () {
+                const v = (this.getAttribute(name) ?? "").toLowerCase();
+                if (this.hasAttribute(name) && (v === "" || v === yes)) return true;
+                if (v === no) return false;
+                return dflt.call(this);
+            },
+            function (v) { this.setAttribute(name, v ? yes : no); });
+        const limit = (proto, name) => define(proto, name,
+            function () {
+                const n = Number.parseInt(this.getAttribute(name.toLowerCase()) ?? "", 10);
+                return Number.isFinite(n) && n >= 0 ? n : -1;
+            },
+            function (v) {
+                const n = Number(v) | 0;
+                if (n < 0) throw new DOMException("Failed to set the '" + name + "' property on '" + this.constructor.name + "': The value provided (" + n + ") is negative.", "IndexSizeError");
+                this.setAttribute(name.toLowerCase(), String(n));
+            });
+        const H = HTMLElement.prototype;
+        keyword(H, "translate", "yes", "no", function () { return true; });
+        keyword(H, "spellcheck", "true", "false", function () { return true; });
+        keyword(H, "draggable", "true", "false", function () {
+            const tag = (this.tagName || "").toLowerCase();
+            return tag === "img" || (tag === "a" && this.hasAttribute("href"));
+        });
+        str(H, "nonce", "nonce");
+        str(H, "autocapitalize", "autocapitalize");
+        str(H, "accessKey", "accesskey");
+        bool(H, "inert", "inert");
+        for (const proto of [HTMLInputElement.prototype, HTMLTextAreaElement.prototype]) {
+            limit(proto, "maxLength");
+            limit(proto, "minLength");
+            str(proto, "dirName", "dirname");
+        }
+        bool(HTMLOptionElement.prototype, "defaultSelected", "selected");
+    })();
+
     // Adjust an Element instance's prototype to the tag-specific subclass
     // so `el instanceof HTMLDivElement` works as in real Chrome.
     function _retargetElementProto(el) {
