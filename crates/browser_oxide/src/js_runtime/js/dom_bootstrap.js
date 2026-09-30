@@ -564,8 +564,9 @@
             return newChild;
         }
         cloneNode(deep = false) {
-            const newId = ops.op_dom_clone_node(_getNodeId(this), !!deep);
-            return _wrapNode(newId);
+            const copy = _wrapNode(ops.op_dom_clone_node(_getNodeId(this), !!deep));
+            _copyControlState(this, copy);
+            return copy;
         }
         contains(other) {
             if (!other) return false;
@@ -1218,14 +1219,104 @@
             enumerable: true, configurable: true,
         });
     };
+    // A positive integer attribute, or the default when it is missing, not
+    // a number or not above zero (input.size, textarea.rows and cols).
+    const _reflectPositive = (proto, prop, dflt) => {
+        Object.defineProperty(proto, prop, {
+            get() {
+                const n = Number.parseInt(this.getAttribute(prop) ?? '', 10);
+                return n > 0 ? n : dflt;
+            },
+            set(v) { this.setAttribute(prop, String(v > 0 ? v | 0 : dflt)); },
+            enumerable: true, configurable: true,
+        });
+    };
+    // The value and checkedness of a form control (HTML §4.10.5.4). Setting
+    // the property makes it dirty, and from then on the attribute is only
+    // the default: el.value = 'x' leaves getAttribute('value') alone.
+    const _controlState = new WeakMap();
+    let _anyControlState = false;
+    const _controlStateOf = (el) => {
+        let s = _controlState.get(el);
+        if (!s) { s = {}; _controlState.set(el, s); _anyControlState = true; }
+        return s;
+    };
+    const _dirtyProp = (proto, prop, readDefault, convert) => {
+        Object.defineProperty(proto, prop, {
+            get() {
+                const s = _controlState.get(this);
+                return s && prop in s ? s[prop] : readDefault(this);
+            },
+            set(v) { _controlStateOf(this)[prop] = convert(v); },
+            enumerable: true, configurable: true,
+        });
+    };
+    // Cloning copies a control's value and checkedness with it, for the
+    // clone's own controls as well when the copy is deep.
+    function _copyControlState(src, dst) {
+        if (!_anyControlState) return;
+        const own = _controlState.get(src);
+        if (own) _controlState.set(dst, { ...own });
+        if (typeof src.querySelectorAll !== 'function') return;
+        const from = src.querySelectorAll('input, textarea');
+        const to = dst.querySelectorAll('input, textarea');
+        for (let i = 0; i < from.length && i < to.length; i++) {
+            const s = _controlState.get(from[i]);
+            if (s) _controlState.set(to[i], { ...s });
+        }
+    }
+    // An input's value mode (HTML §4.10.5.1): buttons and hidden inputs keep
+    // their value in the attribute, checkboxes and radios too with "on" as
+    // the fallback, every other type in the dirty value.
+    const _inputDefaultModes = {
+        hidden: 'default', submit: 'default', image: 'default', reset: 'default', button: 'default',
+        checkbox: 'default/on', radio: 'default/on',
+    };
+    const _inputTypes = new Set(['button', 'checkbox', 'color', 'date', 'datetime-local', 'email', 'file',
+        'hidden', 'image', 'month', 'number', 'password', 'radio', 'range', 'reset', 'search', 'submit',
+        'tel', 'text', 'time', 'url', 'week']);
+    const _inputValueMode = (el) => _inputDefaultModes[(el.getAttribute('type') ?? '').toLowerCase()] || 'value';
+    Object.defineProperty(HTMLInputElement.prototype, 'value', {
+        get() {
+            const mode = _inputValueMode(this);
+            if (mode === 'default/on') return this.getAttribute('value') ?? 'on';
+            if (mode === 'default') return this.getAttribute('value') ?? '';
+            const s = _controlState.get(this);
+            return s && 'value' in s ? s.value : this.getAttribute('value') ?? '';
+        },
+        set(v) {
+            if (_inputValueMode(this) === 'value') _controlStateOf(this).value = String(v);
+            else this.setAttribute('value', String(v));
+        },
+        enumerable: true, configurable: true,
+    });
+    // Changing the type moves the value between the attribute and the dirty
+    // value when the value mode changes (HTML §4.10.5 type change steps).
+    function _inputTypeChanged(el, oldMode) {
+        const newMode = _inputValueMode(el);
+        const s = _controlState.get(el);
+        if (oldMode === 'value' && newMode !== 'value' && s && s.value) {
+            _origSetAttribute.call(el, 'value', s.value);
+        }
+        if (oldMode !== newMode && s) delete s.value;
+    }
+    Object.defineProperty(HTMLInputElement.prototype, 'type', {
+        get() {
+            const t = (this.getAttribute('type') ?? '').toLowerCase();
+            return _inputTypes.has(t) ? t : 'text';
+        },
+        set(v) { this.setAttribute('type', String(v)); },
+        enumerable: true, configurable: true,
+    });
     _reflectStr(HTMLInputElement.prototype, 'name');
-    _reflectStr(HTMLInputElement.prototype, 'value');
-    _reflectStr(HTMLInputElement.prototype, 'type', 'type', 'text');
+    _reflectStr(HTMLInputElement.prototype, 'defaultValue', 'value');
     _reflectStr(HTMLInputElement.prototype, 'placeholder');
-    _reflectBool(HTMLInputElement.prototype, 'checked');
+    _dirtyProp(HTMLInputElement.prototype, 'checked', (el) => el.hasAttribute('checked'), Boolean);
+    _reflectBool(HTMLInputElement.prototype, 'defaultChecked', 'checked');
     _reflectBool(HTMLInputElement.prototype, 'disabled');
     _reflectBool(HTMLInputElement.prototype, 'readOnly', 'readonly');
     _reflectBool(HTMLInputElement.prototype, 'required');
+    _reflectPositive(HTMLInputElement.prototype, 'size', 20);
     _reflectStr(HTMLFormElement.prototype, 'action');
     _reflectStr(HTMLFormElement.prototype, 'method', 'method', 'get');
     _reflectStr(HTMLFormElement.prototype, 'enctype', 'enctype', 'application/x-www-form-urlencoded');
@@ -1297,7 +1388,23 @@
 
     class HTMLButtonElement extends HTMLElement {}
     class HTMLSelectElement extends HTMLElement {}
-    class HTMLTextAreaElement extends HTMLElement {}
+    // A textarea's default value is its text content; its value follows the
+    // default until a script or the user sets it.
+    class HTMLTextAreaElement extends HTMLElement {
+        get type() { return 'textarea'; }
+        get defaultValue() { return this.textContent; }
+        set defaultValue(v) { this.textContent = String(v); }
+        get textLength() { return this.value.length; }
+    }
+    _dirtyProp(HTMLTextAreaElement.prototype, 'value', (el) => el.defaultValue, String);
+    _reflectPositive(HTMLTextAreaElement.prototype, 'rows', 2);
+    _reflectPositive(HTMLTextAreaElement.prototype, 'cols', 20);
+    _reflectStr(HTMLTextAreaElement.prototype, 'wrap');
+    _reflectStr(HTMLTextAreaElement.prototype, 'name');
+    _reflectStr(HTMLTextAreaElement.prototype, 'placeholder');
+    _reflectBool(HTMLTextAreaElement.prototype, 'disabled');
+    _reflectBool(HTMLTextAreaElement.prototype, 'readOnly', 'readonly');
+    _reflectBool(HTMLTextAreaElement.prototype, 'required');
     class HTMLCanvasElement extends HTMLElement {}
     Object.defineProperty(HTMLCanvasElement.prototype, "width", {
         get() {
@@ -2577,9 +2684,18 @@
     };
 
     const _origSetAttribute = Element.prototype.setAttribute;
+    // Run an attribute write, and the input type change steps when the write
+    // replaces an input's type.
+    function _writeAttribute(el, name, write) {
+        const isType = el instanceof HTMLInputElement && String(name).toLowerCase() === 'type';
+        const oldMode = isType ? _inputValueMode(el) : null;
+        write();
+        if (isType) _inputTypeChanged(el, oldMode);
+    }
+
     Element.prototype.setAttribute = function(name, value) {
         const oldVal = this.getAttribute(name);
-        _origSetAttribute.call(this, name, value);
+        _writeAttribute(this, name, () => _origSetAttribute.call(this, name, value));
         if (_moObservers.length > 0) {
             _notifyMO("attributes", _getNodeId(this), { target: this, attributeName: name });
         }
@@ -2595,7 +2711,7 @@
     const _origRemoveAttribute = Element.prototype.removeAttribute;
     Element.prototype.removeAttribute = function(name) {
         const oldVal = this.getAttribute(name);
-        _origRemoveAttribute.call(this, name);
+        _writeAttribute(this, name, () => _origRemoveAttribute.call(this, name));
         if (_moObservers.length > 0) {
             _notifyMO("attributes", _getNodeId(this), { target: this, attributeName: name });
         }

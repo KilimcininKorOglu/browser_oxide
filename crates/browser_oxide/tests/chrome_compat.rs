@@ -6886,6 +6886,37 @@ async fn dataset_reads_an_empty_data_attribute_as_an_empty_string() {
 }
 
 #[tokio::test]
+async fn form_controls_keep_a_dirty_value_apart_from_the_attribute() {
+    // Measured in Chrome 147: setting value or checked leaves the attribute
+    // alone, the attribute becomes the default, a clone carries the state,
+    // checkboxes and buttons keep their value in the attribute, and a
+    // textarea's default value is its text.
+    let js = r#"
+        (() => {
+            const out = [];
+            const t = (name, f) => { try { out.push(name + '=' + JSON.stringify(f())); } catch (e) { out.push(name + '!' + e.message); } };
+            t('inputDirty', () => { const i = document.createElement('input'); i.setAttribute('value', 'a'); const r = [i.value, i.defaultValue]; i.value = 'b'; r.push(i.value, i.getAttribute('value'), i.defaultValue); i.defaultValue = 'c'; r.push(i.value, i.getAttribute('value')); return r; });
+            t('inputFresh', () => { const i = document.createElement('input'); i.setAttribute('value', 'a'); i.setAttribute('value', 'z'); return i.value; });
+            t('checkDirty', () => { const i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('checked', ''); const r = [i.checked, i.defaultChecked]; i.checked = false; r.push(i.checked, i.hasAttribute('checked'), i.defaultChecked); i.removeAttribute('checked'); i.setAttribute('checked', ''); r.push(i.checked); return r; });
+            t('cloneDirty', () => { const d = document.createElement('div'); const i = document.createElement('input'); d.appendChild(i); i.value = 'v'; i.checked = true; const c = d.cloneNode(true).firstChild; const s = i.cloneNode(false); return [c.value, c.checked, c.getAttribute('value'), s.value, s.checked]; });
+            t('inputProps', () => { const i = document.createElement('input'); const r = [i.size, i.defaultValue, i.defaultChecked]; i.size = 5; r.push(i.size, i.getAttribute('size')); i.setAttribute('size', '0'); r.push(i.size); return r; });
+            t('textarea', () => { const d = document.createElement('div'); d.innerHTML = '<textarea>x</textarea>'; const x = d.firstChild; const r = [x.type, x.value, x.defaultValue, x.textLength, x.rows, x.cols, x.wrap]; x.value = 'yz'; r.push(x.value, x.textContent, x.textLength, x.cloneNode(true).value); x.defaultValue = 'q'; r.push(x.value, x.textContent); return r; });
+            t('textareaVal', () => { const x = document.createElement('textarea'); x.value = 'a'; return [x.defaultValue, x.cloneNode(true).value, x.outerHTML]; });
+            t('textareaRows', () => { const x = document.createElement('textarea'); x.rows = 7; x.setAttribute('cols', '-3'); return [x.rows, x.getAttribute('rows'), x.cols]; });
+            t('radioValue', () => { const i = document.createElement('input'); i.value = 't'; i.type = 'radio'; return [i.value, i.outerHTML]; });
+            t('modes', () => ['checkbox', 'radio', 'hidden', 'submit', 'button', 'text', 'foo', 'RADIO'].map((ty) => { const i = document.createElement('input'); i.setAttribute('type', ty); const r = [i.type, i.value]; i.value = 'w'; r.push(i.value, i.getAttribute('value')); return r; }));
+            t('toText', () => { const i = document.createElement('input'); i.type = 'checkbox'; i.value = 'k'; i.type = 'text'; const r = [i.value, i.getAttribute('value')]; i.value = 'm'; i.removeAttribute('type'); r.push(i.value, i.getAttribute('value')); i.setAttribute('type', 'hidden'); r.push(i.value, i.getAttribute('value')); return r; });
+            t('emptyToRadio', () => { const i = document.createElement('input'); i.value = ''; i.type = 'radio'; return [i.value, i.hasAttribute('value')]; });
+            return out.join(' ;; ');
+        })()
+    "#;
+    assert_eq!(
+        check(js).await,
+        r#"inputDirty=["a","a","b","a","a","b","c"] ;; inputFresh="z" ;; checkDirty=[true,true,false,true,true,false] ;; cloneDirty=["v",true,null,"v",true] ;; inputProps=[20,"",false,5,"5",20] ;; textarea=["textarea","x","x",1,2,20,"","yz","x",2,"yz","yz","q"] ;; textareaVal=["","a","<textarea></textarea>"] ;; textareaRows=[7,"7",20] ;; radioValue=["t","<input type=\"radio\" value=\"t\">"] ;; modes=[["checkbox","on","w","w"],["radio","on","w","w"],["hidden","","w","w"],["submit","","w","w"],["button","","w","w"],["text","","w",null],["text","","w",null],["radio","on","w","w"]] ;; toText=["k","k","m","k","m","m"] ;; emptyToRadio=["on",false]"#
+    );
+}
+
+#[tokio::test]
 async fn every_global_function_prints_native_code() {
     // Measured in Chrome 147 on a blank page: no global function, global
     // accessor, constructor static or namespace member prints its source.
