@@ -3281,13 +3281,114 @@
             return Promise.reject(e);
         }
     });
-    // Stubs for sign/verify/encrypt/decrypt/generateKey/importKey/exportKey/deriveKey/deriveBits/wrapKey/unwrapKey.
-    // Real implementations are expensive; most callers only use digest(),
-    // so we expose the methods as native-shaped no-ops that reject.
+    // HMAC and raw-key paths — real implementations over the Rust ops.
+    // Key material lives in a JS-side map; a CryptoKey carries only its
+    // handle, matching the spec's opaque-key shape.
+    if (!globalThis.__oxCryptoKeys) globalThis.__oxCryptoKeys = new Map();
+    let _keySeq = 0;
+    const _hashName = (alg) => {
+        const name = typeof alg === 'string' ? alg : (alg && alg.name) || "";
+        return String(name).toUpperCase().replace(/-/g, '');
+    };
+    const _algoName = (alg) => {
+        const name = typeof alg === 'string' ? alg : (alg && alg.name) || "";
+        return String(name).toUpperCase();
+    };
+    class CryptoKey {
+        constructor(handle, algorithm, extractable, usages) {
+            Object.defineProperties(this, {
+                type: { value: 'secret', enumerable: true },
+                extractable: { value: extractable, enumerable: true },
+                usages: { value: Object.freeze(usages.slice()), enumerable: true },
+                algorithm: { value: algorithm, enumerable: true },
+            });
+            Object.defineProperty(this, Symbol.toStringTag, { value: "CryptoKey" });
+            Object.defineProperty(this, '__oxHandle', { value: handle });
+        }
+    }
+    globalThis.CryptoKey = CryptoKey;
+
+    _defProtoMethod(_SubtleProto, 'importKey', function importKey(format, keyData, algorithm, extractable, keyUsages) {
+        try {
+            const fmt = String(format).toLowerCase();
+            let raw;
+            if (fmt === 'raw' || fmt === 'pkcs8' || fmt === 'spki') {
+                raw = _toBytes(keyData);
+            } else if (fmt === 'jwk') {
+                const b64u = (s) => {
+                    s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+                    while (s.length % 4) s += '=';
+                    const bin = globalThis.atob(s);
+                    const u8 = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+                    return u8;
+                };
+                const jwk = keyData;
+                raw = jwk && jwk.k ? b64u(jwk.k) : jwk && jwk.n ? b64u(jwk.n) : new Uint8Array(0);
+            } else {
+                return Promise.reject(new DOMException(`unsupported key format ${format}`, "NotSupportedError"));
+            }
+            const algObj = typeof algorithm === 'string' ? { name: algorithm } : (algorithm || {});
+            const algName = String(algObj.name || '').toUpperCase();
+            let hashName = '';
+            if (algObj.hash) {
+                hashName = typeof algObj.hash === 'string'
+                    ? _hashName(algObj.hash)
+                    : _hashName(algObj.hash.name || '');
+            }
+            const handle = ++_keySeq;
+            globalThis.__oxCryptoKeys.set(handle, { raw, algName, hashName });
+            const usages = Array.from(keyUsages || []);
+            const algExposed = algName === 'HMAC'
+                ? { name: 'HMAC', hash: { name: hashName === 'SHA1' ? 'SHA-1' : hashName === 'SHA384' ? 'SHA-384' : hashName === 'SHA512' ? 'SHA-512' : 'SHA-256' } }
+                : { name: algName };
+            return Promise.resolve(new CryptoKey(handle, algExposed, extractable !== false, usages));
+        } catch (e) { return Promise.reject(e); }
+    });
+    _defProtoMethod(_SubtleProto, 'exportKey', function exportKey(format, key) {
+        try {
+            const entry = globalThis.__oxCryptoKeys.get(key && key.__oxHandle);
+            if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
+            if (String(format).toLowerCase() !== 'raw') {
+                return Promise.reject(new DOMException(`unsupported export format ${format}`, "NotSupportedError"));
+            }
+            return Promise.resolve(entry.raw.slice().buffer);
+        } catch (e) { return Promise.reject(e); }
+    });
+    const _hmacHash = (hashNoDash) =>
+        ({ 'SHA1': 'SHA-1', 'SHA256': 'SHA-256', 'SHA384': 'SHA-384', 'SHA512': 'SHA-512' })[hashNoDash] || 'SHA-256';
+    _defProtoMethod(_SubtleProto, 'sign', function sign(algorithm, key, data) {
+        try {
+            const algName = _algoName(algorithm);
+            const entry = globalThis.__oxCryptoKeys.get(key && key.__oxHandle);
+            if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
+            if (algName === 'HMAC') {
+                const hash = entry.hashName
+                    ? _hmacHash(entry.hashName)
+                    : _hmacHash(_hashName(typeof algorithm === 'object' && algorithm && algorithm.hash || ''));
+                const out = ops.op_crypto_hmac_sign(hash, entry.raw, _toBytes(data));
+                return Promise.resolve(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
+            }
+            return Promise.reject(new DOMException(`${algName} not implemented`, "NotSupportedError"));
+        } catch (e) { return Promise.reject(e); }
+    });
+    _defProtoMethod(_SubtleProto, 'verify', function verify(algorithm, key, signature, data) {
+        try {
+            return Promise.resolve(this.sign(algorithm, key, data)).then((tag) => {
+                const a = new Uint8Array(tag), b = _toBytes(signature);
+                if (a.length !== b.length) return false;
+                let diff = 0;
+                for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+                return diff === 0;
+            });
+        } catch (e) { return Promise.reject(e); }
+    });
+    // Stubs for the asymmetric/derivation paths. Challenge scripts
+    // overwhelmingly use digest + HMAC; the rest stay NotSupportedError.
     const _subtleNotImplemented = (name) => function (...args) {
         return Promise.reject(new DOMException(`${name} not implemented`, "NotSupportedError"));
     };
-    for (const m of ['sign','verify','encrypt','decrypt','generateKey','importKey','exportKey','deriveKey','deriveBits','wrapKey','unwrapKey']) {
+    for (const m of ['encrypt','decrypt','generateKey','deriveKey','deriveBits','wrapKey','unwrapKey']) {
         _defProtoMethod(_SubtleProto, m, _subtleNotImplemented(m));
     }
 

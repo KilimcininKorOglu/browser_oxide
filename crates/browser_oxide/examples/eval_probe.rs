@@ -40,12 +40,21 @@ async fn main() {
                 .event_loop()
                 .run_until_idle(Duration::from_secs(5))
                 .await;
-            match page.evaluate(&js) {
-                Ok(s) => println!("{}", s.trim_matches('"')),
+            // Run as an async script: the snippet's promise completion value
+            // is captured into __probe_result before idle.
+            const WRAP_TAIL: &str = ".then(r => { globalThis.__probe_result = r; })\
+             .catch(e => { globalThis.__probe_result = 'ERR:' + (e && e.message || e); })";
+            let wrapped = format!("globalThis.__probe_result = undefined; ({js}){WRAP_TAIL}");
+            match page.evaluate_async(&wrapped, Duration::from_secs(10)).await {
+                Ok(reason) => eprintln!("idle: {reason:?}"),
                 Err(e) => {
                     eprintln!("EVAL ERROR: {e}");
                     std::process::exit(1);
                 }
+            }
+            match page.evaluate("globalThis.__probe_result") {
+                Ok(s) => println!("{}", s.trim_matches('"')),
+                Err(e) => eprintln!("result read error: {e}"),
             }
             page.consume_and_print_logs();
         })

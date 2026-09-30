@@ -41,7 +41,35 @@ pub fn op_crypto_random_fill(#[buffer] out: &mut [u8]) {
     rand::rng().fill_bytes(out);
 }
 
+/// HMAC over one of the SHA hashes. `key` and `data` arrive as raw bytes;
+/// the tag is returned whole. An unsupported hash returns empty — the JS
+/// caller rejects unknown algorithms before reaching here.
+#[op2]
+#[buffer]
+pub fn op_crypto_hmac_sign(
+    #[string] hash: String,
+    #[buffer] key: &[u8],
+    #[buffer] data: &[u8],
+) -> Vec<u8> {
+    fn mac<M: hmac::Mac + hmac::digest::KeyInit>(key: &[u8], data: &[u8]) -> Vec<u8> {
+        match <M as hmac::digest::KeyInit>::new_from_slice(key) {
+            Ok(mut m) => {
+                m.update(data);
+                m.finalize().into_bytes().to_vec()
+            }
+            Err(_) => Vec::new(),
+        }
+    }
+    match hash.to_ascii_uppercase().as_str() {
+        "SHA-256" | "SHA256" => mac::<hmac::Hmac<Sha256>>(key, data),
+        "SHA-384" | "SHA384" => mac::<hmac::Hmac<Sha384>>(key, data),
+        "SHA-512" | "SHA512" => mac::<hmac::Hmac<Sha512>>(key, data),
+        "SHA-1" | "SHA1" => mac::<hmac::Hmac<Sha1>>(key, data),
+        _ => Vec::new(),
+    }
+}
+
 deno_core::extension!(
     crypto_extension,
-    ops = [op_crypto_digest, op_crypto_random_fill],
+    ops = [op_crypto_digest, op_crypto_random_fill, op_crypto_hmac_sign,],
 );
