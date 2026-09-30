@@ -11,6 +11,20 @@ use crate::js_runtime::BrowserJsRuntime;
 use std::time::Duration;
 use tracing;
 
+/// loading -> interactive (DOMContentLoaded) -> complete (load), fired from
+/// a zero-delay timer so async handlers run inside the event loop.
+const DOCUMENT_LIFECYCLE_JS: &str = r#"
+setTimeout(() => {
+    try { globalThis._browser_oxide.__documentReadyState = 'interactive'; } catch (_e) {}
+    document.dispatchEvent(new Event('readystatechange'));
+    document.dispatchEvent(new Event('DOMContentLoaded', {bubbles: true}));
+    window.dispatchEvent(new Event('DOMContentLoaded', {bubbles: true}));
+    try { globalThis._browser_oxide.__documentReadyState = 'complete'; } catch (_e) {}
+    document.dispatchEvent(new Event('readystatechange'));
+    window.dispatchEvent(new Event('load'));
+}, 0);
+"#;
+
 /// Info about an iframe found in the DOM.
 pub struct IframeInfo {
     pub node_id: NodeId,
@@ -75,6 +89,7 @@ impl ChildIframe {
         url: &str,
         client: &crate::net::HttpClient,
         stealth_profile: Option<&crate::stealth::StealthProfile>,
+        parent_origin: Option<&str>,
     ) -> Result<Self, deno_core::error::AnyError> {
         // CSP `frame-src` enforcement (falls back to child-src then
         // default-src). Real Chrome refuses to navigate iframes whose
@@ -164,6 +179,10 @@ impl ChildIframe {
         let mut options = BrowserRuntimeOptions {
             stylesheets,
             is_secure_context: crate::page::is_secure_url(url),
+            frame_parent_origin: parent_origin.map(str::to_string),
+            // The document URL comes from the runtime state; assigning
+            // location.href after start-up would queue a navigation instead.
+            base_url: url::Url::parse(url).ok(),
             ..Default::default()
         };
         if let Some(profile) = stealth_profile {
@@ -173,11 +192,16 @@ impl ChildIframe {
         let runtime = BrowserJsRuntime::with_options(dom, options);
         let mut event_loop = BrowserEventLoop::new(runtime);
 
-        // Set location
-        let url_js = url.replace('\\', "\\\\").replace('\'', "\\'");
+        // Set location.href (URL-state setup, not a real navigation), the
+        // same way Page::from_html_with_url does, and drop the navigation
+        // the assignment queued so the frame's event loop keeps running.
+        let url_js = serde_json::Value::String(url.to_string());
         event_loop
-            .execute_script(&format!("location.href = '{}';", url_js))
+            .execute_script(&format!(
+                "location.href = {url_js}; delete globalThis.__pendingNavigation;"
+            ))
             .ok();
+        event_loop.reset_nav_pending();
 
         // Execute scripts, fetching external ones
         for (i, script) in scripts.iter().enumerate() {
@@ -228,8 +252,19 @@ impl ChildIframe {
             }
         }
 
-        // Run child event loop (shorter timeout for iframes)
-        event_loop.run_until_idle(Duration::from_secs(10)).await?;
+        // Advance the frame document's lifecycle the way Page's build path
+        // does for a top-level document: a challenge script that waits for
+        // DOMContentLoaded or load otherwise never starts.
+        if let Err(e) = event_loop.execute_script(DOCUMENT_LIFECYCLE_JS) {
+            tracing::warn!(error = %e, "iframe lifecycle script error");
+        }
+
+        // Run child event loop briefly. A frame that keeps timers alive would
+        // hold the parent here for the whole budget, while in a browser both
+        // documents run side by side; Page::pump_frames drives it afterwards.
+        event_loop
+            .run_until_idle(Duration::from_millis(300))
+            .await?;
 
         Ok(Self {
             node_id,
@@ -249,6 +284,39 @@ impl ChildIframe {
             selector.replace('"', "\\\"")
         )).ok().filter(|s| !s.is_empty())
     }
+}
+
+/// One postMessage queued by a frame bridge, with its JSON-encoded data.
+pub struct FrameMessage {
+    /// Target iframe node id; set only on parent->child messages.
+    pub node: Option<u32>,
+    pub data: String,
+    pub origin: String,
+}
+
+/// Parse the JSON array a frame bridge's `drain()` returns.
+pub fn parse_frame_messages(queued: &str) -> Vec<FrameMessage> {
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str(queued) else {
+        return Vec::new();
+    };
+    items
+        .into_iter()
+        .filter_map(|m| {
+            Some(FrameMessage {
+                node: m.get("node").and_then(|n| n.as_u64()).map(|n| n as u32),
+                data: m.get("data")?.as_str()?.to_string(),
+                origin: m.get("origin")?.as_str()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// The embedding document's origin when `child_url` is cross-origin to
+/// `parent_url`; `None` for a same-origin frame or an unparsable URL.
+pub fn cross_origin_parent(parent_url: &str, child_url: &str) -> Option<String> {
+    let parent = url::Url::parse(parent_url).ok()?.origin();
+    let child = url::Url::parse(child_url).ok()?.origin();
+    (parent != child).then(|| parent.ascii_serialization())
 }
 
 /// Find all `<iframe>` elements in the DOM.
@@ -279,6 +347,11 @@ fn collect_iframes(dom: &Dom, node_id: NodeId, iframes: &mut Vec<IframeInfo>) {
                         srcdoc,
                         src,
                     });
+                }
+                // Widgets such as Turnstile put their iframe inside a
+                // (closed) shadow root; walk it like the light DOM.
+                if let Some(shadow) = elem.shadow_root {
+                    collect_iframes(dom, shadow, iframes);
                 }
             }
             collect_iframes(dom, child_id, iframes);

@@ -2577,8 +2577,64 @@
         return m ? m[1].toLowerCase() : "null";
     };
 
+    // Cross-origin WindowProxy. Chrome lets a page reach a fixed set of
+    // members on a cross-origin frame (postMessage, closed, frames, length,
+    // parent, self, top, window, focus, blur, close); every other read
+    // throws SecurityError. postMessage is queued here for the host Page,
+    // which routes it into the child runtime rendering this iframe.
+    const _frameOutbox = [];
+    const _crossOriginWindow = function (el, msg) {
+        const postMessage = function postMessage(data, _targetOrigin) {
+            let json;
+            try { json = JSON.stringify(data === undefined ? null : data); } catch (_) { return; }
+            const origin = (globalThis.location && globalThis.location.origin) || "null";
+            _frameOutbox.push({ node: _getNodeId(el), data: json, origin });
+        };
+        const allowed = {
+            postMessage, closed: false, length: 0,
+            focus: function focus() {}, blur: function blur() {}, close: function close() {},
+        };
+        let proxy = null;
+        proxy = new Proxy({}, {
+            get(t, p) {
+                if (typeof p === 'symbol') return undefined;
+                if (p === 'self' || p === 'window' || p === 'frames') return proxy;
+                if (p === 'parent' || p === 'top') return globalThis;
+                if (Object.prototype.hasOwnProperty.call(allowed, p)) return allowed[p];
+                throw new DOMException(msg, 'SecurityError');
+            },
+            set() { throw new DOMException(msg, 'SecurityError'); },
+            has() { return false; },
+        });
+        return proxy;
+    };
+    // Host hook for the Page's frame pump: drain the queued parent->child
+    // messages, and deliver a child->parent message as a MessageEvent whose
+    // source is the iframe's own contentWindow. A cross-frame message is a
+    // trusted event in Chrome; window_bootstrap.js hands over the minter
+    // event_bootstrap.js publishes after this file, once, through setTrust.
+    let _frameTrusted = (ev) => ev;
+    const _frameBridge = {
+        drainToChildren() { return JSON.stringify(_frameOutbox.splice(0)); },
+        deliverFromChild(node, dataJson, origin) {
+            const el = _wrapNode(node);
+            if (!el) return;
+            globalThis.dispatchEvent(_frameTrusted(new MessageEvent('message', {
+                data: JSON.parse(dataJson), origin, source: el.contentWindow,
+            })));
+        },
+        setTrust(fn) { _frameTrusted = fn; delete _frameBridge.setTrust; },
+    };
+    Object.defineProperty(globalThis, Symbol.for('__ox_frames'), {
+        value: _frameBridge,
+        enumerable: false, configurable: false, writable: false,
+    });
+
     function _getIframeWindow(el) {
         let state = _iframeState.get(el);
+        // A cross-origin frame keeps one WindowProxy: handlers compare a
+        // message's source against iframe.contentWindow by identity.
+        if (state && state._crossOrigin) return state.contentWindow;
         if (state) {
             // Cross-origin transition: a script creates an iframe with no src, accesses
             // contentWindow (creates child realm), then sets src to a cross-origin URL and re-accesses.
@@ -2593,12 +2649,8 @@
                     const _sOrig = _xOrigin(_cSrc);
                     if (_sOrig !== _pOrig) {
                         const _xM = 'Blocked a frame with origin "' + _pOrig + '" from accessing a cross-origin frame.';
-                        const _xo2 = new Proxy({}, {
-                            get(t, p) { if (typeof p === 'symbol') return undefined; throw new DOMException(_xM, 'SecurityError'); },
-                            set() { throw new DOMException(_xM, 'SecurityError'); },
-                            has() { return false; },
-                        });
-                        const _xoS2 = { contentWindow: _xo2, contentDocument: null, _realmId: undefined, _processedSrcdoc: '' };
+                        const _xo2 = _crossOriginWindow(el, _xM);
+                        const _xoS2 = { contentWindow: _xo2, contentDocument: null, _realmId: undefined, _processedSrcdoc: '', _crossOrigin: true };
                         _iframeState.set(el, _xoS2);
                         return _xo2;
                     }
@@ -2641,15 +2693,8 @@
                 const _srcOrigin = _xOrigin(_iSrc);
                 if (_srcOrigin !== _pOrigin) {
                     const _xMsg = 'Blocked a frame with origin "' + _pOrigin + '" from accessing a cross-origin frame.';
-                    const _xo = new Proxy({}, {
-                        get(t, p) {
-                            if (typeof p === 'symbol') return undefined;
-                            throw new DOMException(_xMsg, 'SecurityError');
-                        },
-                        set() { throw new DOMException(_xMsg, 'SecurityError'); },
-                        has() { return false; },
-                    });
-                    const _xoState = { contentWindow: _xo, contentDocument: null, _realmId: undefined, _processedSrcdoc: '' };
+                    const _xo = _crossOriginWindow(el, _xMsg);
+                    const _xoState = { contentWindow: _xo, contentDocument: null, _realmId: undefined, _processedSrcdoc: '', _crossOrigin: true };
                     _iframeState.set(el, _xoState);
                     _registerFrame(_xo, el);
                     return _xo;

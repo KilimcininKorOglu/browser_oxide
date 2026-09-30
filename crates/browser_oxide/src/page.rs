@@ -954,11 +954,13 @@ impl Page {
                     continue; // blank/JS frames are handled at build time
                 }
                 if let Some(full_src) = Self::resolve_url(base_url, src) {
+                    let parent_origin = iframe::cross_origin_parent(base_url, &full_src);
                     match iframe::ChildIframe::from_url(
                         info.node_id,
                         &full_src,
                         client,
                         Some(profile),
+                        parent_origin.as_deref(),
                     )
                     .await
                     {
@@ -975,6 +977,56 @@ impl Page {
             }
         }
         materialized
+    }
+
+    /// Run every child iframe's event loop for up to `budget`, then route
+    /// the postMessage traffic queued on both sides of each cross-origin
+    /// frame. Returns the number of messages delivered.
+    pub async fn pump_frames(&mut self, budget: Duration) -> usize {
+        const TO_PARENT: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b && b.drainToParent ? b.drainToParent() : '[]'; })()";
+        const TO_CHILDREN: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b ? b.drainToChildren() : '[]'; })()";
+        let mut delivered = 0usize;
+        for child in self.children.iter_mut() {
+            if let Err(e) = child.event_loop.run_until_idle(budget).await {
+                tracing::warn!(error = %e, "child iframe event loop error");
+            }
+            let queued = child.evaluate(TO_PARENT).unwrap_or_default();
+            for msg in iframe::parse_frame_messages(&queued) {
+                let js = format!(
+                    "globalThis[Symbol.for('__ox_frames')].deliverFromChild({}, {}, {})",
+                    child.node_id.to_raw(),
+                    serde_json::Value::String(msg.data),
+                    serde_json::Value::String(msg.origin)
+                );
+                match self.event_loop.execute_script(&js) {
+                    Ok(_) => delivered += 1,
+                    Err(e) => tracing::warn!(error = %e, "child->parent message delivery failed"),
+                }
+            }
+        }
+        let queued = self
+            .event_loop
+            .execute_script(TO_CHILDREN)
+            .unwrap_or_default();
+        for msg in iframe::parse_frame_messages(&queued) {
+            let Some(child) = self
+                .children
+                .iter_mut()
+                .find(|c| Some(c.node_id.to_raw()) == msg.node)
+            else {
+                continue; // Chrome drops a message posted before the frame loads.
+            };
+            let js = format!(
+                "globalThis[Symbol.for('__ox_frames')].deliverFromParent({}, {})",
+                serde_json::Value::String(msg.data),
+                serde_json::Value::String(msg.origin)
+            );
+            match child.evaluate(&js) {
+                Ok(_) => delivered += 1,
+                Err(e) => tracing::warn!(error = %e, "parent->child message delivery failed"),
+            }
+        }
+        delivered
     }
 
     /// Evaluate arbitrary JavaScript and return the result as a string.
@@ -4191,11 +4243,13 @@ impl Page {
             } else if let Some(src) = &info.src {
                 if !src.is_empty() && !src.starts_with("javascript:") {
                     if let Some(full_src) = Self::resolve_url(url, src) {
+                        let parent_origin = iframe::cross_origin_parent(url, &full_src);
                         match iframe::ChildIframe::from_url(
                             info.node_id,
                             &full_src,
                             client,
                             Some(profile),
+                            parent_origin.as_deref(),
                         )
                         .await
                         {

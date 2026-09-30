@@ -1461,9 +1461,51 @@
 
     // Frame-tree globals: top/parent/frames/self all point to this window
     // window / self / frames / top / parent — self-references.
+    // A runtime that renders a cross-origin iframe gets a cross-origin
+    // WindowProxy for parent/top instead. Its postMessage is queued for the
+    // host Page, which delivers it into the embedding document.
+    const _frameParentOrigin = globalThis.__ox_frame_parent;
+    delete globalThis.__ox_frame_parent;
+    // dom_bootstrap.js created the bridge object; event_bootstrap.js
+    // published the trusted-event minter (humanize.js deletes it later).
+    const _frameBridge = globalThis[Symbol.for('__ox_frames')];
+    const _frameTrusted = (typeof globalThis.__bo_mark_trusted === 'function')
+        ? globalThis.__bo_mark_trusted : (ev) => ev;
+    if (_frameBridge.setTrust) _frameBridge.setTrust(_frameTrusted);
+    let _frameParent = globalThis;
+    if (typeof _frameParentOrigin === 'string') {
+        const _toParent = [];
+        const _xMsg = () => 'Blocked a frame with origin "' + ((globalThis.location && globalThis.location.origin) || 'null') +
+            '" from accessing a cross-origin frame.';
+        const postMessage = function postMessage(data, _targetOrigin) {
+            let json;
+            try { json = JSON.stringify(data === undefined ? null : data); } catch (_) { return; }
+            _toParent.push({ data: json, origin: (globalThis.location && globalThis.location.origin) || 'null' });
+        };
+        const allowed = {
+            postMessage, closed: false, length: 1,
+            focus: function focus() {}, blur: function blur() {}, close: function close() {},
+        };
+        _frameParent = new Proxy({}, {
+            get(t, p) {
+                if (typeof p === 'symbol') return undefined;
+                if (p === 'self' || p === 'window' || p === 'parent' || p === 'top' || p === 'frames') return _frameParent;
+                if (Object.prototype.hasOwnProperty.call(allowed, p)) return allowed[p];
+                throw new DOMException(_xMsg(), 'SecurityError');
+            },
+            set() { throw new DOMException(_xMsg(), 'SecurityError'); },
+            has() { return false; },
+        });
+        _frameBridge.drainToParent = () => JSON.stringify(_toParent.splice(0));
+        _frameBridge.deliverFromParent = (dataJson, origin) => {
+            globalThis.dispatchEvent(_frameTrusted(new MessageEvent('message', {
+                data: JSON.parse(dataJson), origin, source: _frameParent,
+            })));
+        };
+    }
     for (const key of ['window', 'self', 'frames', 'top', 'parent']) {
         Object.defineProperty(globalThis, key, {
-            value: globalThis,
+            value: (key === 'top' || key === 'parent') ? _frameParent : globalThis,
             writable: false,
             configurable: false,
             enumerable: true

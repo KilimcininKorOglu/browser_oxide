@@ -50,6 +50,11 @@ pub struct BrowserRuntimeOptions {
     /// `[SecureContext]` extended attribute. Phase 7 fix. Default false —
     /// callers (e.g. Page::from_html_with_url) classify the URL scheme.
     pub is_secure_context: bool,
+    /// Origin of the embedding document when this runtime renders a
+    /// cross-origin iframe. `parent` and `top` then become a cross-origin
+    /// WindowProxy whose `postMessage` the host Page routes to that
+    /// document. `None` for a top-level document.
+    pub frame_parent_origin: Option<String>,
 }
 
 /// Create a deno_core JsRuntime configured with browser extensions.
@@ -340,6 +345,16 @@ pub fn create_runtime_with_signals(
             include_str!("js/structured_clone.js"),
         );
 
+        if let Some(origin) = &options.frame_parent_origin {
+            // window_bootstrap.js reads and deletes this marker.
+            let marker = format!(
+                "globalThis.__ox_frame_parent = {};",
+                serde_json::to_string(origin).unwrap_or_else(|_| "\"null\"".into())
+            );
+            runtime
+                .execute_script("<anonymous>", marker)
+                .expect("frame marker failed");
+        }
         runtime
             .execute_script("<anonymous>", BOOTSTRAP_JS)
             .expect("bootstrap failed");
