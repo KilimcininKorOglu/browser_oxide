@@ -355,6 +355,56 @@
         return arr;
     }
 
+    // Event handler IDL attributes (`worker.onmessage = fn`). Chrome keeps the
+    // handler in one listener slot: the slot joins the target's listener list
+    // when a handler is first set and leaves it when the handler is set to a
+    // non-object, so the handler runs in registration order among the
+    // addEventListener callbacks. A target in this map has its `on*` handlers
+    // run through the slot only, never by `_fireListeners`' property read.
+    const _attrHandlers = new WeakMap();
+
+    function _setAttrHandler(target, type, value) {
+        const fn = (typeof value === "function" || (typeof value === "object" && value !== null)) ? value : null;
+        let slots = _attrHandlers.get(target);
+        if (!slots) { slots = new Map(); _attrHandlers.set(target, slots); }
+        const slot = slots.get(type);
+        if (slot && fn) { slot.fn = fn; return; }
+        const listeners = _getListeners(target, type);
+        if (slot) {
+            const i = listeners.indexOf(slot.entry);
+            if (i !== -1) listeners.splice(i, 1);
+            slots.delete(type);
+        }
+        if (!fn) return;
+        const s = { fn, entry: null };
+        s.entry = {
+            callback: function (event) { if (typeof s.fn === "function") s.fn.call(this, event); },
+            capture: false, once: false, passive: false,
+        };
+        slots.set(type, s);
+        listeners.push(s.entry);
+    }
+
+    // Installs `on<type>` on `proto` as an accessor pair; `check` throws for a
+    // receiver that is not an instance of the interface.
+    const _defineEventHandler = (proto, type, check) => {
+        const name = "on" + type;
+        const d = Object.getOwnPropertyDescriptor({
+            get [name]() {
+                check(this);
+                const slots = _attrHandlers.get(this);
+                const slot = slots && slots.get(type);
+                return slot ? slot.fn : null;
+            },
+            set [name](/** @type {any} */ value) { check(this); _setAttrHandler(this, type, value); },
+        }, name);
+        if (typeof _maskFunction === "function") {
+            _maskFunction(d.get, "get " + name);
+            _maskFunction(d.set, "set " + name);
+        }
+        Object.defineProperty(proto, name, { get: d.get, set: d.set, enumerable: true, configurable: true });
+    };
+
     const _addEventListener = function addEventListener(type, callback, options) {
         if (typeof callback !== "function" && typeof callback !== "object") return;
         const capture = typeof options === "boolean" ? options : !!(options && options.capture);
@@ -427,7 +477,7 @@
 
     function _fireListeners(target, event, capturePhase) {
         // --- 1. Fire on* handler (Target phase only, not capture phase) ---
-        if (!capturePhase && !event._stoppedImmediate) {
+        if (!capturePhase && !event._stoppedImmediate && !_attrHandlers.has(target)) {
             const handlerName = `on${event.type}`;
             const handler = target[handlerName];
             if (typeof handler === "function") {
@@ -576,4 +626,12 @@
             writable: false,
         });
     } catch (_) { /* ignore */ }
+    // Same handoff for the event handler attribute installer; the window and
+    // worker bootstraps capture and delete it.
+    Object.defineProperty(globalThis, '__bo_define_event_handler', {
+        value: _defineEventHandler,
+        configurable: true,
+        enumerable: false,
+        writable: false,
+    });
 })(globalThis);

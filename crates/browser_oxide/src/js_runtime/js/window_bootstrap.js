@@ -1968,6 +1968,9 @@
     // This is a minimal stub that lets fingerprint probes pass their
     // Real Worker — spawns an OS thread with its own V8 isolate, drives
     // a poll loop that delivers parent←worker messages to onmessage.
+    // event_bootstrap.js published the event handler attribute installer.
+    const _defineEventHandler = globalThis.__bo_define_event_handler;
+    delete globalThis.__bo_define_event_handler;
     if (!globalThis.Worker) {
         const _wops = Deno.core.ops;
 
@@ -1990,101 +1993,87 @@
             return '';
         }
 
-        globalThis.Worker = class Worker {
-            constructor(scriptURL, options) {
-                this._url = String(scriptURL);
-                this._options = options || {};
-                this._name = (options && options.name) || '';
-                // `type: 'module'` enables ES module semantics for the
-                // worker body (import.meta.url, async module eval,
-                // top-level await). Default is 'classic'.
-                this._type = (options && options.type) || 'classic';
-                const isModule = this._type === 'module';
-                this.onmessage = null;
-                this.onerror = null;
-                this.onmessageerror = null;
-                this._listeners = { message: [], messageerror: [], error: [] };
+        // Per-worker state lives here rather than on the object: Chrome's
+        // Worker instance has no own properties, and every accessor or
+        // method called on a non-Worker throws "Illegal invocation".
+        const _workers = new WeakMap();
+        const _workerState = (o) => {
+            const s = _workers.get(o);
+            if (!s) throw new TypeError('Illegal invocation');
+            return s;
+        };
 
-                const script = _resolveWorkerScript(this._url);
-                if (!script) {
-                    // Script resolution failed; defer to next tick and fire error.
-                    this._id = 0;
-                    const self = this;
-                    Promise.resolve().then(() => {
-                        self._fireEvent('error', {
-                            type: 'error',
-                            message: 'Worker script could not be resolved: ' + self._url,
-                            filename: self._url,
-                            lineno: 0,
-                            colno: 0,
-                        });
-                    });
-                    return;
-                }
+        // Delivers worker→parent messages. The chain awaits
+        // op_worker_await_message, which suspends on a tokio Notify, so the
+        // event loop is only pending while a message is actually queued
+        // (a setInterval poll pinned it for the life of every Worker and
+        // blocked SPA hydration completion detection).
+        const _pumpWorker = (worker, state) => {
+            const drainOnce = () => {
+                if (!state.id) return;
+                _wops.op_worker_await_message(state.id).then((raw) => {
+                    if (!raw || !state.id) return; // worker died
+                    const deserializer =
+                        _browser_oxide && _browser_oxide.deserializeFromWire;
+                    let payload = null;
+                    try { payload = JSON.parse(raw); }
+                    catch (e) { return drainOnce(); }
+                    const data = deserializer
+                        ? deserializer(payload && payload.data)
+                        : payload && payload.data;
+                    // Chrome delivers a trusted MessageEvent whose target is
+                    // the Worker, with an empty origin and a null source. A
+                    // throwing listener is reported and does not stop the
+                    // pump.
+                    const event = _frameTrusted(new MessageEvent('message', { data, origin: '', source: null }));
+                    try { worker.dispatchEvent(event); }
+                    catch (e) { if (typeof reportError === 'function') reportError(e); }
+                    drainOnce();
+                }).catch(() => {});
+            };
+            drainOnce();
+        };
 
-                // Pass the resolved script URL so the
-                // worker realm can install `self.location` consistent
-                // with real Chrome's WorkerLocation. Some workers
-                // read `self.location.origin` to
-                // gate execution; empty location silently bails.
-                this._id = _wops.op_worker_spawn(script, this._name, isModule, this._url);
-                if (this._id <= 0) {
-                    this._id = 0;
-                    return;
-                }
-
-                // W5b-deep fix (commit pending): replace the prior
-                // setInterval(5) polling with an async-await chain
-                // backed by op_worker_await_message. The old impl
-                // pinned the V8 event loop's `is_pending=true` for the
-                // lifetime of every Worker, blocking SPA hydration
-                // completion detection (twitter, x.com, etc.). The new
-                // pump suspends on a tokio::sync::Notify so the loop
-                // is only marked pending while there's an actual
-                // pending message — same correctness, no perpetual
-                // pinning.
-                const self = this;
-                const _drainOnce = () => {
-                    if (!self._id) return;
-                    _wops.op_worker_await_message(self._id).then((raw) => {
-                        if (!raw || !self._id) return; // worker died
-                        const deserializer =
-                            _browser_oxide && _browser_oxide.deserializeFromWire;
-                        let payload = null;
-                        try { payload = JSON.parse(raw); }
-                        catch (e) { return _drainOnce(); }
-                        const data = deserializer
-                            ? deserializer(payload && payload.data)
-                            : payload && payload.data;
-                        // Chrome delivers a trusted MessageEvent whose
-                        // target is the Worker, with an empty origin and
-                        // a null source.
-                        const event = _frameTrusted(new MessageEvent('message', { data, origin: '', source: null }));
-                        event.target = self;
-                        event.currentTarget = self;
-                        try { self._fireEvent('message', event); }
-                        catch (_) {}
-                        _drainOnce(); // chain next await
-                    }).catch(() => {});
-                };
-                _drainOnce();
+        const Worker = function Worker(scriptURL) {
+            if (!new.target) {
+                throw new TypeError("Failed to construct 'Worker': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
             }
-
-            _fireEvent(type, event) {
-                const arr = this._listeners[type];
-                if (arr) {
-                    for (const fn of arr.slice()) {
-                        try { fn.call(this, event); } catch (e) {}
-                    }
-                }
-                const on = this['on' + type];
-                if (typeof on === 'function') {
-                    try { on.call(this, event); } catch (e) {}
-                }
+            if (arguments.length < 1) {
+                throw new TypeError("Failed to construct 'Worker': 1 argument required, but only 0 present.");
             }
+            const options = arguments[1] || {};
+            const url = String(scriptURL);
+            const state = { id: 0 };
+            _workers.set(this, state);
 
-            postMessage(message, transfer) {
-                if (!this._id) return;
+            const script = _resolveWorkerScript(url);
+            if (!script) {
+                // Chrome reports a script that cannot be loaded with a plain
+                // `error` Event, after the constructor returns.
+                Promise.resolve().then(() => { this.dispatchEvent(new Event('error')); });
+                return;
+            }
+            // `type: 'module'` gives the worker body ES module semantics.
+            // The script URL lets the worker realm report a WorkerLocation.
+            state.id = _wops.op_worker_spawn(script, String(options.name || ''), options.type === 'module', url);
+            if (state.id <= 0) {
+                state.id = 0;
+                return;
+            }
+            _pumpWorker(this, state);
+        };
+        Object.setPrototypeOf(Worker, EventTarget);
+        Object.setPrototypeOf(Worker.prototype, EventTarget.prototype);
+        _maskFunction(Worker, 'Worker');
+        if (typeof _defineEventHandler === 'function') {
+            _defineEventHandler(Worker.prototype, 'message', _workerState);
+            _defineEventHandler(Worker.prototype, 'error', _workerState);
+        }
+        const _workerMethods = {
+            postMessage(message) {
+                const state = _workerState(this);
+                if (!state.id) return;
+                const transfer = arguments[1];
                 // Transferables: accepted as an array. Each entry (an
                 // ArrayBuffer or view) is reachable from the message
                 // and will be serialized with it. Real browsers
@@ -2124,39 +2113,28 @@
                 } catch (_e) {
                     payload = JSON.stringify({ data: null });
                 }
-                _wops.op_worker_post_to_worker(this._id, payload);
-            }
+                _wops.op_worker_post_to_worker(state.id, payload);
+            },
 
             terminate() {
-                if (this._id) {
-                    try { _wops.op_worker_terminate(this._id); } catch (e) {}
-                    this._id = 0;
+                const state = _workerState(this);
+                if (state.id) {
+                    _wops.op_worker_terminate(state.id);
+                    state.id = 0;
                 }
-                if (this._pollTimer) {
-                    clearInterval(this._pollTimer);
-                    this._pollTimer = null;
-                }
-            }
-
-            addEventListener(type, listener) {
-                if (!this._listeners[type]) this._listeners[type] = [];
-                this._listeners[type].push(listener);
-            }
-            removeEventListener(type, listener) {
-                const arr = this._listeners[type];
-                if (!arr) return;
-                const i = arr.indexOf(listener);
-                if (i >= 0) arr.splice(i, 1);
-            }
-            dispatchEvent(event) {
-                this._fireEvent(event && event.type, event);
-                return true;
-            }
+            },
         };
-        Object.defineProperty(globalThis.Worker.prototype, Symbol.toStringTag, {
+        for (const name of ['postMessage', 'terminate']) {
+            Object.defineProperty(Worker.prototype, name, {
+                value: _maskFunction(_workerMethods[name], name),
+                writable: true, enumerable: true, configurable: true,
+            });
+        }
+        Object.defineProperty(Worker.prototype, Symbol.toStringTag, {
             value: 'Worker',
             configurable: true,
         });
+        globalThis.Worker = Worker;
     }
     if (!globalThis.SharedWorker) {
         globalThis.SharedWorker = class SharedWorker {

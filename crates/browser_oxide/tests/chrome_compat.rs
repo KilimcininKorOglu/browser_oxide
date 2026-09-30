@@ -2392,6 +2392,62 @@ async fn worker_hardware_concurrency_matches_window() {
     assert_eq!(page.evaluate("window.__whc").unwrap(), expected);
 }
 
+// Chrome's Worker is an EventTarget with no own properties: its state is
+// internal, its accessors and methods refuse a foreign receiver, and
+// `onmessage` is one listener slot that runs in registration order among the
+// addEventListener callbacks. Every expected value below was measured in
+// Chrome 146.
+#[tokio::test]
+async fn worker_is_a_chrome_shaped_event_target() {
+    let mut page = Page::from_html(&html(""), None).await.unwrap();
+    let shape = page
+        .evaluate(
+            r#"(() => {
+                const r = [];
+                const t = (f) => { try { r.push(JSON.stringify(f())); } catch (e) { r.push(e.name + ':' + e.message); } };
+                t(() => Object.getOwnPropertyNames(Worker.prototype).sort());
+                t(() => [Object.getPrototypeOf(Worker.prototype) === EventTarget.prototype, Worker.length]);
+                t(() => Worker('x'));
+                t(() => new Worker());
+                t(() => { const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage'); return [typeof d.get, typeof d.set, d.enumerable]; });
+                t(() => { const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'postMessage'); return [d.enumerable, d.value.length]; });
+                t(() => Worker.prototype.onmessage);
+                t(() => Worker.prototype.postMessage.call({}, 1));
+                t(() => typeof __bo_define_event_handler);
+                const w = new Worker(URL.createObjectURL(new Blob(['onmessage = (e) => postMessage(e.data + 1)'], { type: 'text/javascript' })));
+                t(() => [Object.getOwnPropertyNames(w), w instanceof EventTarget, w.onmessage, w.onerror]);
+                t(() => { w.onmessage = 5; return w.onmessage; });
+                window.__order = [];
+                w.addEventListener('message', (e) => { __order.push('L1:' + (e.target === w) + e.isTrusted + e.data); });
+                w.onmessage = (e) => { __order.push('ON:' + e.data); };
+                w.addEventListener('message', () => { __order.push('L2'); });
+                w.postMessage(1);
+                window.__w = w;
+                return r.join('|');
+            })()"#,
+        )
+        .unwrap();
+    assert_eq!(
+        shape,
+        concat!(
+            r#"["constructor","onerror","onmessage","postMessage","terminate"]|[true,1]|"#,
+            "TypeError:Failed to construct 'Worker': Please use the 'new' operator, this DOM object constructor cannot be called as a function.|",
+            "TypeError:Failed to construct 'Worker': 1 argument required, but only 0 present.|",
+            r#"["function","function",true]|[true,1]|"#,
+            "TypeError:Illegal invocation|TypeError:Illegal invocation|",
+            r#""undefined"|[[],true,null,null]|null"#,
+        )
+    );
+    page.evaluate_async("void 0", std::time::Duration::from_millis(500))
+        .await
+        .ok();
+    assert_eq!(
+        page.evaluate("__w.terminate(); JSON.stringify(__order)")
+            .unwrap(),
+        r#"["L1:truetrue2","ON:2","L2"]"#
+    );
+}
+
 // --- screen.availTop per-OS consistency ---
 // On macOS the 25px menu bar means availTop=25 (not 0).
 // On Windows/Linux there is no top bar so availTop=0.
