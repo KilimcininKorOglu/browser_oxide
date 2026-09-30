@@ -960,6 +960,64 @@ async fn api_document_fonts() {
     assert_eq!(check("document.fonts.check('12px Arial')").await, "true");
 }
 
+// Chrome's document.fonts is a FontFaceSet holding only the faces the
+// document added, so a fresh page reports size 0 and check() is true for
+// every font it can parse. Every expected value was measured in Chrome 146.
+#[tokio::test]
+async fn document_fonts_is_a_chrome_font_face_set() {
+    let js = r#"(() => {
+        const out = [];
+        const t = (f) => { try { out.push(JSON.stringify(f())); } catch (e) { out.push(e.name + ':' + e.message); } };
+        const fs = document.fonts;
+        const P = Object.getPrototypeOf(fs);
+        t(() => [Object.prototype.toString.call(fs), typeof FontFaceSet, Object.getPrototypeOf(P) === EventTarget.prototype, Object.getOwnPropertyNames(fs).length, fs.size, fs.status]);
+        t(() => Object.getOwnPropertySymbols(P).map(String));
+        t(() => Object.getOwnPropertyNames(P).sort().map((n) => { const d = Object.getOwnPropertyDescriptor(P, n); return n + ':' + (d.get ? 'g' : '') + (d.set ? 's' : '') + (typeof d.value === 'function' ? 'f' + d.value.length : '') + (d.enumerable ? 'E' : ''); }).join(','));
+        t(() => [P[Symbol.iterator] === P.values, P.keys === P.values, fs.ready === fs.ready]);
+        t(() => ['12px serif', 'bold 14px "Times New Roman"', 'italic small-caps 700 16px/2 Arial, sans-serif', '16px', 'Arial', 'caption', '1em x', '12px 5', 'normal normal 12px a', '-1px a', '12px ,a', "12px 'a b'", '12px a b'].map((f) => { try { return fs.check(f); } catch (e) { return e.name; } }));
+        t(() => fs.check('bogus'));
+        t(() => fs.check());
+        t(() => P.check.call({}, '12px a'));
+        t(() => fs.add({}));
+        const ff = new FontFace('TestFamX', 'url(data:font/woff2;base64,AAAA)');
+        t(() => [fs.add(ff) === fs, fs.size, fs.has(ff), fs.check('12px TestFamX'), fs.check('12px Arial'), fs.check('12px TestFamX, Arial')]);
+        t(() => [[...fs].length, [...fs.entries()][0][0] === ff, Object.prototype.toString.call(fs.values())]);
+        t(() => { const r = []; fs.forEach((a, b, c) => r.push(a === ff && b === ff && c === fs)); return r; });
+        t(() => [fs.delete(ff), fs.delete(ff), fs.size]);
+        return out.join('|');
+    })()"#;
+    assert_eq!(
+        check(js).await,
+        concat!(
+            r#"["[object FontFaceSet]","undefined",true,0,0,"loaded"]|"#,
+            r#"["Symbol(Symbol.toStringTag)","Symbol(Symbol.iterator)"]|"#,
+            r#""add:f1E,check:f1E,clear:f0E,delete:f1E,entries:f0E,forEach:f1E,has:f1E,keys:f0E,load:f1E,onloading:gsE,onloadingdone:gsE,onloadingerror:gsE,ready:gE,size:gE,status:gE,values:f0E"|"#,
+            r#"[true,false,true]|"#,
+            r#"[true,true,true,"SyntaxError","SyntaxError",true,true,"SyntaxError",true,"SyntaxError","SyntaxError",true,true]|"#,
+            "SyntaxError:Failed to execute 'check' on 'FontFaceSet': Could not resolve 'bogus' as a font.|",
+            "TypeError:Failed to execute 'check' on 'FontFaceSet': 1 argument required, but only 0 present.|",
+            "TypeError:Illegal invocation|",
+            "TypeError:Failed to execute 'add' on 'FontFaceSet': parameter 1 is not of type 'FontFace'.|",
+            r#"[true,1,true,false,true,false]|[1,true,"[object FontFaceSet Iterator]"]|[true]|[true,false,0]"#,
+        )
+    );
+    let loads = r#"(() => { Promise.all([
+            document.fonts.load('16px Arial').then((r) => 'arial:' + JSON.stringify([Array.isArray(r), r.length])),
+            document.fonts.load('bogus').then(() => 'bogus', (e) => 'bogus!' + e.name + ':' + e.message),
+            document.fonts.ready.then((r) => 'ready:' + (r === document.fonts)),
+        ]).then((v) => { globalThis.__loads = v.join('|'); });
+        return 'started'; })()"#;
+    let mut page = Page::from_html(&html(""), None).await.unwrap();
+    page.evaluate(loads).unwrap();
+    page.evaluate_async("void 0", std::time::Duration::from_millis(200))
+        .await
+        .ok();
+    assert_eq!(
+        page.evaluate("globalThis.__loads").unwrap(),
+        "arial:[true,0]|bogus!SyntaxError:Could not resolve 'bogus' as a font.|ready:true"
+    );
+}
+
 // MediaSource
 #[tokio::test]
 async fn cls_media_source() {

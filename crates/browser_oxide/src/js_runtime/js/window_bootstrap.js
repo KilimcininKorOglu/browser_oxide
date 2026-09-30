@@ -5429,67 +5429,152 @@
             }
         };
 
-        // document.fonts (FontFaceSet) — iterator yields actual FontFace
-        // entries (real Chrome's `for (const f of document.fonts)` yields
-        // FontFace instances for every loaded face). Previously our iterators
-        // returned empty, the canonical headless "no faces ever
-        // loaded" signal that differs from a real browser.
+        // CSS `font` shorthand: optional style/variant/weight/stretch words,
+        // a size with an optional line height, then a family list. Returns
+        // the lower-cased families, [] for a system font keyword, or null
+        // when Chrome could not resolve the string as a font.
+        const _FONT_SYSTEM = /^(caption|icon|menu|message-box|small-caption|status-bar)$/i;
+        const _FONT_HEAD = /^((?:(?:normal|italic|oblique|small-caps|bold|bolder|lighter|[1-9]\d{0,2}|1000|(?:ultra-|extra-|semi-)?(?:condensed|expanded))\s+)*)((?:\d*\.)?\d+(?:px|pt|pc|in|cm|mm|q|em|rem|ex|ch|vw|vh|vmin|vmax|%)|(?:xx?x?-)?(?:small|large)|medium|larger|smaller)(?:\s*\/\s*(?:normal|(?:\d*\.)?\d+[a-z%]*))?\s+(.+)$/i;
+        const _FONT_FAMILY = /\s*(?:"([^"]*)"|'([^']*)'|(-?[A-Za-z_\u0080-￿][\w\u0080-￿-]*(?:\s+-?[A-Za-z_\u0080-￿][\w\u0080-￿-]*)*))\s*(,|$)/y;
+        const _fontFamilies = (font) => {
+            const s = String(font).trim();
+            if (_FONT_SYSTEM.test(s)) return [];
+            const head = _FONT_HEAD.exec(s);
+            if (!head) return null;
+            const list = head[3];
+            const families = [];
+            let sep = ',';
+            _FONT_FAMILY.lastIndex = 0;
+            while (_FONT_FAMILY.lastIndex < list.length) {
+                const m = _FONT_FAMILY.exec(list);
+                if (!m) return null;
+                families.push((m[1] ?? m[2] ?? m[3].replace(/\s+/g, ' ')).toLowerCase());
+                sep = m[4];
+            }
+            return sep === ',' ? null : families;
+        };
+
+        const _fontSets = new WeakMap();
+        const _fontSetFaces = (o) => {
+            const faces = _fontSets.get(o);
+            if (!faces) throw new TypeError('Illegal invocation');
+            return faces;
+        };
+        const _fontSetArgs = (method, args, n) => {
+            if (args.length < n) {
+                throw new TypeError(`Failed to execute '${method}' on 'FontFaceSet': ${n} argument required, but only ${args.length} present.`);
+            }
+        };
+        const _fontSetFace = (method, args) => {
+            _fontSetArgs(method, args, 1);
+            if (!(args[0] instanceof globalThis.FontFace)) {
+                throw new TypeError(`Failed to execute '${method}' on 'FontFaceSet': parameter 1 is not of type 'FontFace'.`);
+            }
+            return args[0];
+        };
+        const _fontSetMatches = (faces, families) =>
+            faces.filter((f) => families.includes(String(f.family).toLowerCase()));
+        const _unresolvedFont = (font) => new DOMException(`Could not resolve '${font}' as a font.`, 'SyntaxError');
+
+        const _FontSetIteratorProto = Object.create(Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())));
+        const _fontSetIterators = new WeakMap();
+        Object.defineProperty(_FontSetIteratorProto, 'next', {
+            value: _maskFunction({ next() {
+                const it = _fontSetIterators.get(this);
+                if (!it) throw new TypeError('Illegal invocation');
+                if (it.i >= it.faces.length) return { value: undefined, done: true };
+                const face = it.faces[it.i++];
+                return { value: it.pairs ? [face, face] : face, done: false };
+            } }.next, 'next'),
+            writable: true, enumerable: true, configurable: true,
+        });
+        Object.defineProperty(_FontSetIteratorProto, Symbol.toStringTag, { value: 'FontFaceSet Iterator', configurable: true });
+        const _fontSetIterator = (set, pairs) => {
+            const it = Object.create(_FontSetIteratorProto);
+            _fontSetIterators.set(it, { faces: _fontSetFaces(set).slice(), i: 0, pairs });
+            return it;
+        };
+
+        const _FontFaceSetProto = Object.create(EventTarget.prototype);
+        const _fontSetMethods = {
+            add(face) { const faces = _fontSetFaces(this); face = _fontSetFace('add', arguments); if (!faces.includes(face)) faces.push(face); return this; },
+            check(font) {
+                const faces = _fontSetFaces(this);
+                _fontSetArgs('check', arguments, 1);
+                const families = _fontFamilies(font);
+                if (!families) throw new DOMException(`Failed to execute 'check' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
+                return _fontSetMatches(faces, families).every((f) => f.status === 'loaded');
+            },
+            clear() { _fontSetFaces(this).length = 0; },
+            delete(face) {
+                const faces = _fontSetFaces(this);
+                const i = faces.indexOf(_fontSetFace('delete', arguments));
+                if (i < 0) return false;
+                faces.splice(i, 1);
+                return true;
+            },
+            entries() { return _fontSetIterator(this, true); },
+            forEach(callback) {
+                const faces = _fontSetFaces(this);
+                _fontSetArgs('forEach', arguments, 1);
+                if (typeof callback !== 'function') throw new TypeError("Failed to execute 'forEach' on 'FontFaceSet': The callback provided as parameter 1 is not a function.");
+                for (const face of faces.slice()) callback.call(arguments[1], face, face, this);
+            },
+            has(face) { return _fontSetFaces(this).includes(_fontSetFace('has', arguments)); },
+            keys() { return _fontSetIterator(this, false); },
+            load(font) {
+                let faces;
+                try {
+                    faces = _fontSetFaces(this);
+                    _fontSetArgs('load', arguments, 1);
+                } catch (e) { return Promise.reject(e); }
+                const families = _fontFamilies(font);
+                if (!families) return Promise.reject(_unresolvedFont(font));
+                return Promise.all(_fontSetMatches(faces, families).map((f) => f.load()));
+            },
+            values() { return _fontSetIterator(this, false); },
+        };
+        for (const name of Object.keys(_fontSetMethods)) {
+            Object.defineProperty(_FontFaceSetProto, name, {
+                value: _maskFunction(_fontSetMethods[name], name),
+                writable: true, enumerable: true, configurable: true,
+            });
+        }
+        Object.defineProperty(_FontFaceSetProto, Symbol.toStringTag, { value: 'FontFaceSet', configurable: true });
+        Object.defineProperty(_FontFaceSetProto, Symbol.iterator, {
+            value: _FontFaceSetProto.values, writable: true, enumerable: false, configurable: true,
+        });
+        const _fontSetReady = new WeakMap();
+        const _fontSetGetters = {
+            get ready() { _fontSetFaces(this); return _fontSetReady.get(this); },
+            get size() { return _fontSetFaces(this).length; },
+            get status() { _fontSetFaces(this); return 'loaded'; },
+        };
+        for (const name of Object.keys(_fontSetGetters)) {
+            const get = Object.getOwnPropertyDescriptor(_fontSetGetters, name).get;
+            Object.defineProperty(_FontFaceSetProto, name, {
+                get: _maskFunction(get, 'get ' + name), enumerable: true, configurable: true,
+            });
+        }
+        if (typeof _defineEventHandler === 'function') {
+            for (const type of ['loading', 'loadingdone', 'loadingerror']) {
+                _defineEventHandler(_FontFaceSetProto, type, _fontSetFaces);
+            }
+        }
+        const _createFontFaceSet = () => {
+            const set = Object.create(_FontFaceSetProto);
+            _fontSets.set(set, []);
+            _fontSetReady.set(set, Promise.resolve(set));
+            return set;
+        };
+
+        // document.fonts is a FontFaceSet: an EventTarget holding only the
+        // faces the document added, never the system fonts, so a fresh page
+        // reports size 0. The interface has no global and its prototype no
+        // own constructor. Measured in Chrome 146.
         if (globalThis.document) {
-            // Materialize FontFace instances once for the system font list.
-            const _fontFaces = _fonts.map(family => {
-                const f = new globalThis.FontFace(family, 'local("' + family + '")');
-                f.status = 'loaded';
-                f.weight = 'normal';
-                f.style = 'normal';
-                f.stretch = 'normal';
-                f.unicodeRange = 'U+0-10FFFF';
-                f.variant = 'normal';
-                f.featureSettings = 'normal';
-                f.display = 'auto';
-                return f;
-            });
-            Object.defineProperty(globalThis.document, 'fonts', {
-                value: {
-                    check(font, text) {
-                        // Parse font family from CSS font shorthand (e.g. "12px Arial", "bold 14px 'Times New Roman'")
-                        // Strip size/weight prefix: everything before the last number+unit
-                        const stripped = font.replace(/^[^"']*?\d+(\.\d+)?(px|pt|em|rem|%|vh|vw)\s*/, '');
-                        const parts = stripped.split(',');
-                        return parts.some(p => {
-                            const name = p.replace(/["']/g, '').trim().toLowerCase();
-                            return name.length > 0 && _fontSet.has(name);
-                        });
-                    },
-                    ready: Promise.resolve(),
-                    status: "loaded",
-                    forEach(cb, thisArg) {
-                        for (const f of _fontFaces) cb.call(thisArg, f, f, this);
-                    },
-                    entries() {
-                        // FontFaceSet.entries yields [face, face] pairs per spec.
-                        const arr = _fontFaces.map(f => [f, f]);
-                        return arr[Symbol.iterator]();
-                    },
-                    keys() { return _fontFaces[Symbol.iterator](); },
-                    values() { return _fontFaces[Symbol.iterator](); },
-                    [Symbol.iterator]() { return _fontFaces[Symbol.iterator](); },
-                    size: _fontFaces.length,
-                    add(face) {
-                        if (face && !_fontFaces.includes(face)) _fontFaces.push(face);
-                        return this;
-                    },
-                    delete(face) {
-                        const i = _fontFaces.indexOf(face);
-                        if (i >= 0) { _fontFaces.splice(i, 1); return true; }
-                        return false;
-                    },
-                    has(face) { return _fontFaces.includes(face); },
-                    clear() { _fontFaces.length = 0; },
-                    addEventListener() {},
-                    removeEventListener() {},
-                },
-                configurable: true,
-            });
+            const fontSet = _createFontFaceSet();
+            Object.defineProperty(globalThis.document, 'fonts', { value: fontSet, configurable: true });
         }
     }
 
