@@ -341,6 +341,26 @@ impl LayoutEngine {
                 // replaced-object fallback). The engine gave it 0x0, so
                 // measurement containers holding an SVG (emoji/bounds
                 // probes) collapsed to a degenerate rect.
+                if matches!(
+                    elem.name.local.as_str(),
+                    "svg" | "iframe" | "embed" | "object" | "img" | "video" | "canvas"
+                ) && taffy_style.size.width == Dimension::auto()
+                    && taffy_style.size.height == Dimension::auto()
+                {
+                    // Replaced elements have intrinsic fallback dimensions
+                    // (300x150 per CSS) even without width/height.
+                    let attr = |a: &str| -> Option<f32> {
+                        elem.attrs
+                            .iter()
+                            .find(|at| at.name.local.eq_ignore_ascii_case(a))
+                            .and_then(|at| at.value.trim().parse::<f32>().ok())
+                            .filter(|v| *v > 0.0)
+                    };
+                    let w = attr("width").unwrap_or(300.0);
+                    let h = attr("height").unwrap_or(150.0);
+                    taffy_style.size.width = Dimension::length(w);
+                    taffy_style.size.height = Dimension::length(h);
+                }
                 if elem.name.local.eq_ignore_ascii_case("svg") {
                     let attr = |a: &str| -> Option<f32> {
                         elem.attrs
