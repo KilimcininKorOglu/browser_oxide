@@ -136,15 +136,21 @@ pub fn measure_text_metrics(text: &str, font: &ParsedFont, os_name: &str) -> Tex
         actual_bounding_box_right: run.bbox_right.max(run.width),
         actual_bounding_box_ascent: run.bbox_ascent,
         actual_bounding_box_descent: run.bbox_descent,
-        font_bounding_box_ascent: run.ascent,
-        font_bounding_box_descent: run.descent,
+        // Chrome rounds the font-level box to whole pixels (real capture:
+        // 40px sans-serif reports ascent 37, descent 9 — integers even
+        // though hhea math gives 37.1/8.9). actualBoundingBox* keeps the
+        // rasterized sub-pixel values.
+        font_bounding_box_ascent: run.ascent.round(),
+        font_bounding_box_descent: run.descent.round(),
         em_height_ascent: em_ascent,
         em_height_descent: em_descent,
         // Canvas 2D default textBaseline is "alphabetic" = 0. The other
         // baselines are offsets relative to the alphabetic baseline.
-        hanging_baseline: run.ascent * 0.8,
+        // Hanging tracks the ROUNDED ascent on a real Chrome (29.6 = 37*0.8).
+        hanging_baseline: run.ascent.round() * 0.8,
         alphabetic_baseline: 0.0,
-        ideographic_baseline: -run.descent * 0.5,
+        // Real capture: ideographic = -descent exactly (monospace -9, serif -10).
+        ideographic_baseline: -(run.descent.round()),
     }
 }
 

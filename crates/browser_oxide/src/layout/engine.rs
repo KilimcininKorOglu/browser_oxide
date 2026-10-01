@@ -270,6 +270,48 @@ impl LayoutEngine {
         ctx
     }
 
+
+    /// True when every ELEMENT child of `node_id` is inline-level
+    /// (inline, inline-block, ruby). Text children always participate in
+    /// inline flow. One block-level child forces the container to keep
+    /// block behaviour — a real browser would split into anonymous line
+    /// boxes, which taffy cannot express.
+    fn children_are_all_inline(&self, dom: &Dom, node_id: NodeId) -> bool {
+        let kids = dom.children(node_id);
+        if kids.is_empty() {
+            return false;
+        }
+        let mut saw_inline_content = false;
+        for cid in kids {
+            match dom.get(cid).map(|n| &n.data) {
+                Some(NodeData::Text(_)) => saw_inline_content = true,
+                Some(NodeData::Element(_)) => {
+                    let mut declared = ua_declarations(
+                        dom.get(cid)
+                            .and_then(|n| n.as_element())
+                            .expect("checked element"),
+                    );
+                    declared.extend(self.cascaded(dom, cid));
+                    declared.extend(
+                        dom.get(cid)
+                            .and_then(|n| n.as_element())
+                            .map(|e| self.parse_inline_style(e))
+                            .unwrap_or_default(),
+                    );
+                    let computed = ComputedStyle::resolve(&declared, None);
+                    match computed.get(&PropertyId::Display) {
+                        Some(CssValue::Display(
+                            Display::Inline | Display::InlineBlock | Display::InlineTable,
+                        )) => saw_inline_content = true,
+                        _ => return false,
+                    }
+                }
+                _ => {}
+            }
+        }
+        saw_inline_content
+    }
+
     /// Build the taffy node for `node_id` using already-built children
     /// recorded in `self.dom_to_taffy` (set by prior Finish calls in
     /// post-order). Returns nothing — the result lives in `dom_to_taffy`.
@@ -313,6 +355,23 @@ impl LayoutEngine {
                     return;
                 }
                 let mut taffy_style = computed_to_taffy(&computed, ctx);
+                // Inline FLOW: a block container whose children are all
+                // inline-level lays them out on one horizontal line in a
+                // real browser. taffy has no inline layout, so consecutive
+                // spans stacked vertically — the second of two sibling
+                // spans read x = the FIRST's x, y = a full line down.
+                // Flex-row reproduces the line box: items flow left to
+                // right, the row height is the tallest item, and inline
+                // blocks keep their intrinsic size.
+                if matches!(
+                    display,
+                    Some(CssValue::Display(Display::Block))
+                ) && self.children_are_all_inline(dom, node_id) {
+                    taffy_style.display = taffy::Display::Flex;
+                    taffy_style.flex_direction = taffy::FlexDirection::Row;
+                    taffy_style.align_items = Some(taffy::AlignItems::BASELINE);
+                    taffy_style.flex_wrap = taffy::FlexWrap::Wrap;
+                }
                 // Inline boxes shrink to their content; taffy block layout
                 // would otherwise stretch an auto width to the container
                 // (a span full of text read 1920px — the body width).

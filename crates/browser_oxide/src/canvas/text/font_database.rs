@@ -182,11 +182,19 @@ impl FontDatabase {
                 return Some(id);
             }
         }
-        // Whole chain unresolvable → final fallback to sans-serif so
-        // shaping still renders something plausible (e.g. all-emoji
-        // strings on a build without an emoji face).
+        // Whole chain unresolvable → fall back to the DEFAULT font of the
+        // generic context the chain names. Real Chrome resolves a missing
+        // family to the context's default face (a missing name inside a
+        // monospace list measures like Courier, not Helvetica), so the
+        // fallback must follow the first generic keyword in the chain.
         let style = if italic { Style::Italic } else { Style::Normal };
-        let fallback = [Family::SansSerif];
+        let fallback_generic = families.iter().find_map(|f| match f.as_str() {
+            "monospace" => Some(Family::Monospace),
+            "serif" => Some(Family::Serif),
+            "sans-serif" => Some(Family::SansSerif),
+            _ => None,
+        });
+        let fallback = [fallback_generic.unwrap_or(Family::SansSerif)];
         self.inner.query(&Query {
             families: &fallback,
             weight: Weight(weight),
