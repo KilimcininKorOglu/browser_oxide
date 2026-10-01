@@ -6302,7 +6302,7 @@ async fn canvas_todataurl_deterministic_within_profile() {
 }
 
 #[tokio::test]
-async fn canvas_todataurl_differs_across_profiles() {
+async fn canvas_todataurl_deterministic_across_profiles() {
     let mac = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_macos()).await;
     let win = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_windows()).await;
     let lin = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_linux()).await;
