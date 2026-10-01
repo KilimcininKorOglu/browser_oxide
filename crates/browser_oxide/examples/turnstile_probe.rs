@@ -30,7 +30,13 @@ async fn main() {
     local
         .run_until(async move {
             let t0 = Instant::now();
-            let mut page = match browser_oxide::Page::navigate(&url, profile, 3).await {
+            let diag_init = r#"
+                globalThis.__evts = {};
+                addEventListener('message', (e) => {
+                    try { const ev = e.data && e.data.event; if (ev) globalThis.__evts[ev] = (globalThis.__evts[ev] || 0) + 1; } catch (_) {}
+                });
+            "#;
+            let mut page = match browser_oxide::Page::navigate_with_init(&url, profile, 3, vec![diag_init.to_string()]).await {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!("[navigate] ERROR: {e}");
@@ -153,6 +159,9 @@ async fn main() {
                 None => {
                     println!("NO-TOKEN after {:.1}s", t0.elapsed().as_secs_f32());
                     println!("iframes={}", page.child_iframe_count());
+                    if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__evts || {})") {
+                        eprintln!("[EVENTS] {}", v);
+                    }
                     page.consume_and_print_logs();
                     std::process::exit(2);
                 }
