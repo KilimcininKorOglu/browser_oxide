@@ -188,6 +188,17 @@
             Promise.resolve().then(() => {
                 try { child.dispatchEvent(new Event("load")); } catch (_e) {}
             });
+            // Also fire load when src changes after insertion
+            const _origIframeSetAttr = child.setAttribute ? child.setAttribute.bind(child) : null;
+            if (_origIframeSetAttr) {
+                child.setAttribute = function(name, value) {
+                    const oldSrc = this.getAttribute("src");
+                    _origIframeSetAttr(name, value);
+                    if (String(name).toLowerCase() === "src" && oldSrc !== String(value)) {
+                        window.__oxIframeSrcChange(this);
+                    }
+                };
+            }
             // CHILD REALM: when a nested <iframe> gains a src, fetch the
             // content and execute its scripts INLINE in this realm. Turnstile
             // hosts its inner widget frame one level down — without loading it,
@@ -1410,6 +1421,20 @@
         value: (el, src) => _startImageLoad(el, src),
         writable: true, configurable: true, enumerable: false,
     });
+    // --- <iframe> src change navigation. Real Chrome loads the new URL
+    // and fires a `load` event when an iframe's src changes after
+    // insertion. The Turnstile api.js uses this to navigate the challenge
+    // iframe between rounds — without it, the retry mechanism breaks.
+    window.__oxIframeSrcChange = (el) => {
+        const src = el.getAttribute("src") || "";
+        if (src === "about:blank" || src === "") {
+            // about:blank loads immediately
+            setTimeout(() => { try { el.dispatchEvent(new Event("load")); } catch (_e) {} }, 0);
+        } else if (src.startsWith("http")) {
+            // Simulate navigation delay
+            setTimeout(() => { try { el.dispatchEvent(new Event("load")); } catch (_e) {} }, 100);
+        }
+    };
     function _startImageLoad(el, raw) {
         if (!raw) return;
         let url = raw;

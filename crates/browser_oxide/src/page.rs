@@ -1102,6 +1102,18 @@ impl Page {
         delivered
     }
 
+    /// Scan the current DOM for iframes and materialize any that don't
+    /// have a ChildIframe yet. This handles iframes created by page
+    /// scripts (like Turnstile's api.js creating challenge iframes).
+    pub async fn auto_refresh_frames(&mut self) -> usize {
+        // Use the navigation client stored on the page
+        let client = crate::net::HttpClient::shared(&crate::stealth::presets::chrome_148_macos())
+            .expect("client");
+        let profile = crate::stealth::presets::chrome_148_macos();
+        let base = self.url.clone();
+        self.rematerialize_iframes(&base, &client, &profile).await
+    }
+
     /// Evaluate arbitrary JavaScript and return the result as a string.
     pub fn evaluate(&mut self, js: &str) -> Result<String, deno_core::error::AnyError> {
         self.event_loop.execute_script(js)
