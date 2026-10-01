@@ -182,7 +182,7 @@ pub fn chrome_148_windows() -> StealthProfile {
 pub fn chrome_148_macos() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
-        user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.48 Safari/537.36".into(),
+        user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         browser_name: "Chrome".into(),
         // browser_version stores the FULL version — used by sec-ch-ua-full-version-list
         // and by build_sec_ch_ua's major-version split. The UA string above uses
@@ -194,7 +194,7 @@ pub fn chrome_148_macos() -> StealthProfile {
         vendor: "Google Inc.".into(),
         vendor_sub: "".into(),
         product_sub: "20030107".into(),
-        app_version: "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.48 Safari/537.36".into(),
+        app_version: "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
 
         // Phase 7 — match real Chrome 148 on macOS arm64 (M3 MacBook Pro):
         // 1512x982 viewport, availHeight 949 (982 - 33 top), colorDepth 30,
@@ -271,7 +271,7 @@ pub fn chrome_148_macos() -> StealthProfile {
 pub fn chrome_148_linux() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
-        user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         browser_name: "Chrome".into(),
         browser_version: "148.0.7778.168".into(),
         os_name: "Linux".into(),
@@ -280,7 +280,7 @@ pub fn chrome_148_linux() -> StealthProfile {
         vendor: "Google Inc.".into(),
         vendor_sub: "".into(),
         product_sub: "20030107".into(),
-        app_version: "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        app_version: "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
 
         screen_width: 1920,
         screen_height: 1080,
@@ -345,7 +345,7 @@ pub fn chrome_148_linux() -> StealthProfile {
 pub fn chrome_148_ru() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
-        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         browser_name: "Chrome".into(),
         browser_version: "148.0.7778.168".into(),
         os_name: "Windows".into(),
@@ -354,7 +354,7 @@ pub fn chrome_148_ru() -> StealthProfile {
         vendor: "Google Inc.".into(),
         vendor_sub: "".into(),
         product_sub: "20030107".into(),
-        app_version: "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        app_version: "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         screen_width: 1920, screen_height: 1080,
         screen_avail_width: 1920, screen_avail_height: 1040,
         screen_avail_top: 0,
@@ -393,7 +393,7 @@ pub fn chrome_148_ru() -> StealthProfile {
 pub fn chrome_148_cn() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
-        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         browser_name: "Chrome".into(),
         browser_version: "148.0.7778.168".into(),
         os_name: "Windows".into(),
@@ -402,7 +402,7 @@ pub fn chrome_148_cn() -> StealthProfile {
         vendor: "Google Inc.".into(),
         vendor_sub: "".into(),
         product_sub: "20030107".into(),
-        app_version: "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        app_version: "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         screen_width: 1920, screen_height: 1080,
         screen_avail_width: 1920, screen_avail_height: 1040,
         screen_avail_top: 0,
