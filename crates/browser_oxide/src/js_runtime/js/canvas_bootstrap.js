@@ -177,7 +177,23 @@
         set lineWidth(v) { ops.op_canvas_set_line_width(this.#id, +v); }
         set globalAlpha(v) { ops.op_canvas_set_global_alpha(this.#id, +v); }
         set font(v) { this._font = String(v); ops.op_canvas_set_font(this.#id, this._font); }
-        get font() { return this._font || "10px sans-serif"; }
+        get font() {
+            const raw = this._font || "10px sans-serif";
+            // Chrome normalizes the shorthand on read: family names that
+            // need quoting come back double-quoted ("40px \"Andale Mono\""),
+            // never with the author's single quotes.
+            const m = /^(.*?\d+(?:\.\d+)?(?:px|pt|em|%)(?:\s*\/\s*[^(,)]+)?)\s+(.*)$/.exec(raw.trim());
+            if (!m) return raw;
+            const families = m[2].split(",").map(f => {
+                let t = f.trim();
+                if ((t.startsWith(") && t.endsWith(")) || (t.startsWith('"') && t.endsWith('"'))) {
+                    t = t.slice(1, -1);
+                }
+                return /^[A-Za-z-]+(?:\s+[A-Za-z-]+)*$/.test(t) && !t.includes(" ")
+                    ? t : '"' + t.replace(/"/g, '') + '"';
+            });
+            return m[1] + " " + families.join(", ");
+        }
 
         // Rectangles
         fillRect(x, y, w, h) { ops.op_canvas_fill_rect(this.#id, x, y, w, h); }

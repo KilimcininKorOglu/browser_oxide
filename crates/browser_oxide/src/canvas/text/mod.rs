@@ -229,6 +229,10 @@ fn shape_with_fallback(
     // desc + gap) — a CJK fallback sets a span's offsetHeight even when
     // the primary face is Latin-only.
     let mut tallest = (0.0f32, 0.0f32, 0.0f32);
+    let mut bbox_left = f32::INFINITY;
+    let mut bbox_ascent = f32::NEG_INFINITY;
+    let mut bbox_descent = f32::NEG_INFINITY;
+    let mut any_bbox = false;
     for segment in uncovered_segments(text, data, idx) {
         let covered_by_primary = segment.1;
         let run = if covered_by_primary {
@@ -245,6 +249,19 @@ fn shape_with_fallback(
             g.x_offset += consumed;
             merged.glyphs.push(g);
         }
+        if run.bbox_left != f32::INFINITY {
+            let seg_left = consumed + run.bbox_left;
+            if seg_left < bbox_left {
+                bbox_left = seg_left;
+            }
+            any_bbox = true;
+        }
+        if run.bbox_ascent > bbox_ascent {
+            bbox_ascent = run.bbox_ascent;
+        }
+        if run.bbox_descent > bbox_descent {
+            bbox_descent = run.bbox_descent;
+        }
         consumed += run.width;
         merged.width += run.width;
         merged.bbox_right = merged.bbox_right.max(consumed);
@@ -252,6 +269,11 @@ fn shape_with_fallback(
     merged.ascent = tallest.0;
     merged.descent = tallest.1;
     merged.line_gap = tallest.2;
+    if any_bbox {
+        merged.bbox_left = bbox_left;
+        merged.bbox_ascent = bbox_ascent;
+        merged.bbox_descent = bbox_descent;
+    }
     merged
 }
 
