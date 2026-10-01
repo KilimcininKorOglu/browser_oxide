@@ -969,8 +969,25 @@ impl Canvas2D {
     // --- Text (real shaping via rustybuzz + raster via swash) ---
 
     /// Measure text width in CSS pixels (Canvas 2D `measureText().width`).
+    ///
+    /// Uses Skia's text measurement (same as Chrome — both use Skia).
+    /// Falls back to the rustybuzz-based measurement if the font face
+    /// can't be loaded into Skia.
     pub fn measure_text(&self, text: &str) -> f64 {
-        text::measure_text_width(text, &self.state.font, &self.os_name)
+        use skia_safe::{Font as SkFont, FontMgr as SkFontMgr};
+        let Some((data, idx, _run)) = text::shape_run(text, &self.state.font, &self.os_name) else {
+            return 0.0;
+        };
+        let size_px = self.state.font.size_px;
+        let mgr = SkFontMgr::new();
+        let Some(typeface) = mgr.new_from_data(data, Some(idx as usize)) else {
+            return text::measure_text_width(text, &self.state.font, &self.os_name);
+        };
+        let mut font = SkFont::from_typeface(typeface, Some(size_px));
+        font.set_subpixel(true);
+        font.set_linear_metrics(true);
+        let (width, _bounds) = font.measure_text(text, None);
+        width as f64
     }
 
     /// Full 13-field `TextMetrics` object for

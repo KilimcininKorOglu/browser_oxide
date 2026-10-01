@@ -234,14 +234,16 @@ fn resolve_family<'a>(name: &'a str, os_name: &str) -> Vec<Family<'a>> {
         "cursive" => vec![Family::Cursive],
         "fantasy" => vec![Family::Fantasy],
         // Chrome substitution table for families we don't bundle.
-        // We map standard Windows/macOS/Linux families to our bundled
-        // Liberation set based on the profile's OS.
+        // On macOS we now load system fonts, so resolve to the REAL font
+        // name (Chrome uses CoreText with system fonts on macOS too).
+        // On other platforms map to the bundled Liberation set.
         "arial" | "helvetica" | "helvetica neue" | "tahoma" | "verdana" | "segoe ui"
         | "calibri" => {
-            if os_name == "Windows" || os_name == "macOS" || os_name == "Linux" {
-                vec![Family::Name("Liberation Sans"), Family::SansSerif]
-            } else {
+            if os_name == "macOS" {
+                // macOS has real system fonts — use them directly
                 vec![Family::Name(name)]
+            } else {
+                vec![Family::Name("Liberation Sans"), Family::SansSerif]
             }
         }
         "times" | "times new roman" | "georgia" => {
