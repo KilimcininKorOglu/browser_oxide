@@ -938,6 +938,10 @@ impl Page {
             if let Some(srcdoc) = &info.srcdoc {
                 match iframe::ChildIframe::from_srcdoc(info.node_id, srcdoc, profile).await {
                     Ok(mut child) => {
+                        let _ = child.event_loop.execute_script(&format!(
+                            "globalThis.__oxSelfNodeId = {};",
+                            child.node_id.to_raw()
+                        ));
                         let _nested = child.materialize_children(client, profile, base_url).await;
                         self.children.push(child);
                         materialized += 1;
@@ -964,6 +968,10 @@ impl Page {
                             // materialize too — Turnstile hosts its widget
                             // one level down; an unloaded nested frame
                             // stalls the round.
+                            let _ = child.event_loop.execute_script(&format!(
+                                "globalThis.__oxSelfNodeId = {};",
+                                child.node_id.to_raw()
+                            ));
                             let _nested =
                                 child.materialize_children(client, profile, &full_src).await;
                             self.children.push(child);
@@ -984,12 +992,73 @@ impl Page {
     /// the postMessage traffic queued on both sides of each cross-origin
     /// frame. Returns the number of messages delivered.
     pub async fn pump_frames(&mut self, budget: Duration) -> usize {
+        self.pump_frames_ctx(budget, None, None).await
+    }
+
+    /// [`Self::pump_frames`] with a client/profile so frame-load requests
+    /// raised by NESTED realms can be materialized mid-round (Turnstile
+    /// creates its inner widget frame without a src and assigns one later).
+    pub async fn pump_frames_ctx(
+        &mut self,
+        budget: Duration,
+        client: Option<&crate::net::HttpClient>,
+        profile: Option<&crate::stealth::StealthProfile>,
+    ) -> usize {
         const TO_PARENT: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b && b.drainToParent ? b.drainToParent() : '[]'; })()";
         const TO_CHILDREN: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b ? b.drainToChildren() : '[]'; })()";
         let mut delivered = 0usize;
         for child in self.children.iter_mut() {
             if let Err(e) = child.event_loop.run_until_idle(budget).await {
                 tracing::warn!(error = %e, "child iframe event loop error");
+            }
+            // Nested levels pump first so their messages reach this
+            // frame's realm in the same cycle.
+            let nested = child.pump_frames(budget).await;
+            delivered += nested;
+            // A nested realm asked for a frame load — materialize it.
+            let nested_reqs = crate::js_runtime::extensions::dom_ext::take_nested_frame_requests();
+            for (self_id, iframe_id, src) in nested_reqs {
+                if self_id != child.node_id.to_raw() {
+                    eprintln!(
+                        "[NFR] MISMATCH self={} want={}",
+                        child.node_id.to_raw(),
+                        self_id
+                    );
+                    continue;
+                }
+                let (Some(client), Some(profile)) = (client, profile) else {
+                    tracing::warn!("nested frame request ignored: no client/profile");
+                    continue;
+                };
+                let full_src = if src.starts_with("http")
+                    || src.starts_with("data:")
+                    || src.starts_with("blob:")
+                {
+                    src.clone()
+                } else if let Ok(base) = url::Url::parse(&self.url) {
+                    base.join(&src)
+                        .map(|u| u.to_string())
+                        .unwrap_or(src.clone())
+                } else {
+                    src.clone()
+                };
+                match iframe::ChildIframe::from_url(
+                    crate::dom::node::NodeId::from_raw(iframe_id),
+                    &full_src,
+                    client,
+                    Some(profile),
+                    None,
+                )
+                .await
+                {
+                    Ok(grand) => {
+                        child.children.push(grand);
+                        tracing::info!(src = %full_src, "nested frame materialized on request");
+                    }
+                    Err(e) => {
+                        tracing::warn!(src = %full_src, error = %e, "nested frame load failed")
+                    }
+                }
             }
             let queued = child.evaluate(TO_PARENT).unwrap_or_default();
             for msg in iframe::parse_frame_messages(&queued) {

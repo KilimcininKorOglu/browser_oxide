@@ -882,6 +882,16 @@ pub fn op_dom_get_all_computed_styles(
     res
 }
 
+/// Drain queued nested-frame requests (page layer, each pump cycle).
+pub fn drain_nested_frame_requests() -> Vec<(u32, u32, String)> {
+    NESTED_FRAME_REQUESTS.with(|q| std::mem::take(&mut *q.borrow_mut()))
+}
+
+/// Page-layer drain of nested frame requests (see op_nested_frame_request).
+pub fn take_nested_frame_requests() -> Vec<(u32, u32, String)> {
+    drain_nested_frame_requests()
+}
+
 #[op2]
 #[string]
 pub fn op_dom_get_computed_style(
@@ -1290,6 +1300,30 @@ fn expand_shorthand(name: &str, value: &str) -> Vec<(String, String)> {
         }
         _ => vec![],
     }
+}
+
+thread_local! {
+    /// Child-realm frame requests: (self_node_id, iframe_node_id, src).
+    /// A nested realm cannot load its own frames (no HttpClient here);
+    /// the page layer drains this queue each pump cycle and materializes.
+    static NESTED_FRAME_REQUESTS: std::cell::RefCell<Vec<(u32, u32, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Called from a nested realm when an <iframe> with a src enters its
+/// document: `self_node_id` identifies the owning ChildIframe (stashed as
+/// `__oxSelfNodeId` at realm build), `iframe_node_id` is the frame element
+/// inside that realm's DOM.
+#[op2(fast)]
+pub fn op_nested_frame_request(
+    #[smi] self_node_id: i32,
+    #[smi] iframe_node_id: i32,
+    #[string] src: String,
+) {
+    NESTED_FRAME_REQUESTS.with(|q| {
+        q.borrow_mut()
+            .push((self_node_id as u32, iframe_node_id as u32, src));
+    });
 }
 
 /// Extract a property value from an element's inline style attribute.
@@ -1930,6 +1964,7 @@ deno_core::extension!(
         op_dom_get_computed_style,
         op_dom_get_all_computed_styles,
         op_dom_style_generation,
+        op_nested_frame_request,
         op_cssom_style_owners,
         op_cssom_external_count,
         op_cssom_external_css,

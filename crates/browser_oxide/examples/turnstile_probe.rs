@@ -36,7 +36,7 @@ async fn main() {
                     try { const ev = e.data && e.data.event; if (ev) globalThis.__evts[ev] = (globalThis.__evts[ev] || 0) + 1; } catch (_) {}
                 });
             "#;
-            let mut page = match browser_oxide::Page::navigate_with_init(&url, profile, 3, vec![diag_init.to_string()]).await {
+            let mut page = match browser_oxide::Page::navigate_with_init(&url, profile.clone(), 3, vec![diag_init.to_string()]).await {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!("[navigate] ERROR: {e}");
@@ -72,7 +72,14 @@ async fn main() {
             let mut last_iframes = 0usize;
             let mut last_delivered = 0usize;
             while t0.elapsed() < Duration::from_secs(budget_secs) {
-                let delivered = page.pump_frames(Duration::from_millis(400)).await;
+                let client = browser_oxide::net::HttpClient::shared(&profile).expect("client");
+                let delivered = page
+                    .pump_frames_ctx(
+                        Duration::from_millis(400),
+                        Some(&client),
+                        Some(&profile),
+                    )
+                    .await;
                 let iframes = page.child_iframe_count();
                 if iframes != last_iframes {
                     eprintln!("[iframes] {iframes}");
