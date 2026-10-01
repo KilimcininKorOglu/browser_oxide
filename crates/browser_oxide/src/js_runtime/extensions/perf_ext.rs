@@ -92,7 +92,7 @@ impl PerfState {
         // converting to f64 milliseconds. This gives the same f64 bit
         // pattern Chrome produces for the same grid crossing.
         let quantized_f32 = ((raw_us / resolution_us).floor()) as f32;
-        (quantized_f32 as f64 * resolution_us as f64) / 1000.0
+        (quantized_f32 as f64 * resolution_us) / 1000.0
     }
 }
 

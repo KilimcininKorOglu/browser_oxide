@@ -195,7 +195,7 @@
                     const oldSrc = this.getAttribute("src");
                     _origIframeSetAttr(name, value);
                     if (String(name).toLowerCase() === "src" && oldSrc !== String(value)) {
-                        window.__oxIframeSrcChange(this);
+                        globalThis.__oxIframeSrcChange(this);
                     }
                 };
             }
@@ -1425,7 +1425,7 @@
     // and fires a `load` event when an iframe's src changes after
     // insertion. The Turnstile api.js uses this to navigate the challenge
     // iframe between rounds — without it, the retry mechanism breaks.
-    window.__oxIframeSrcChange = (el) => {
+    globalThis.__oxIframeSrcChange = (el) => {
         const src = el.getAttribute("src") || "";
         if (src === "about:blank" || src === "") {
             // about:blank loads immediately
