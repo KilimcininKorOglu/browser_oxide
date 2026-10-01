@@ -85,6 +85,8 @@ pub fn op_get_profile_value(state: &mut OpState, #[string] key: &str) -> String 
             "connection_rtt" => p.connection_rtt.to_string(),
             "connection_downlink" => p.connection_downlink.to_string(),
             "prefers_color_scheme" => p.prefers_color_scheme.clone(),
+            "color_gamut" => p.color_gamut.clone(),
+            "dynamic_range" => p.dynamic_range.clone(),
             "pointer_type" => p.pointer_type.clone(),
             "hover_capability" => p.hover_capability.clone(),
             "webgl_vendor" => p.webgl_vendor.clone(),

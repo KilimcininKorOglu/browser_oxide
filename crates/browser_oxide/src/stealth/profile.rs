@@ -166,6 +166,10 @@ pub struct StealthProfile {
     /// don't yet set this explicitly.
     #[serde(default = "default_color_gamut")]
     pub color_gamut: String,
+    /// `dynamic-range` media-query value. A p3/HDR panel answers "high";
+    /// plain sRGB panels answer "standard".
+    #[serde(default = "default_dynamic_range")]
+    pub dynamic_range: String,
 
     // === Window dimensions ===
     pub inner_width: u32,
@@ -193,6 +197,10 @@ pub struct StealthProfile {
     /// `BROWSER_OXIDE_CSP_BYPASS=1`.
     #[serde(default = "default_true")]
     pub enforce_csp: bool,
+}
+
+fn default_dynamic_range() -> String {
+    "standard".to_string()
 }
 
 fn default_color_gamut() -> String {
