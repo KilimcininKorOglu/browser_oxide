@@ -1100,60 +1100,23 @@ impl Canvas2D {
 
     /// Encode with tiny invisible noise to break deterministic fingerprinting.
     pub fn to_data_url_with_jitter(&self) -> String {
-        let mut pixels = self.get_image_data(0, 0, self.width, self.height);
-        if !pixels.is_empty() {
-            // PCG32-style PRNG seeded by the profile
-            let mut state = self.seed.wrapping_add(0x9E3779B97F4A7C15);
-            let inc = (self.seed >> 32) | 1;
-
-            let next_u32 = |s: &mut u64| {
-                let old_state = *s;
-                *s = old_state
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(inc);
-                let xorshifted = (((old_state >> 18) ^ old_state) >> 27) as u32;
-                let rot = (old_state >> 59) as u32;
-                (xorshifted >> rot) | (xorshifted << (rot.wrapping_neg() & 31))
-            };
-
-            for i in (0..pixels.len()).step_by(4) {
-                let val = next_u32(&mut state);
-                if (val % 100) < 5 {
-                    // Jitter 5% of pixels
-                    // Perturb RGB by +/- 1 in a way that remains in [0, 255]
-                    pixels[i] = if pixels[i] > 128 {
-                        pixels[i].wrapping_sub(1)
-                    } else {
-                        pixels[i].wrapping_add(1)
-                    };
-                    pixels[i + 1] = if pixels[i + 1] > 128 {
-                        pixels[i + 1].wrapping_sub(1)
-                    } else {
-                        pixels[i + 1].wrapping_add(1)
-                    };
-                    pixels[i + 2] = if pixels[i + 2] > 128 {
-                        pixels[i + 2].wrapping_sub(1)
-                    } else {
-                        pixels[i + 2].wrapping_add(1)
-                    };
-                }
-            }
-        }
+        // NO jitter: real Chrome doesn't add noise to canvas output. The
+        // jitter was designed to "break deterministic fingerprinting" but
+        // Turnstile's VM DETECTS manipulation — two identical draws must
+        // produce identical bytes (Chrome guarantees this). Use the same
+        // pinned encoder as `to_png_bytes` for consistent output.
+        let unpremultiplied = self.get_image_data(0, 0, self.width, self.height);
         let mut buf = Vec::new();
         {
             let mut encoder = png::Encoder::new(&mut buf, self.width, self.height);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
-            // Same pinned compression/filter as `to_png_bytes`: without
-            // these the encoder emits ~75x-larger PNGs for simple canvases
-            // (a 16x16 solid fill measured 13,954 base64 chars vs Chrome's
-            // 186) — a size tell any canvas fingerprint picks up.
-            encoder.set_compression(png::Compression::Best);
+            encoder.set_compression(png::Compression::Default);
             encoder.set_filter(png::FilterType::Paeth);
             encoder.set_adaptive_filter(png::AdaptiveFilterType::Adaptive);
             let mut writer = encoder.write_header().expect("PNG header write failed");
             writer
-                .write_image_data(&pixels)
+                .write_image_data(&unpremultiplied)
                 .expect("PNG data write failed");
         }
         let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);

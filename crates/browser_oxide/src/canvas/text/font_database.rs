@@ -93,6 +93,30 @@ impl FontDatabase {
         db.set_cursive_family("Liberation Sans");
         db.set_fantasy_family("Liberation Sans");
 
+        // macOS: load system fonts for real font metrics. Chrome on macOS
+        // uses system fonts (Helvetica, Arial, etc.) — bundled fonts have
+        // different metrics, and font measurement differences are a
+        // fingerprint vector. Load system font files directly.
+        if cfg!(target_os = "macos") {
+            for dir in [
+                "/System/Library/Fonts",
+                "/System/Library/Fonts/Supplemental",
+                "/Library/Fonts",
+            ] {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        if matches!(ext, "ttf" | "otf" | "ttc") {
+                            if let Ok(data) = std::fs::read(&path) {
+                                db.load_font_data(data);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         FontDatabase { inner: db }
     }
 

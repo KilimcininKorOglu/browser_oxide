@@ -182,6 +182,12 @@
         // parity — see __oxSyncFrameIndices in window_bootstrap).
         if (childTag === 'iframe' || childTag === 'frame') {
             try { globalThis.__oxSyncFrameIndices && globalThis.__oxSyncFrameIndices(); } catch (_e) {}
+            // Chrome fires `load` on every iframe element when it enters
+            // the document. about:blank and srcless iframes load
+            // immediately. Challenge scripts wait for this event.
+            Promise.resolve().then(() => {
+                try { child.dispatchEvent(new Event("load")); } catch (_e) {}
+            });
             // CHILD REALM: when a nested <iframe> gains a src, fetch the
             // content and execute its scripts INLINE in this realm. Turnstile
             // hosts its inner widget frame one level down — without loading it,
