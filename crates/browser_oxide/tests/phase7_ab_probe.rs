@@ -241,7 +241,7 @@ async fn phase7_d4_screen_webgl_tostringtag() {
     .unwrap();
 
     // Screen preset matches Chrome 147 macOS arm64 (M3) values
-    let want = [
+    let mut want = vec![
         ("screen.width", "1512"),
         ("screen.height", "982"),
         ("screen.availWidth", "1512"),
@@ -249,8 +249,15 @@ async fn phase7_d4_screen_webgl_tostringtag() {
         ("screen.availTop", "33"),
         ("screen.colorDepth", "30"),
         ("screen.pixelDepth", "30"),
-        ("navigator.hardwareConcurrency", "8"),
     ];
+    // Host-adaptive since the preset reads sysctl: the page must report
+    // exactly what the host reports (real Chrome does too).
+    let host_cores = std::process::Command::new("sysctl")
+        .args(["-n", "hw.ncpu"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "8".to_string());
+    want.push(("navigator.hardwareConcurrency", host_cores.as_str()));
     for (k, v) in want {
         let got = p.evaluate(&format!("String({k})")).unwrap();
         assert_eq!(got.trim_matches('"'), v, "{k} mismatch");

@@ -183,6 +183,19 @@
         if (childTag === 'iframe' || childTag === 'frame') {
             try { globalThis.__oxSyncFrameIndices && globalThis.__oxSyncFrameIndices(); } catch (_e) {}
         }
+        // Inserted images load like parser-seen ones: Chrome fetches an
+        // <img src> immediately whether it arrives from the parser, from
+        // innerHTML, or through appendChild. The challenge image entry
+        // stalls its whole round waiting for this load.
+        if (childTag === 'img') {
+            try {
+                const src = child.getAttribute && child.getAttribute('src');
+                if (src) {
+                    const init = globalThis.__oxStartImageLoad;
+                    if (init) init(child, src);
+                }
+            } catch (_e) {}
+        }
         const type = (child.getAttribute?.('type') || '').toLowerCase();
         const isJs = !type || type === 'text/javascript' || type === 'application/javascript' || type === 'module';
         
@@ -196,7 +209,11 @@
             const code = child.textContent || child.innerText || '';
             if (code && code.trim()) {
                 console.log(`[DOM] executing inline script (${code.length} bytes)`);
-                try { _runClassicScript(code, ''); } catch (e) {
+                // Chrome names a dynamically-inserted inline script by the
+                // DOCUMENT URL — an empty name shows `<anonymous>` in every
+                // stack frame and breaks the VM's stack-parsing audit.
+                const _docUrl = (globalThis.location && globalThis.location.href) || '';
+                try { _runClassicScript(code, _docUrl); } catch (e) {
                     console.log(`[DOM] inline script error: ${e.message}`);
                 }
             }
@@ -1331,23 +1348,15 @@
         },
         enumerable: true, configurable: true
     });
-    Object.defineProperty(HTMLImageElement.prototype, "naturalWidth", {
-        get() { return this.width; },
-        enumerable: true, configurable: true
-    });
-    Object.defineProperty(HTMLImageElement.prototype, "naturalHeight", {
-        get() { return this.height; },
-        enumerable: true, configurable: true
-    });
-    Object.defineProperty(HTMLImageElement.prototype, "complete", {
-        get() { return true; }, 
-        enumerable: true, configurable: true
-    });
     // --- <img> loading. Real Chrome fetches every img src and fires
     // load/error with the decoded intrinsic size. Challenge scripts
     // (Turnstile's image entry) load an image, wait for `load`, and
     // measure the pixels — a never-loading image stalls their flow.
     const _imgStates = new WeakMap();
+    Object.defineProperty(globalThis, "__oxStartImageLoad", {
+        value: (el, src) => _startImageLoad(el, src),
+        writable: true, configurable: true, enumerable: false,
+    });
     function _startImageLoad(el, raw) {
         if (!raw) return;
         let url = raw;

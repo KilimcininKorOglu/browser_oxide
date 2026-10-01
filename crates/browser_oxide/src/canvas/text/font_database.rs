@@ -44,10 +44,11 @@ const LIBERATION_MONO_ITALIC: &[u8] = include_bytes!("../fonts/LiberationMono-It
 const LIBERATION_MONO_BOLD_ITALIC: &[u8] = include_bytes!("../fonts/LiberationMono-BoldItalic.ttf");
 const DEJAVU_SANS: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 const NOTO_SANS_REGULAR: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
+const NOTO_EMOJI_REGULAR: &[u8] = include_bytes!("../fonts/NotoEmoji-Regular.ttf");
 
 /// Number of faces we bundle and advertise via `document.fonts.size`.
 /// Keep in sync with the `load_font_data` calls in `init_bundled`.
-pub const BUNDLED_FACE_COUNT: usize = 14;
+pub const BUNDLED_FACE_COUNT: usize = 15;
 
 impl FontDatabase {
     pub fn get() -> &'static FontDatabase {
@@ -75,6 +76,7 @@ impl FontDatabase {
         db.load_font_data(LIBERATION_MONO_BOLD_ITALIC.to_vec());
         db.load_font_data(DEJAVU_SANS.to_vec());
         db.load_font_data(NOTO_SANS_REGULAR.to_vec());
+        db.load_font_data(NOTO_EMOJI_REGULAR.to_vec());
 
         // Chrome-on-Linux family aliases. When a site asks for Arial
         // (which is a Microsoft-licensed face we don't bundle), Linux
@@ -125,6 +127,11 @@ impl FontDatabase {
     /// Used by `query_chain` so the user-supplied fallback chain is
     /// honoured — `("Wingdings", "serif")` must reach `serif` instead of
     /// short-circuiting on Wingdings's outer fallback.
+    /// Public strict lookup (used by the emoji codepoint fallback).
+    pub fn query_strict_public(&self, family: &str) -> Option<ID> {
+        self.query_strict(family, 400, false, "macOS")
+    }
+
     fn query_strict(&self, family: &str, weight: u16, italic: bool, os_name: &str) -> Option<ID> {
         let style = if italic { Style::Italic } else { Style::Normal };
         let families = resolve_family(family, os_name);

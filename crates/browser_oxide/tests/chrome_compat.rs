@@ -3707,7 +3707,7 @@ async fn script_inserted_inline_script_runs_as_its_own_script() {
              })()"
         )
         .await,
-        "    at <anonymous>:1:12|    at eval (eval at <anonymous> (:1:75), <anonymous>:1:7)"
+        "    at about:blank:1:12|    at eval (eval at <anonymous> (about:blank:1:75), <anonymous>:1:7)"
     );
 }
 
@@ -7449,7 +7449,7 @@ async fn string_timer_runs_as_a_global_classic_script() {
     assert_eq!(
         page.evaluate("JSON.stringify([window.__ts, window.__tv])")
             .unwrap_or_default(),
-        r#"[["Error: x /     at <anonymous>:1:37","true","undefined"],7]"#
+        r#"[["Error: x /     at https://example.com/:1:37","true","undefined"],7]"#
     );
 }
 

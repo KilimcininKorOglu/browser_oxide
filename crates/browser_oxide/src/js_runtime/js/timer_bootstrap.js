@@ -10,7 +10,8 @@
     const _trustedScript = globalThis.__ox_trusted_script;
     const _stringHandler = (code, method) => {
         const source = _trustedScript ? _trustedScript.scriptFor(code, method) : String(code);
-        return () => _runClassicScript(source, '');
+        const _docUrl2 = (globalThis.location && globalThis.location.href) || '';
+        return () => _runClassicScript(source, _docUrl2);
     };
     const _cancelledTimers = new Set();
     // Live timer ids THIS realm handed out. clearTimeout with a foreign id

@@ -344,6 +344,7 @@ dependencies = [
  "tokio-boring2",
  "tokio-tungstenite",
  "tracing",
+ "ttf-parser",
  "url",
  "webpki-root-certs",
  "webpki-roots 1.0.9",

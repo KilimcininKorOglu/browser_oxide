@@ -72,6 +72,37 @@ fn resolve_face(font: &ParsedFont, os_name: &str) -> Option<(&'static [u8], u32)
     db.face_data(id)
 }
 
+/// True when the face maps every scalar in `text` to a real glyph.
+/// rustybuzz maps misses to glyph 0 (.notdef) — that is the tell.
+fn face_covers(face_data: &[u8], face_index: u32, text: &str) -> bool {
+    use ttf_parser::Face;
+    let Ok(face) = Face::parse(face_data, face_index) else {
+        return true;
+    };
+    let tables = face.tables();
+    let Some(cmap) = tables.cmap else {
+        return true;
+    };
+    text.chars().all(|c| cmap_glyph(c as u32, &cmap))
+}
+
+/// True when any unicode cmap subtable maps `code` to a glyph.
+fn cmap_glyph(code: u32, cmap: &ttf_parser::cmap::Table<'_>) -> bool {
+    for st in cmap.subtables {
+        if st.is_unicode() && st.glyph_index(code).is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+/// The bundled emoji face for codepoint fallback.
+fn resolve_emoji_face() -> Option<(&'static [u8], u32)> {
+    let db = FontDatabase::get();
+    let id = db.query_strict_public("Noto Emoji")?;
+    db.face_data(id)
+}
+
 /// Measure text using the parsed font. Returns zero metrics for empty
 /// text or unresolvable fonts — matching Canvas 2D's tolerant behaviour.
 pub fn measure_text_metrics(text: &str, font: &ParsedFont, os_name: &str) -> TextMetrics {
@@ -81,7 +112,19 @@ pub fn measure_text_metrics(text: &str, font: &ParsedFont, os_name: &str) -> Tex
     let Some((data, idx)) = resolve_face(font, os_name) else {
         return TextMetrics::zero();
     };
-    let run = shaper::shape(text, data, idx, font.size_px);
+    // Codepoint fallback: when the resolved face misses a codepoint,
+    // Chrome walks the font chain to the emoji face (that is why a
+    // 14px emoji measures ~13px on macOS instead of a narrow .notdef).
+    // If any codepoint is uncovered, re-shape against the emoji face.
+    let run = if !face_covers(data, idx, text) {
+        if let Some((edata, eidx)) = resolve_emoji_face() {
+            shaper::shape(text, edata, eidx, font.size_px)
+        } else {
+            shaper::shape(text, data, idx, font.size_px)
+        }
+    } else {
+        shaper::shape(text, data, idx, font.size_px)
+    };
 
     // em-height approximations: CSS spec says em_height_ascent ≈ 0.8 *
     // size and em_height_descent ≈ 0.2 * size for most Latin fonts.
@@ -147,6 +190,11 @@ pub fn shape_run(
         return None;
     }
     let (data, idx) = resolve_face(font, os_name)?;
+    if !face_covers(data, idx, text) {
+        if let Some((edata, eidx)) = resolve_emoji_face() {
+            return Some((edata, eidx, shaper::shape(text, edata, eidx, font.size_px)));
+        }
+    }
     Some((data, idx, shaper::shape(text, data, idx, font.size_px)))
 }
 

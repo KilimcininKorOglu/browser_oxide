@@ -24,6 +24,42 @@ pub fn system_timezone() -> Option<String> {
     }
 }
 
+/// Real Chrome on this host reports the host's own CPU count, device
+/// memory and GPU. A macOS profile quoting 8/8/M3 on an M1 Max is a
+/// scorer tell — read the truth where the OS exposes it.
+fn host_cpu_cores() -> Option<u8> {
+    std::process::Command::new("sysctl")
+        .args(["-n", "hw.ncpu"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok()?.trim().parse().ok())
+}
+
+/// The host's real GPU chipset name (e.g. "Apple M1 Max"). Real Chrome
+/// reports the host GPU through ANGLE; a macOS profile quoting a
+/// different chip than the machine is a cross-signal tell.
+fn host_gpu_chipset() -> Option<String> {
+    let out = std::process::Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .ok()?;
+    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+fn host_device_memory_gb() -> Option<u8> {
+    std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok()?.trim().parse::<u64>().ok())
+        .map(|bytes| (bytes / (1024 * 1024 * 1024)) as u8)
+}
+
 fn default_media_devices(seed: &str) -> Vec<MediaDeviceInfo> {
     // Deterministic device IDs based on a seed string
     let hash = |s: &str| -> String {
@@ -170,12 +206,15 @@ pub fn chrome_148_macos() -> StealthProfile {
         screen_avail_top: 33,
         screen_color_depth: 30,
         device_pixel_ratio: 2.0,
-        cpu_cores: 8,
-        device_memory: 8,
+        cpu_cores: host_cpu_cores().unwrap_or(8),
+        device_memory: host_device_memory_gb().unwrap_or(8),
         max_touch_points: 0,
 
         webgl_vendor: "Google Inc. (Apple)".into(),
-        webgl_renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)".into(),
+        webgl_renderer: match host_gpu_chipset() {
+            Some(chip) => format!("ANGLE (Apple, ANGLE Metal Renderer: {chip}, Unspecified Version)"),
+            None => "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)".to_string(),
+        },
 
         language: "en-US".into(),
         languages: vec!["en-US".into(), "en".into()],
