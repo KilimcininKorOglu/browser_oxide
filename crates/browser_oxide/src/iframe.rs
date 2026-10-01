@@ -50,6 +50,23 @@ const FRAME_WATCH_JS: &str = r#"
                 }
             }
         }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+        // Periodic scan: catch iframes created in DETACHED containers that
+        // the MutationObserver misses (the container enters the document
+        // after the iframe already has its src).
+        let scanCount = 0;
+        setInterval(() => {
+            scanCount++;
+            if (scanCount % 4 === 1) console.log('[FW-SCAN] scan=' + scanCount + ' iframes=' + document.querySelectorAll('iframe').length + ' withSrc=' + document.querySelectorAll('iframe[src]').length);
+            try {
+                document.querySelectorAll('iframe[src]').forEach((f) => {
+                    const src = f.getAttribute('src');
+                    if (src && !f.__fwProcessed) {
+                        f.__fwProcessed = true;
+                        req(f);
+                    }
+                });
+            } catch (_e) {}
+        }, 500);
     })();
 "#;
 
@@ -313,6 +330,14 @@ impl ChildIframe {
             tracing::warn!(error = %e, "iframe lifecycle script error");
         }
         let _ = event_loop.execute_script(FRAME_WATCH_JS);
+        // TEMP DIAG: capture ALL errors and rejections in the child realm
+        let _ = event_loop.execute_script(
+            r#"
+            globalThis.__childDiag = [];
+            addEventListener('error', (e) => { __childDiag.push('ERR:' + (e.message || '?') + ' @ ' + String(e.filename||'').slice(-30) + ':' + (e.lineno||0)); });
+            addEventListener('unhandledrejection', (e) => { __childDiag.push('REJ:' + String(e.reason && (e.reason.stack || e.reason.message || e.reason) || '?').slice(0, 150)); });
+            "#,
+        );
 
         // Run child event loop briefly. A frame that keeps timers alive would
         // hold the parent here for the whole budget, while in a browser both

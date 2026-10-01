@@ -4041,6 +4041,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         overrideMimeType(mime) { this._overrideMime = String(mime); }
         send(body) {
             console.log(`[XHR] send ${this._method} ${this._url}`);
+            try { console.log('[XHRSENDLOG] ' + this._method + ' ' + this._url.slice(-50) + ' stack=' + String(new Error().stack || '').split('\n')[2]); } catch (_) {}
             const xhr = this;
             if (xhr._aborted) return;
             // dispatchEvent runs the on<type> handler as well as the listeners.

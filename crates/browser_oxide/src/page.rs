@@ -1017,6 +1017,9 @@ impl Page {
             delivered += nested;
             // A nested realm asked for a frame load — materialize it.
             let nested_reqs = crate::js_runtime::extensions::dom_ext::take_nested_frame_requests();
+            if !nested_reqs.is_empty() {
+                eprintln!("[NFR-DRAIN] {} requests", nested_reqs.len());
+            }
             for (self_id, iframe_id, src) in nested_reqs {
                 if self_id != child.node_id.to_raw() {
                     eprintln!(

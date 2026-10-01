@@ -183,6 +183,32 @@
         if (childTag === 'iframe' || childTag === 'frame') {
             try { globalThis.__oxSyncFrameIndices && globalThis.__oxSyncFrameIndices(); } catch (_e) {}
         }
+        // Containers with nested iframes: when a div/span/container enters
+        // the document carrying iframe descendants, trigger each iframe's
+        // load path (innerHTML insertions don't go through the individual
+        // element insertion hooks).
+        if (childTag !== 'iframe' && childTag !== 'frame') {
+            try {
+                const nestedFrames = child.querySelectorAll ? child.querySelectorAll('iframe[src]') : [];
+                nestedFrames.forEach((f) => {
+                    const src = f.getAttribute('src');
+                    if (src && typeof globalThis.__oxStartImageLoad === 'function') {
+                        // Trigger via the image loading path — our engine
+                        // fetches the src and fires load/error.
+                        // For iframes, we need a different approach: use
+                        // the nested frame request channel.
+                        try {
+                            const selfId = globalThis.__oxSelfNodeId || 0;
+                            const idFn = globalThis.__browser_oxide && globalThis.__browser_oxide._getNodeId;
+                            const fid = idFn ? idFn(f) : 0;
+                            if (globalThis.Deno && Deno.core && Deno.core.ops && Deno.core.ops.op_nested_frame_request) {
+                                Deno.core.ops.op_nested_frame_request(selfId, fid, src);
+                            }
+                        } catch (_e2) {}
+                    }
+                });
+            } catch (_e) {}
+        }
         // Inserted images load like parser-seen ones: Chrome fetches an
         // <img src> immediately whether it arrives from the parser, from
         // innerHTML, or through appendChild. The challenge image entry
@@ -4945,7 +4971,24 @@
                 return _raw;
             }
         },
-        set src(val) { this.setAttribute("src", String(val)); },
+        set src(val) {
+            this.setAttribute("src", String(val));
+            // When running inside a CHILD iframe realm, notify the page
+            // layer to load this frame (the realm can't load frames itself).
+            try {
+                if (globalThis.__oxSelfNodeId && this.tagName === 'IFRAME') {
+                    const _s = String(val);
+                    if (_s.startsWith('http') || _s.startsWith('/')) {
+                        const selfId = globalThis.__oxSelfNodeId;
+                        const idFn = globalThis.__browser_oxide && globalThis.__browser_oxide._getNodeId;
+                        const fid = idFn ? idFn(this) : 0;
+                        if (globalThis.Deno && Deno.core && Deno.core.ops && Deno.core.ops.op_nested_frame_request) {
+                            Deno.core.ops.op_nested_frame_request(selfId, fid, _s);
+                        }
+                    }
+                }
+            } catch (_e) {}
+        },
     };
     const _hrefBase = {
         get href() { return this.getAttribute("href") || ""; },
