@@ -852,7 +852,10 @@ pub fn op_dom_get_all_computed_styles(
                 if let Some(colon) = decl.find(':') {
                     let name = decl[..colon].trim().to_string();
                     let val = decl[colon + 1..].trim().to_string();
-                    declarations.insert(name, (999999, 999999, val));
+                    declarations.insert(name.clone(), (999999, 999999, val.clone()));
+                    for (longhand, lval) in expand_shorthand(&name, &val) {
+                        declarations.insert(longhand, (999999, 999999, lval));
+                    }
                 }
             }
         }
@@ -919,6 +922,28 @@ pub fn op_dom_get_computed_style(
     }
 
     let raw = computed_property_raw(state, id, property);
+    // `border: W S C` shorthand: Chrome's computed border-side colors
+    // resolve from the shorthand's color component. The longhand query
+    // misses the shorthand declaration, so resolve it here.
+    if matches!(
+        property,
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color"
+    ) && raw.is_empty()
+    {
+        if let Some(sh_color) = get_inline_style_value(&state.dom, id, "border-color") {
+            if let Some(norm) = normalize_computed_color(&sh_color) {
+                return norm;
+            }
+        }
+        if let Some(sh_color) = get_inline_style_value(&state.dom, id, "border") {
+            let parts: Vec<&str> = sh_color.split_whitespace().collect();
+            for part in parts.iter().rev() {
+                if let Some(norm) = normalize_computed_color(part) {
+                    return norm;
+                }
+            }
+        }
+    }
     // Inline boxes have no used width/height: the computed value reads
     // `auto` however the declarations say (Chrome behavior; the engine
     // echoed the declared px — a `width` tell on hidden-span audits).
@@ -928,6 +953,14 @@ pub fn op_dom_get_computed_style(
     if crate::js_runtime::extensions::dom_ext::is_color_property(property) {
         if let Some(c) = normalize_computed_color(&raw) {
             return c;
+        }
+        // -webkit-text-fill/stroke-color default to the `color` value in
+        // Chrome (they inherit when unset).
+        if property == "-webkit-text-fill-color" || property == "-webkit-text-stroke-color" {
+            let color_raw = computed_property_raw(state, id, "color");
+            if let Some(c) = normalize_computed_color(&color_raw) {
+                return c;
+            }
         }
     }
     // Chrome's computed values carry units: a declared `0` reads back `0px`
@@ -1162,6 +1195,103 @@ fn element_display_is_inline(state: &DomState, id: NodeId) -> bool {
     )
 }
 
+/// Split a shorthand value on top-level whitespace (parentheses and
+/// functions like rgb() stay together).
+fn split_top_level(value: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0usize;
+    for ch in value.trim().chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                cur.push(ch);
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+                cur.push(ch);
+            }
+            ' ' | '\t' if depth == 0 => {
+                if !cur.is_empty() {
+                    parts.push(cur.clone());
+                }
+            }
+            _ => cur.push(ch),
+        }
+    }
+    if !cur.is_empty() {
+        parts.push(cur);
+    }
+    parts
+}
+
+/// Expand the shorthands Chrome's computed style resolves into longhands.
+/// Returns (longhand, value) pairs; unknown shorthands pass through.
+fn expand_shorthand(name: &str, value: &str) -> Vec<(String, String)> {
+    let v = value.trim();
+    match name {
+        "margin" | "padding" => {
+            let parts = split_top_level(v);
+            let (t, r, b, l) = match parts.len() {
+                1 => (
+                    parts[0].clone(),
+                    parts[0].clone(),
+                    parts[0].clone(),
+                    parts[0].clone(),
+                ),
+                2 => (
+                    parts[0].clone(),
+                    parts[1].clone(),
+                    parts[0].clone(),
+                    parts[1].clone(),
+                ),
+                3 => (
+                    parts[0].clone(),
+                    parts[1].clone(),
+                    parts[2].clone(),
+                    parts[1].clone(),
+                ),
+                4 => (
+                    parts[0].clone(),
+                    parts[1].clone(),
+                    parts[2].clone(),
+                    parts[3].clone(),
+                ),
+                _ => return vec![],
+            };
+            vec![
+                (format!("{name}-top"), t),
+                (format!("{name}-right"), r),
+                (format!("{name}-bottom"), b),
+                (format!("{name}-left"), l),
+            ]
+        }
+        "background" => {
+            // color part: the first value that parses as a color.
+            let parts = split_top_level(v);
+            let mut bgcolor = String::new();
+            for part in &parts {
+                if let Some(norm) = normalize_computed_color(part) {
+                    bgcolor = norm;
+                    break;
+                }
+            }
+            let mut out = vec![
+                ("background-image".to_string(), "none".to_string()),
+                ("background-repeat".to_string(), "repeat".to_string()),
+                ("background-attachment".to_string(), "scroll".to_string()),
+                ("background-position".to_string(), "0% 0%".to_string()),
+                ("background-size".to_string(), "auto".to_string()),
+            ];
+            if !bgcolor.is_empty() {
+                out.push(("background-color".to_string(), bgcolor));
+            }
+            out
+        }
+        _ => vec![],
+    }
+}
+
 /// Extract a property value from an element's inline style attribute.
 fn get_inline_style_value(dom: &crate::dom::Dom, id: NodeId, property: &str) -> Option<String> {
     let style_attr = dom.get(id).and_then(|n| n.as_element()).and_then(|e| {
@@ -1181,6 +1311,14 @@ fn get_inline_style_value(dom: &crate::dom::Dom, id: NodeId, property: &str) -> 
             let val = decl[colon + 1..].trim();
             if prop.eq_ignore_ascii_case(property) {
                 return Some(val.to_string());
+            }
+            // Shorthand → longhand: `margin: 4px` must answer
+            // margin-top's computed query, `border: 1px solid #eee`
+            // must answer border-top-color, etc.
+            for (longhand, lval) in expand_shorthand(prop, val) {
+                if longhand.eq_ignore_ascii_case(property) {
+                    return Some(lval);
+                }
             }
         }
     }
