@@ -99,16 +99,16 @@ fn default_media_devices(seed: &str) -> Vec<MediaDeviceInfo> {
 pub fn chrome_148_windows() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
-        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.48 Safari/537.36".into(),
         browser_name: "Chrome".into(),
-        browser_version: "148.0.7778.168".into(),
+        browser_version: "153.0.8010.48".into(),
         os_name: "Windows".into(),
         os_version: "10.0".into(),
         platform: "Win32".into(),
         vendor: "Google Inc.".into(),
         vendor_sub: "".into(),
         product_sub: "20030107".into(),
-        app_version: "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        app_version: "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.48 Safari/537.36".into(),
 
         screen_width: 1920,
         screen_height: 1080,
@@ -174,7 +174,7 @@ pub fn chrome_148_windows() -> StealthProfile {
 /// an outdated Chrome version is itself a reliable signal. The TLS impersonation
 /// label is still `chrome_147` — an internal codename; not on the wire.
 ///
-/// **CRITICAL**: navigator.userAgent reports `Chrome/148.0.0.0` (FROZEN minor versions
+/// **CRITICAL**: navigator.userAgent reports `Chrome/153.0.8010.48` (FROZEN minor versions
 /// per Chrome's User-Agent reduction since March 2023 / Chrome 110+). The full version
 /// `148.0.7778.168` is ONLY exposed via sec-ch-ua-full-version-list. Sending the full
 /// version in the UA string is a divergence from real Chrome behavior — confirmed by

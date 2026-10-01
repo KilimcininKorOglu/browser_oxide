@@ -54,7 +54,7 @@ pub const TLS_CHROME_MAJOR: u32 = 147;
 /// The Chrome major every desktop Chrome preset's `user_agent`
 /// advertises. Intentionally != [`TLS_CHROME_MAJOR`]; see that
 /// constant's docs for why this is wire-coherent, not a skew.
-pub const UA_CHROME_MAJOR: u32 = 148;
+pub const UA_CHROME_MAJOR: u32 = 153;
 
 /// Chrome 147 cipher suite list (order is critical for JA3 fingerprint).
 const CIPHER_LIST: &str = concat!(
@@ -714,7 +714,7 @@ rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
 
         // --- UA / TLS coherence (the deliberate, wire-equivalent split) ---
         assert_eq!(TLS_CHROME_MAJOR, 147);
-        assert_eq!(UA_CHROME_MAJOR, 148);
+        assert_eq!(UA_CHROME_MAJOR, 153);
         // The split is intentional and wire-coherent: Chrome's
         // ClientHello did not rev 147→148, JA4 cannot encode the Chrome
         // version, and UA=148 is the A/B-tested current-Chrome value.
