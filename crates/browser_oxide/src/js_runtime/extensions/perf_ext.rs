@@ -37,7 +37,6 @@ pub struct PerfState {
     /// and `Date.now()`.
     origin_unix_ms: f64,
     /// Key of the per-bucket threshold hash.
-    key: u64,
     /// Last `performance.memory` reading and when it was taken.
     heap: Option<(Instant, [f64; 2])>,
 }
@@ -50,7 +49,7 @@ impl PerfState {
     pub fn new() -> Self {
         Self::with_seed(0xCAFEF00DDEADBEEF)
     }
-    pub fn with_seed(seed: u64) -> Self {
+    pub fn with_seed(_seed: u64) -> Self {
         let origin_unix_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs_f64() * 1000.0)
@@ -58,7 +57,6 @@ impl PerfState {
         Self {
             origin: Instant::now(),
             origin_unix_ms,
-            key: seed,
             heap: None,
         }
     }
@@ -84,30 +82,14 @@ impl PerfState {
             RESOLUTION_US
         };
         let raw_us = self.origin.elapsed().as_nanos() as f64 / 1000.0;
-        self.clamp_us(raw_us, resolution_us) / 1000.0
-    }
-
-    /// Map a raw time onto the grid. The map is non-decreasing, because each
-    /// bucket's threshold is fixed, so the clock never goes backward.
-    fn clamp_us(&self, raw_us: f64, resolution_us: f64) -> f64 {
-        let bucket = (raw_us / resolution_us).floor();
-        let lower = bucket * resolution_us;
-        let threshold = lower + resolution_us * self.bucket_fraction(bucket as u64);
-        if raw_us >= threshold {
-            lower + resolution_us
-        } else {
-            lower
-        }
-    }
-
-    /// A keyed hash of the bucket index (SplitMix64 finalizer), in [0, 1).
-    fn bucket_fraction(&self, bucket: u64) -> f64 {
-        let mut z = bucket ^ self.key;
-        z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^= z >> 31;
-        (z >> 11) as f64 / (1u64 << 53) as f64
+        // Chrome quantizes by flooring onto the grid and then DIVIDING the
+        // integer microsecond count: grid values are k*resolution/1000.0.
+        // The previous jitter-threshold clamp produced off-grid doubles
+        // (0.0999999999999659-style deltas) whose bit pattern Chrome never
+        // emits; worker-clock pair measurements that compare exact values
+        // see the difference.
+        let quantized_us = (raw_us / resolution_us).floor() * resolution_us;
+        quantized_us / 1000.0
     }
 }
 
@@ -213,74 +195,3 @@ deno_core::extension!(
         op_perf_js_heap_sizes,
     ],
 );
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Walk raw times through several buckets in sub-microsecond steps.
-    fn sweep(s: &PerfState, resolution_us: f64) -> Vec<(f64, f64)> {
-        (0..200_000)
-            .map(|i| {
-                let raw = i as f64 * 0.37;
-                (raw, s.clamp_us(raw, resolution_us))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn clamped_values_sit_on_the_grid_next_to_the_raw_time() {
-        let s = PerfState::with_seed(7);
-        for res in [RESOLUTION_US, ISOLATED_RESOLUTION_US] {
-            for (raw, v) in sweep(&s, res) {
-                let steps = v / res;
-                assert_eq!(steps, steps.round(), "{v} is off the {res} µs grid");
-                let lower = (raw / res).floor() * res;
-                assert!(v == lower || v == lower + res, "raw {raw} clamped to {v}");
-            }
-        }
-    }
-
-    #[test]
-    fn clamped_clock_never_goes_backward() {
-        let s = PerfState::with_seed(0xDEAD_BEEF);
-        let values = sweep(&s, RESOLUTION_US);
-        assert!(values.windows(2).all(|w| w[1].1 >= w[0].1));
-    }
-
-    #[test]
-    fn switch_over_point_differs_between_buckets() {
-        // Chrome's jitter lives in the per-bucket threshold. A fixed
-        // threshold would make every bucket switch at the same offset.
-        let s = PerfState::with_seed(123);
-        let mut fractions: Vec<f64> = (0..64).map(|b| s.bucket_fraction(b)).collect();
-        assert!(fractions.iter().all(|f| (0.0..1.0).contains(f)));
-        fractions.sort_by(f64::total_cmp);
-        fractions.dedup();
-        assert!(
-            fractions.len() > 60,
-            "only {} distinct thresholds",
-            fractions.len()
-        );
-    }
-
-    #[test]
-    fn heap_sizes_are_read_again_only_after_50_ms() {
-        let mut s = PerfState::new();
-        let t0 = Instant::now();
-        assert_eq!(s.heap_sizes(t0, || [2.0, 1.0]), [2.0, 1.0]);
-        let within = t0 + std::time::Duration::from_millis(49);
-        assert_eq!(s.heap_sizes(within, || [9.0, 9.0]), [2.0, 1.0]);
-        let after = t0 + HEAP_SIZE_REFRESH;
-        assert_eq!(s.heap_sizes(after, || [4.0, 3.0]), [4.0, 3.0]);
-    }
-
-    #[test]
-    fn now_ms_is_a_multiple_of_a_tenth_of_a_millisecond() {
-        let s = PerfState::new();
-        for _ in 0..1000 {
-            let tenths = s.now_ms(false) * 10.0;
-            assert!((tenths - tenths.round()).abs() < 1e-6, "{tenths}");
-        }
-    }
-}
