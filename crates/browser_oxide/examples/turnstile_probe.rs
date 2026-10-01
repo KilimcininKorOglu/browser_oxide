@@ -32,6 +32,31 @@ async fn main() {
             let t0 = Instant::now();
             let diag_init = r##"
                 globalThis.__evts = {};
+                globalThis.__undefReads = [];
+                setTimeout(() => {
+                    const checks = {
+                        "crypto.subtle": typeof crypto?.subtle,
+                        "Notification": typeof Notification,
+                        "getBattery": typeof navigator.getBattery,
+                        "usb": typeof navigator.usb,
+                        "serial": typeof navigator.serial,
+                        "hid": typeof navigator.hid,
+                        "bluetooth": typeof navigator.bluetooth,
+                        "clipboard": typeof navigator.clipboard,
+                        "mediaDevices": typeof navigator.mediaDevices,
+                        "credentials": typeof navigator.credentials,
+                        "serviceWorker": typeof navigator.serviceWorker,
+                        "share": typeof navigator.share,
+                        "wakeLock": typeof navigator.wakeLock,
+                        "ink": typeof navigator.ink,
+                        "storage": typeof navigator.storage,
+                        "caches": typeof caches,
+                        "indexedDB": typeof indexedDB,
+                    };
+                    for (const [k, v] of Object.entries(checks)) {
+                        if (v === "undefined") globalThis.__undefReads.push(k);
+                    }
+                }, 3000);
                 globalThis.__entryVals = {};
                 setTimeout(() => {
                     const E = globalThis.__entryVals;
@@ -171,6 +196,24 @@ async fn main() {
             }
 
             match minted {
+                Some(tok) => {
+                    println!("MINTED {} at {:.1}s", tok, t0.elapsed().as_secs_f32());
+                    println!("OK");
+                }
+                None => {
+                    println!("NO-TOKEN after {:.1}s", t0.elapsed().as_secs_f32());
+                    println!("iframes={}", page.child_iframe_count());
+                    if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__evts || {})") {
+                        eprintln!("[EVENTS] {}", v);
+                    }
+                    if let Some(child) = page.child_iframe(0) {
+                        if let Ok(v) = child.evaluate("JSON.stringify(globalThis.__undefReads || [])") {
+                            eprintln!("[UNDEF-READS] {}", v);
+                        }
+                    }
+                    page.consume_and_print_logs();
+                    std::process::exit(2);
+                }
                 Some(tok) => {
                     println!("MINTED {} at {:.1}s", tok, t0.elapsed().as_secs_f32());
                     println!("OK");
