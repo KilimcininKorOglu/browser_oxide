@@ -88,11 +88,11 @@ impl PerfState {
         // (0.0999999999999659-style deltas) whose bit pattern Chrome never
         // emits; worker-clock pair measurements that compare exact values
         // see the difference.
-        let quantized_us = (raw_us / resolution_us).floor() * resolution_us;
-        // f64 grid arithmetic: Chrome divides the integer grid index, not
-        // the raw us count. k/10.0 gives the same f64 bits Chrome's
-        // quantized performance.now() produces for a 0.1ms grid.
-        quantized_us / 1000.0
+        // Chrome uses f32 for the quantized microsecond value before
+        // converting to f64 milliseconds. This gives the same f64 bit
+        // pattern Chrome produces for the same grid crossing.
+        let quantized_f32 = ((raw_us / resolution_us).floor()) as f32;
+        (quantized_f32 as f64 * resolution_us as f64) / 1000.0
     }
 }
 
