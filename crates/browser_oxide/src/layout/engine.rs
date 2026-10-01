@@ -42,7 +42,14 @@ struct StyleRule {
 impl LayoutEngine {
     pub fn new(viewport: Viewport) -> Self {
         Self {
-            tree: TaffyTree::new(),
+            tree: {
+                let mut tree = TaffyTree::new();
+                // Chrome keeps sub-pixel geometry (LayoutUnit 1/64) in
+                // getBoundingClientRect; taffy's default integer rounding
+                // collapsed 173.375 into 173.
+                tree.disable_rounding();
+                tree
+            },
             dom_to_taffy: HashMap::new(),
             viewport,
             dirty: true,
@@ -96,7 +103,11 @@ impl LayoutEngine {
     /// Compute layout for the entire DOM tree.
     pub fn compute(&mut self, dom: &Dom) {
         // Clear previous tree
-        self.tree = TaffyTree::new();
+        self.tree = {
+            let mut tree = TaffyTree::new();
+            tree.disable_rounding();
+            tree
+        };
         self.dom_to_taffy.clear();
 
         let ctx = ResolveContext {
