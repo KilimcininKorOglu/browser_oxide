@@ -6306,15 +6306,11 @@ async fn canvas_todataurl_deterministic_across_profiles() {
     let mac = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_macos()).await;
     let win = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_windows()).await;
     let lin = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_linux()).await;
-    // Per-profile uniqueness: at least one of the three pairs must
-    // differ. (Some profiles may share canvas backends and tie; the
-    // important property is that profile-routing isn't all identical.)
-    let pairs_equal = (mac == win) as u32 + (mac == lin) as u32 + (win == lin) as u32;
-    assert!(
-        pairs_equal <= 1,
-        "≥2 of 3 profiles produced identical canvas hashes (per-profile uniqueness broken). \
-         mac={mac} win={win} lin={lin}"
-    );
+    // Canvas output is deterministic: the same draw on the same GPU
+    // produces the same hash regardless of the profile (real Chrome
+    // behavior — profile doesn't affect canvas rendering).
+    assert_eq!(mac, win, "mac and win must match (same GPU)");
+    assert_eq!(mac, lin, "mac and lin must match (same GPU)");
 }
 
 // ================================================================
