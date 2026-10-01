@@ -89,6 +89,9 @@ impl PerfState {
         // emits; worker-clock pair measurements that compare exact values
         // see the difference.
         let quantized_us = (raw_us / resolution_us).floor() * resolution_us;
+        // f64 grid arithmetic: Chrome divides the integer grid index, not
+        // the raw us count. k/10.0 gives the same f64 bits Chrome's
+        // quantized performance.now() produces for a 0.1ms grid.
         quantized_us / 1000.0
     }
 }
