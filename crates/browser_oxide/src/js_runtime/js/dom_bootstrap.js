@@ -5077,4 +5077,30 @@
         }
     })();
 
+    // Chrome replaced-element sizing: a root <svg> without width/height
+    // renders 300x150 (CSS replaced-object fallback). Our engine gave it
+    // 0x0, so any absolutely-positioned measurement container holding an
+    // SVG shrunk to zero and every SVG-text emoji/bounds measurement
+    // returned a degenerate rect.
+    if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function')
+    (() => {
+        const _applySvgSize = (svg) => {
+            const tag = String(svg.tagName || '').toLowerCase();
+            if (tag !== 'svg') return;
+            // Attributes drive the replaced-element sizing (style on our SVG
+            // elements is a bare stub).
+            if (!svg.getAttribute('width')) svg.setAttribute('width', '300');
+            if (!svg.getAttribute('height')) svg.setAttribute('height', '150');
+        };
+        const _mo = new MutationObserver((muts) => {
+            for (const m of muts) {
+                if (m.type === 'childList') {
+                    m.addedNodes.forEach((n) => { if (n.nodeType === 1) { _applySvgSize(n); n.querySelectorAll && n.querySelectorAll('svg').forEach(_applySvgSize); } });
+                }
+            }
+        });
+        const _watch = () => { try { _mo.observe(document.documentElement || document, { childList: true, subtree: true }); } catch (_e) {} };
+        if (document.documentElement) _watch(); else document.addEventListener('DOMContentLoaded', _watch, { once: true });
+    })();
+
 })(globalThis);

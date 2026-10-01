@@ -336,6 +336,27 @@ impl LayoutEngine {
                         .sum();
                     taffy_style.size.width = Dimension::length(text_width);
                 }
+                // Replaced-element sizing for SVG roots: Chrome renders an
+                // <svg> without width/height at 300x150 (the CSS
+                // replaced-object fallback). The engine gave it 0x0, so
+                // measurement containers holding an SVG (emoji/bounds
+                // probes) collapsed to a degenerate rect.
+                if elem.name.local.eq_ignore_ascii_case("svg") {
+                    let attr = |a: &str| -> Option<f32> {
+                        elem.attrs
+                            .iter()
+                            .find(|at| at.name.local.eq_ignore_ascii_case(a))
+                            .and_then(|at| at.value.trim().parse::<f32>().ok())
+                            .filter(|v| *v > 0.0)
+                    };
+                    let w = attr("width").unwrap_or(300.0);
+                    let h = attr("height").unwrap_or(150.0);
+                    taffy_style.size.width = Dimension::length(w);
+                    taffy_style.size.height = Dimension::length(h);
+                    // An svg root sized as a replaced box lays out like a
+                    // block container, not an inline text run.
+                    taffy_style.display = taffy::Display::Block;
+                }
                 match self.tree.new_with_children(taffy_style, &children) {
                     Ok(id) => id,
                     Err(_) => return,
