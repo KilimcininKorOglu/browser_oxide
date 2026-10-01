@@ -4384,10 +4384,13 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 case "prefers-color-scheme":
                     return _profileFeature("prefers_color_scheme", "light");
                 case "prefers-reduced-motion": return "no-preference";
-                case "prefers-reduced-data": return "no-preference";
+                // Chrome has NO prefers-reduced-data and NO inverted-colors:
+                // every value candidate matches false, the way the real
+                // browser answers an unsupported feature.
+                case "prefers-reduced-data": return null;
                 case "prefers-reduced-transparency": return "no-preference";
                 case "prefers-contrast": return "no-preference";
-                case "inverted-colors": return "none";
+                case "inverted-colors": return null;
                 case "forced-colors": return "none";
                 case "pointer":
                 case "any-pointer":
@@ -4408,7 +4411,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                     // Win/Linux/Android typically report "srgb". Profile-
                     // driven default with srgb fallback.
                     return _profileFeature("color_gamut", "srgb");
-                case "dynamic-range": return "standard";
+                case "dynamic-range": return _profileFeature("dynamic_range", "high");
                 case "orientation": return _orientationValue();
                 default: return null;
             }
@@ -4424,8 +4427,9 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 case "device-height":
                     return _pInt("inner_height", 1080);
                 case "color":
-                    // Bits per color channel; Chrome reports 8.
-                    return 8;
+                    // Bits per color channel: a wide-gamut (p3) panel is
+                    // 10-bit in Chrome; plain srgb is 8.
+                    return _profileFeature("color_gamut", "srgb") === "srgb" ? 8 : 10;
                 case "monochrome":
                     return 0;
                 case "resolution":
@@ -4505,7 +4509,20 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
 
             // Enumerated features
             const enumVal = _featureValue(name);
-            if (enumVal !== null) return enumVal === valueStr;
+            if (enumVal !== null) {
+                // Ordinal scales: a p3 display matches srgb queries too, and
+                // a high dynamic-range display matches standard. "none"-like
+                // values stay plain equality.
+                if (name === "color-gamut") {
+                    const rank = { srgb: 1, p3: 2, rec2020: 3 };
+                    return (rank[enumVal] || 0) >= (rank[valueStr] || 0);
+                }
+                if (name === "dynamic-range") {
+                    const rank = { standard: 1, high: 2 };
+                    return (rank[enumVal] || 0) >= (rank[valueStr] || 0);
+                }
+                return enumVal === valueStr;
+            }
 
             return false;
         };

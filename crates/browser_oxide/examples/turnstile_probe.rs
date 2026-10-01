@@ -31,6 +31,46 @@ async fn main() {
         .run_until(async move {
             let t0 = Instant::now();
             let diag_init = r##"
+                // VM TRACER: intercept ALL Worker constructor calls and ALL
+                // postMessage traffic between parent and worker. Log the
+                // EXACT code sent to the worker and the EXACT results returned.
+                globalThis.__vmTrace = [];
+                (() => {
+                    const _origPost = Worker.prototype.postMessage;
+                    Worker.prototype.postMessage = function(data, ...rest) {
+                        globalThis.__vmTrace.push({ dir: "P>W", ts: Date.now(), data: JSON.stringify(data).slice(0, 500) });
+                        return _origPost.call(this, data, ...rest);
+                    };
+                    const _origTerm = Worker.prototype.terminate;
+                    Worker.prototype.terminate = function() {
+                        globalThis.__vmTrace.push({ dir: "TERM", ts: Date.now() });
+                        return _origTerm.call(this);
+                    };
+                    const _origXHROpen = XMLHttpRequest.prototype.open;
+                    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                        globalThis.__vmTrace.push({ dir: "XHR", ts: Date.now(), method, url: String(url).slice(0, 120) });
+                        return _origXHROpen.call(this, method, url, ...rest);
+                    };
+                    const _origXHRSend = XMLHttpRequest.prototype.send;
+                    XMLHttpRequest.prototype.send = function(body) {
+                        globalThis.__vmTrace.push({ dir: "XHR-SEND", ts: Date.now(), body: body ? String(body).slice(0, 200) : "null" });
+                        return _origXHRSend.call(this, body);
+                    };
+                    const _origFetch = window.fetch;
+                    window.fetch = function(input, init) {
+                        const url = typeof input === "string" ? input : (input && input.url) || "?";
+                        globalThis.__vmTrace.push({ dir: "FETCH", ts: Date.now(), url: String(url).slice(0, 120) });
+                        return _origFetch.call(this, input, init).then(resp => {
+                            globalThis.__vmTrace.push({ dir: "FETCH-RES", ts: Date.now(), status: resp.status, url: String(resp.url).slice(0, 80) });
+                            return resp;
+                        });
+                    };
+                })();
+                addEventListener("message", (e) => {
+                    if (e.data && e.data.event) {
+                        globalThis.__vmTrace.push({ dir: "MSG", ts: Date.now(), event: e.data.event, seq: e.data.seq || 0 });
+                    }
+                });
                 globalThis.__evts = {};
                 globalThis.__undefReads = [];
                 setTimeout(() => {
@@ -210,6 +250,9 @@ async fn main() {
                         if let Ok(v) = child.evaluate("JSON.stringify(globalThis.__undefReads || [])") {
                             eprintln!("[UNDEF-READS] {}", v);
                         }
+                    }
+                    if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__vmTrace || [])") {
+                        eprintln!("[VM-TRACE] {}", v);
                     }
                     page.consume_and_print_logs();
                     std::process::exit(2);

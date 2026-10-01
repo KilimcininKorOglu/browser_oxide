@@ -1154,6 +1154,13 @@ fn normalize_computed_color(value: &str) -> Option<String> {
     if let Some((r, g, b)) = named {
         return Some(format!("rgb({r}, {g}, {b})"));
     }
+    // CSS system colors. Chrome resolves every one to concrete rgb()/rgba()
+    // in computed style; leaking the keyword through is a fingerprint tell.
+    // Values are macOS Chrome, light color-scheme (measured on a real Mac —
+    // the apostate macos-full capture).
+    if let Some(resolved) = system_color(&v) {
+        return Some(resolved);
+    }
     if let Some(hex) = v.strip_prefix('#') {
         let expand = |s: &str| u8::from_str_radix(&format!("{s}{s}"), 16);
         let full = |s: &str| u8::from_str_radix(s, 16);
@@ -1192,6 +1199,51 @@ fn normalize_computed_color(value: &str) -> Option<String> {
         });
     }
     None
+}
+
+/// macOS Chrome, light color-scheme system color values (real-device
+/// capture). Keyed by the lowercased CSS keyword.
+fn system_color(v: &str) -> Option<String> {
+    let (r, g, b): (u8, u8, u8) = match v {
+        "activeborder" => (0, 0, 0),
+        "activecaption" => (255, 255, 255),
+        "activetext" => (255, 0, 0),
+        "appworkspace" => (255, 255, 255),
+        "background" => (255, 255, 255),
+        "buttonborder" => (0, 0, 0),
+        "buttonface" | "buttonhighlight" | "buttonshadow" => (239, 239, 239),
+        "buttontext" => (0, 0, 0),
+        "canvas" => (255, 255, 255),
+        "canvastext" => (0, 0, 0),
+        "captiontext" => (0, 0, 0),
+        "field" => (255, 255, 255),
+        "fieldtext" => (0, 0, 0),
+        "graytext" => (128, 128, 128),
+        "highlight" => return Some("rgba(0, 65, 198, 0.8)".to_string()),
+        "highlighttext" => (255, 255, 255),
+        "inactiveborder" => (0, 0, 0),
+        "inactivecaption" => (255, 255, 255),
+        "inactivecaptiontext" => (128, 128, 128),
+        "infobackground" => (255, 255, 255),
+        "infotext" => (0, 0, 0),
+        "linktext" => (0, 0, 238),
+        "mark" => (255, 255, 0),
+        "marktext" => (0, 0, 0),
+        "menu" => (255, 255, 255),
+        "menutext" => (0, 0, 0),
+        "scrollbar" => (255, 255, 255),
+        "threeddarkshadow" => (0, 0, 0),
+        "threedface" => (239, 239, 239),
+        "threedhighlight" => (0, 0, 0),
+        "threedlightshadow" => (0, 0, 0),
+        "threedshadow" => (0, 0, 0),
+        "visitedtext" => (85, 26, 139),
+        "window" => (255, 255, 255),
+        "windowframe" => (0, 0, 0),
+        "windowtext" => (0, 0, 0),
+        _ => return None,
+    };
+    Some(format!("rgb({r}, {g}, {b})"))
 }
 
 /// True when the element's computed display is an inline-level keyword.

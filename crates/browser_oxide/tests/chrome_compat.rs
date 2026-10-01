@@ -3658,13 +3658,17 @@ async fn perf_now_is_finite_non_negative() {
 
 #[tokio::test]
 async fn perf_now_hot_loop_stays_on_the_100us_grid() {
-    // Chrome 148, 20 000 hot calls: every value is a multiple of 0.1 ms.
+    // Chrome rounds the MILLISECOND result to f32: every value survives
+    // Math.fround exactly, and sits on the 0.1 ms grid to within the f32
+    // spacing at that magnitude (measured deltas on a real Chrome:
+    // 0.10000002384185791 / 0.09999996423721313 — NOT f64-exact multiples).
     assert_eq!(
         check(
             "(() => { \
               const xs = []; \
               for (let i = 0; i < 20000; i++) xs.push(performance.now()); \
-              return xs.every(x => Math.abs(x * 10 - Math.round(x * 10)) < 1e-6); \
+              return xs.every(x => Math.fround(x) === x \
+                  && Math.abs(x * 10 - Math.round(x * 10)) < 1e-3); \
              })()"
         )
         .await,
@@ -6303,14 +6307,20 @@ async fn canvas_todataurl_deterministic_within_profile() {
 
 #[tokio::test]
 async fn canvas_todataurl_deterministic_across_profiles() {
-    let mac = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_macos()).await;
-    let win = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_windows()).await;
-    let lin = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_linux()).await;
-    // Canvas output is deterministic: the same draw on the same GPU
-    // produces the same hash regardless of the profile (real Chrome
-    // behavior — profile doesn't affect canvas rendering).
-    assert_eq!(mac, win, "mac and win must match (same GPU)");
-    assert_eq!(mac, lin, "mac and lin must match (same GPU)");
+    // Each profile now resolves text through ITS OWN platform's font
+    // substitution table (a Windows persona measures with Liberation, a
+    // macOS persona with the real system faces), so canvas PIXELS differ
+    // across personas the way real Chrome differs across OSes. What must
+    // hold instead: each persona is stable across repeated runs.
+    let mac_a = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_macos()).await;
+    let mac_b = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_macos()).await;
+    assert_eq!(mac_a, mac_b, "mac persona must be stable across runs");
+    let win_a = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_windows()).await;
+    let win_b = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_windows()).await;
+    assert_eq!(win_a, win_b, "win persona must be stable across runs");
+    let lin_a = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_linux()).await;
+    let lin_b = canvas_hash_for(browser_oxide::stealth::presets::chrome_148_linux()).await;
+    assert_eq!(lin_a, lin_b, "linux persona must be stable across runs");
 }
 
 // ================================================================

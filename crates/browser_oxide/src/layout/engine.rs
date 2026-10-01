@@ -104,6 +104,7 @@ impl LayoutEngine {
             root_font_size: 16.0,
             viewport_w: self.viewport.width,
             viewport_h: self.viewport.height,
+            font_families: Vec::new(),
         };
 
         // Build taffy tree from DOM
@@ -261,6 +262,9 @@ impl LayoutEngine {
                         CssLP::Calc(_) => {}
                     }
                 }
+                if let Some(CssValue::FontFamily(families)) = computed.get(&PropertyId::FontFamily) {
+                    ctx.font_families = families.clone();
+                }
             }
         }
         ctx
@@ -328,7 +332,18 @@ impl LayoutEngine {
                                     } else {
                                         ctx.font_size * 0.6
                                     };
-                                    Some(t.chars().count() as f32 * advance)
+                                    // Same face-resolved measurement the text
+                                    // node uses; the 0.6em estimate is only the
+                                    // fallback when no face resolves.
+                                    Some(
+                                        crate::canvas::text::measure_for_layout(
+                                            t,
+                                            ctx.font_size,
+                                            &ctx.font_families,
+                                        )
+                                        .map(|(w, _)| w as f32)
+                                        .unwrap_or(t.chars().count() as f32 * advance),
+                                    )
                                 }
                                 _ => None,
                             })
@@ -391,12 +406,21 @@ impl LayoutEngine {
                 } else {
                     ctx.font_size * 0.6
                 };
-                let width = char_count * advance;
-                let height = ctx.font_size * 1.2;
+                // Measure with the element's resolved face: generic families
+                // differ by whole em fractions, and a fallback glyph (CJK,
+                // emoji) rides a taller line box. The 0.6em estimate stays
+                // as the fallback when no face resolves.
+                let measured = crate::canvas::text::measure_for_layout(
+                    text,
+                    ctx.font_size,
+                    &ctx.font_families,
+                );
+                let (width, height) = measured
+                    .unwrap_or(((char_count * advance) as f64, (ctx.font_size * 1.2) as f64));
                 let style = taffy::Style {
                     size: taffy::Size {
-                        width: Dimension::length(width),
-                        height: Dimension::length(height),
+                        width: Dimension::length(width as f32),
+                        height: Dimension::length(height as f32),
                     },
                     ..Default::default()
                 };

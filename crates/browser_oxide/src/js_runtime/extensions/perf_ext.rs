@@ -82,17 +82,14 @@ impl PerfState {
             RESOLUTION_US
         };
         let raw_us = self.origin.elapsed().as_nanos() as f64 / 1000.0;
-        // Chrome quantizes by flooring onto the grid and then DIVIDING the
-        // integer microsecond count: grid values are k*resolution/1000.0.
-        // The previous jitter-threshold clamp produced off-grid doubles
-        // (0.0999999999999659-style deltas) whose bit pattern Chrome never
-        // emits; worker-clock pair measurements that compare exact values
-        // see the difference.
-        // Chrome uses f32 for the quantized microsecond value before
-        // converting to f64 milliseconds. This gives the same f64 bit
-        // pattern Chrome produces for the same grid crossing.
-        let quantized_f32 = ((raw_us / resolution_us).floor()) as f32;
-        (quantized_f32 as f64 * resolution_us) / 1000.0
+        // Chrome quantizes by flooring onto the microsecond grid, then the
+        // MILLISECOND RESULT is rounded to f32 before it reaches JS. Measured
+        // against a real Chrome: consecutive readings differ by
+        // 0.10000002384185791 / 0.09999996423721313, which is exactly the
+        // f64 delta of neighbouring f32(k*0.1) values — not f32(k)*0.1 (that
+        // keeps f64-exact k*0.1 products) and not the f64 grid value.
+        let k = (raw_us / resolution_us).floor();
+        (k * resolution_us / 1000.0) as f32 as f64
     }
 }
 

@@ -30,6 +30,10 @@ pub struct ShapedRun {
     /// `TextMetrics` baseline fields.
     pub ascent: f32,
     pub descent: f32,
+    /// hhea line gap scaled to px. Chrome's normal line box adds it on
+    /// top of ascent+descent — a CJK fallback with a large gap sets the
+    /// span offsetHeight even when the primary face is Latin-only.
+    pub line_gap: f32,
     /// Tight bounding box of the inked glyph area (in px, relative to
     /// the start-of-run origin). Equivalent to `actualBoundingBox*` in
     /// the TextMetrics API.
@@ -46,6 +50,7 @@ impl ShapedRun {
             width: 0.0,
             ascent: 0.0,
             descent: 0.0,
+            line_gap: 0.0,
             bbox_left: 0.0,
             bbox_right: 0.0,
             bbox_ascent: 0.0,
@@ -135,6 +140,7 @@ pub fn shape(text: &str, face_data: &[u8], face_index: u32, size_px: f32) -> Sha
 
     let ascender = face.ascender() as f32 * scale;
     let descender = face.descender() as f32 * scale;
+    let line_gap = face.line_gap() as f32 * scale;
 
     if !any_glyph_bbox {
         bbox_left = 0.0;
@@ -148,6 +154,7 @@ pub fn shape(text: &str, face_data: &[u8], face_index: u32, size_px: f32) -> Sha
         width: total_advance,
         ascent: ascender,
         descent: -descender, // Canvas convention: descent is positive
+        line_gap,
         bbox_left,
         bbox_right,
         bbox_ascent,

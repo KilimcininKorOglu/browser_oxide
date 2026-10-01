@@ -1234,12 +1234,8 @@
         constructor(context) {
             super();
             this._context = context;
-            this.frequency = {
-                _value: 440,
-                get value() { return this._value; },
-                set value(v) { this._value = v; if (context._setOscFreq) context._setOscFreq(v); }
-            };
-            this.detune = { value: 0 };
+            this.frequency = new AudioParam(440, context, v => { if (context._setOscFreq) context._setOscFreq(v); });
+            this.detune = new AudioParam(0, context);
         }
         get type() { return this._type; }
         set type(v) { this._type = v; if (this._context._setOscType) this._context._setOscType(v); }
@@ -1251,9 +1247,11 @@
             this._context = context;
             this._setter = setter;
         }
-        get value() { return this._value; }
-        set value(v) { this._value = v; if (this._setter) this._setter(v); }
-        setValueAtTime() { return this; }
+        // Chrome stores AudioParam values as float32; the getter reads the
+        // stored f32 back, so 0.003 reads as 0.003000000026077032.
+        get value() { return Math.fround(this._value); }
+        set value(v) { this._value = Math.fround(+v); if (this._setter) this._setter(this._value); }
+        setValueAtTime(v, t) { this._value = Math.fround(+v); if (this._setter) this._setter(this._value); return this; }
         linearRampToValueAtTime() { return this; }
         exponentialRampToValueAtTime() { return this; }
         setTargetAtTime() { return this; }
@@ -1397,7 +1395,7 @@
                 if (Number.isInteger(v) && v > 0) return v;
             }
         } catch (_) {}
-        return 44100;
+        return 48000;
     })();
     const _audioBaseLatency = (() => {
         // Real Chrome reports baseLatency in [0.005, 0.030] sec range

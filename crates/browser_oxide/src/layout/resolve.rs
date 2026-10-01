@@ -1,3 +1,4 @@
+use crate::css_values::types::font::FontFamily;
 use crate::css_values::types::length::*;
 
 /// Context for resolving relative CSS units to absolute pixels.
@@ -7,6 +8,10 @@ pub struct ResolveContext {
     pub root_font_size: f32, // <html> font-size in px (for rem)
     pub viewport_w: f32,     // viewport width in px
     pub viewport_h: f32,     // viewport height in px
+    /// The element's computed `font-family` list, carried so text
+    /// measurement resolves the real face (monospace measures nothing
+    /// like serif — a 0.6em-per-char estimate reports one font for all).
+    pub font_families: Vec<FontFamily>,
 }
 
 impl Default for ResolveContext {
@@ -16,6 +21,7 @@ impl Default for ResolveContext {
             root_font_size: 16.0,
             viewport_w: 1920.0,
             viewport_h: 1080.0,
+            font_families: Vec::new(),
         }
     }
 }

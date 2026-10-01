@@ -113,15 +113,11 @@ pub fn measure_text_metrics(text: &str, font: &ParsedFont, os_name: &str) -> Tex
         return TextMetrics::zero();
     };
     // Codepoint fallback: when the resolved face misses a codepoint,
-    // Chrome walks the font chain to the emoji face (that is why a
-    // 14px emoji measures ~13px on macOS instead of a narrow .notdef).
-    // If any codepoint is uncovered, re-shape against the emoji face.
+    // only the uncovered segments are reshaped with a fallback face.
+    // Handing the WHOLE string to the emoji face made every family
+    // measure alike whenever one CJK/emoji codepoint was present.
     let run = if !face_covers(data, idx, text) {
-        if let Some((edata, eidx)) = resolve_emoji_face() {
-            shaper::shape(text, edata, eidx, font.size_px)
-        } else {
-            shaper::shape(text, data, idx, font.size_px)
-        }
+        shape_with_fallback(text, data, idx, font, os_name)
     } else {
         shaper::shape(text, data, idx, font.size_px)
     };
@@ -190,12 +186,138 @@ pub fn shape_run(
         return None;
     }
     let (data, idx) = resolve_face(font, os_name)?;
-    if !face_covers(data, idx, text) {
-        if let Some((edata, eidx)) = resolve_emoji_face() {
-            return Some((edata, eidx, shaper::shape(text, edata, eidx, font.size_px)));
+    if face_covers(data, idx, text) {
+        return Some((data, idx, shaper::shape(text, data, idx, font.size_px)));
+    }
+    // Per-segment fallback: only the characters the primary face misses
+    // (CJK, emoji, symbols) are reshaped with a fallback face. The old
+    // behaviour handed the WHOLE string to the emoji face whenever one
+    // codepoint was uncovered, which made every family measure alike.
+    Some((data, idx, shape_with_fallback(text, data, idx, font, os_name)))
+}
+
+/// Shape `text` with the primary face, reshaping uncovered segments with
+/// the first fallback face that covers them. Glyph x positions in the
+/// merged run stay monotonic — later segments are offset by the width
+/// already consumed.
+fn shape_with_fallback(
+    text: &str,
+    data: &'static [u8],
+    idx: u32,
+    font: &ParsedFont,
+    os_name: &str,
+) -> shaper::ShapedRun {
+    let mut merged = shaper::ShapedRun {
+        glyphs: Vec::new(),
+        width: 0.0,
+        ascent: 0.0,
+        descent: 0.0,
+        line_gap: 0.0,
+        bbox_left: 0.0,
+        bbox_right: 0.0,
+        bbox_ascent: 0.0,
+        bbox_descent: 0.0,
+    };
+    let mut consumed = 0.0f32;
+    // Line box metrics come from the TALLEST face in the run (asc +
+    // desc + gap) — a CJK fallback sets a span's offsetHeight even when
+    // the primary face is Latin-only.
+    let mut tallest = (0.0f32, 0.0f32, 0.0f32);
+    for segment in uncovered_segments(text, data, idx) {
+        let covered_by_primary = segment.1;
+        let run = if covered_by_primary {
+            shaper::shape(&segment.0, data, idx, font.size_px)
+        } else if let Some((fdata, fidx)) = resolve_fallback_face(&segment.0, font, os_name) {
+            shaper::shape(&segment.0, fdata, fidx, font.size_px)
+        } else {
+            shaper::shape(&segment.0, data, idx, font.size_px)
+        };
+        if run.ascent + run.descent + run.line_gap > tallest.0 + tallest.1 + tallest.2 {
+            tallest = (run.ascent, run.descent, run.line_gap);
+        }
+        for mut g in run.glyphs {
+            g.x_offset += consumed;
+            merged.glyphs.push(g);
+        }
+        consumed += run.width;
+        merged.width += run.width;
+        merged.bbox_right = merged.bbox_right.max(consumed);
+    }
+    merged.ascent = tallest.0;
+    merged.descent = tallest.1;
+    merged.line_gap = tallest.2;
+    merged
+}
+
+/// Split `text` into maximal runs covered (true) and not covered (false)
+/// by the given face.
+fn uncovered_segments(
+    text: &str,
+    data: &[u8],
+    idx: u32,
+) -> Vec<(String, bool)> {
+    let mut segments: Vec<(String, bool)> = Vec::new();
+    for ch in text.chars() {
+        let mut buf = [0u8; 4];
+        let s: &'static str;
+        // A one-char string; leak is bounded by the text length and these
+        // live only for the duration of the call.
+        let leaked: &'static str = Box::leak(ch.encode_utf8(&mut buf).to_string().into_boxed_str());
+        s = leaked;
+        let covered = {
+            let one = [ch];
+            face_covers(data, idx, &one.iter().collect::<String>())
+        };
+        match segments.last_mut() {
+            Some((acc, acc_covered)) if *acc_covered == covered => acc.push_str(s),
+            _ => segments.push((s.to_string(), covered)),
         }
     }
-    Some((data, idx, shaper::shape(text, data, idx, font.size_px)))
+    segments
+}
+
+/// A fallback face for a segment the primary face cannot cover: CJK falls
+/// to the platform's CJK face, symbol/emoji codepoints to the emoji face,
+/// then anything else the database holds under the usual fallback names.
+fn resolve_fallback_face(
+    segment: &str,
+    font: &ParsedFont,
+    os_name: &str,
+) -> Option<(&'static [u8], u32)> {
+    let db = FontDatabase::get();
+    let is_symbol = segment
+        .chars()
+        .any(|c| {
+            let u = c as u32;
+            (0x1F000..=0x1FAFF).contains(&u)
+                || (0x2600..=0x27BF).contains(&u)
+                || u == 0xFE0F
+        });
+    let mut chain: Vec<&str> = Vec::new();
+    if is_symbol {
+        chain.push("Noto Emoji");
+    }
+    if os_name == "macOS" {
+        chain.extend(["PingFang SC", "Hiragino Sans", "Arial Unicode MS", "Apple Symbols", "STHeiti", "Heiti SC"]);
+    } else if os_name == "Windows" {
+        chain.extend(["Microsoft YaHei", "SimSun", "Segoe UI Symbol"]);
+    } else {
+        chain.extend(["Noto Sans CJK SC", "Noto Sans", "DejaVu Sans"]);
+    }
+    // The primary families last — better to reuse them than to fail.
+    for fam in &font.families {
+        chain.push(fam);
+    }
+    for name in chain {
+        if let Some(id) = db.query_strict_public(name) {
+            if let Some((fdata, fidx)) = db.face_data(id) {
+                if face_covers(fdata, fidx, segment) {
+                    return Some((fdata, fidx));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Shape + rasterize `text` at the given origin, producing a list of
@@ -520,4 +642,60 @@ mod tests {
         let glyphs = rasterize_text("", 0.0, 0.0, &font, 0, 0, 0, 1.0, "Linux");
         assert!(glyphs.is_empty());
     }
+}
+
+/// Measure a text run the way the layout engine needs it: width plus the
+/// line box height of the face actually used (ascent + descent), because a
+/// fallback glyph (CJK, emoji) rides a taller font than the primary face.
+///
+/// `families` are the element's computed `font-family` list; generic
+/// families map to the same names the font database resolves. Returns
+/// `None` when the caller should fall back to its own estimate (no face
+/// resolved, or an empty family list).
+pub fn measure_for_layout(
+    text: &str,
+    size_px: f32,
+    families: &[crate::css_values::types::font::FontFamily],
+) -> Option<(f64, f64)> {
+    use crate::css_values::types::font::{FontFamily, GenericFamily};
+    if text.is_empty() || families.is_empty() {
+        return None;
+    }
+    let os_name = match std::env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        _ => "Linux",
+    };
+    let names: Vec<String> = families
+        .iter()
+        .map(|f| match f {
+            FontFamily::Named(n) => n.clone(),
+            FontFamily::Generic(g) => match g {
+                GenericFamily::Serif | GenericFamily::UiSerif => "serif".to_string(),
+                GenericFamily::SansSerif | GenericFamily::SystemUi | GenericFamily::UiSansSerif => {
+                    "sans-serif".to_string()
+                }
+                GenericFamily::Monospace | GenericFamily::UiMonospace => "monospace".to_string(),
+                GenericFamily::Cursive => "cursive".to_string(),
+                GenericFamily::Fantasy | GenericFamily::UiRounded => "fantasy".to_string(),
+                GenericFamily::Emoji => "emoji".to_string(),
+                GenericFamily::Math | GenericFamily::Fangsong => "serif".to_string(),
+            },
+        })
+        .collect();
+    let font = ParsedFont {
+        size_px,
+        weight: 400,
+        italic: false,
+        families: names,
+    };
+    let m = measure_text_metrics(text, &font, os_name);
+    let run = match shape_run(text, &font, os_name) {
+        Some((_, _, run)) => run,
+        None => return Some((m.width as f64, m.font_bounding_box_ascent as f64)),
+    };
+    Some((
+        m.width as f64,
+        (run.ascent + run.descent + run.line_gap) as f64,
+    ))
 }
