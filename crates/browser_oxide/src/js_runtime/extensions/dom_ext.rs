@@ -1350,6 +1350,36 @@ fn expand_shorthand(name: &str, value: &str) -> Vec<(String, String)> {
             }
             out
         }
+        "font" => {
+            // The canvas parser already knows the shorthand grammar; reuse
+            // it so getComputedStyle and the layout engine cannot disagree
+            // about what `font: 24px monospace` means.
+            let parsed = crate::canvas::text::ParsedFont::parse(v);
+            match parsed {
+                Some(f) => {
+                    let style = if f.italic { "italic".to_string() } else { "normal".to_string() };
+                    let families = f
+                        .families
+                        .iter()
+                        .map(|n| {
+                            if n.contains(' ') && !n.starts_with('\'') && !n.starts_with('"') {
+                                format!("'{n}'")
+                            } else {
+                                n.clone()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    vec![
+                        ("font-style".to_string(), style),
+                        ("font-weight".to_string(), f.weight.to_string()),
+                        ("font-size".to_string(), format!("{}px", f.size_px)),
+                        ("font-family".to_string(), families),
+                    ]
+                }
+                None => vec![],
+            }
+        }
         _ => vec![],
     }
 }
