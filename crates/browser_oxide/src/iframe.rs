@@ -13,6 +13,46 @@ use tracing;
 
 /// loading -> interactive (DOMContentLoaded) -> complete (load), fired from
 /// a zero-delay timer so async handlers run inside the event loop.
+/// Watches the frame document for nested <iframe> elements that gain a
+/// src after insertion (Turnstile's inner widget frame is created
+/// src-less and pointed at its challenge URL from JS). Each such frame
+/// raises a request to the page layer, which materializes it — this
+/// realm cannot load frames itself.
+const FRAME_WATCH_JS: &str = r#"
+    (() => {
+        globalThis.__fwMut = 0;
+        globalThis.__fwReq = 0;
+        const req = (frameEl) => {
+            globalThis.__fwReq += 1;
+            try {
+                const src = frameEl.getAttribute('src');
+                if (!src || src.startsWith('javascript:')) return;
+                const selfId = globalThis.__oxSelfNodeId || 0;
+                const idFn = globalThis.__browser_oxide && globalThis.__browser_oxide._getNodeId;
+                const fid = idFn ? idFn(frameEl) : 0;
+                if (globalThis.Deno && Deno.core && Deno.core.ops && Deno.core.ops.op_nested_frame_request) {
+                    Deno.core.ops.op_nested_frame_request(selfId, fid, src);
+                }
+            } catch (_e) {}
+        };
+        new MutationObserver((muts) => {
+            globalThis.__fwMut += muts.length;
+            for (const m of muts) {
+                if (m.type === 'attributes' && m.target && m.target.tagName === 'IFRAME') req(m.target);
+                if (m.type === 'childList') {
+                    m.addedNodes.forEach((n) => {
+                        if (n.nodeType !== 1) return;
+                        if (n.tagName === 'IFRAME') { req(n); return; }
+                        // Subtree: innerHTML/container insertions carry the
+                        // frame as a descendant, not as the added node.
+                        try { n.querySelectorAll && n.querySelectorAll('iframe').forEach(req); } catch (_e) {}
+                    });
+                }
+            }
+        }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+    })();
+"#;
+
 const DOCUMENT_LIFECYCLE_JS: &str = r#"
 setTimeout(() => {
     try { globalThis._browser_oxide.__documentReadyState = 'interactive'; } catch (_e) {}
@@ -272,6 +312,7 @@ impl ChildIframe {
         if let Err(e) = event_loop.execute_script(DOCUMENT_LIFECYCLE_JS) {
             tracing::warn!(error = %e, "iframe lifecycle script error");
         }
+        let _ = event_loop.execute_script(FRAME_WATCH_JS);
 
         // Run child event loop briefly. A frame that keeps timers alive would
         // hold the parent here for the whole budget, while in a browser both
