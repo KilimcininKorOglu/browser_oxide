@@ -738,3 +738,38 @@ mod tests {
         assert_eq!(rect.width, 0.0);
     }
 }
+
+#[cfg(test)]
+mod inset_tests {
+    use super::*;
+    use crate::dom::node::{Attribute, QualName};
+    use crate::dom::{Dom, NodeId};
+    use crate::layout::viewport::Viewport;
+
+    #[test]
+    fn absolute_left_positions_the_box() {
+        let mut dom = Dom::new();
+        let html = dom.create_element(QualName::new("html"), vec![]);
+        dom.append_child(NodeId::DOCUMENT, html);
+        let body = dom.create_element(QualName::new("body"), vec![]);
+        dom.append_child(html, body);
+        let div = dom.create_element(
+            QualName::new("div"),
+            vec![Attribute {
+                name: QualName::new("style"),
+                value: "position:absolute;left:-10000px;width:200px;height:100px".to_string(),
+            }],
+        );
+        dom.append_child(body, div);
+
+        let viewport = Viewport::new(1920.0, 1080.0);
+        let mut engine = LayoutEngine::new(viewport);
+        engine.compute(&dom);
+        let rect = engine.get_bounding_rect(&dom, div);
+        assert!(
+            (rect.x - (-10000.0)).abs() < 1.0,
+            "absolute left:-10000px must place the box at x=-10000, got {}",
+            rect.x
+        );
+    }
+}

@@ -30,6 +30,7 @@ pub fn parse_property(
         "margin" => return parse_box_shorthand(value_trimmed, important, "margin"),
         "padding" => return parse_box_shorthand(value_trimmed, important, "padding"),
         "overflow" => return parse_overflow_shorthand(value_trimmed, important),
+        "font" => return parse_font_shorthand(value_trimmed, important),
         _ => {}
     }
 
@@ -41,6 +42,7 @@ pub fn parse_property(
             parse_length_percentage_auto(value_trimmed)?
         }
         "max-width" | "max-height" => parse_length_percentage_auto_none(value_trimmed)?,
+        "left" | "top" | "right" | "bottom" => parse_length_percentage_auto(value_trimmed)?,
         "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => {
             parse_length_percentage_auto(value_trimmed)?
         }
@@ -731,6 +733,78 @@ fn parse_content_visibility(value: &[ComponentValue<'_>]) -> Result<CssValue, Va
 }
 
 // --- Shorthand parsers ---
+
+
+/// Expand the CSS `font` shorthand (`font: italic 700 15px "Times New Roman", serif`)
+/// into its longhands via the same parser the canvas ctx.font uses. Without
+/// this, `font:24px monospace` in an inline style left the element at the
+/// default 16px serif — a layout fingerprint far from any real browser.
+fn parse_font_shorthand(
+    value: &[ComponentValue<'_>],
+    important: bool,
+) -> Result<Vec<PropertyDeclaration>, ValueError> {
+    let value_trimmed = trim_whitespace(value);
+    // Locate the size token: the first dimension or percentage. Everything
+    // before it is style/weight, everything after it is the family list.
+    // The slices feed the SAME longhand parsers, so the shorthand cannot
+    // drift from the longhand values.
+    let size_idx = value_trimmed.iter().position(|cv| {
+        matches!(
+            cv,
+            ComponentValue::Token(Token {
+                kind: TokenKind::Dimension { .. } | TokenKind::Percentage { .. },
+                ..
+            })
+        )
+    });
+    let Some(size_idx) = size_idx else {
+        return Err(ValueError::InvalidValue(component_values_to_string(
+            value_trimmed,
+        )));
+    };
+    let mut decls = Vec::new();
+    let prefix = &value_trimmed[..size_idx];
+    if !prefix.is_empty() {
+        let style_words: Vec<&str> = prefix
+            .iter()
+            .filter_map(|cv| match cv {
+                ComponentValue::Token(Token {
+                    kind: TokenKind::Ident(s),
+                    ..
+                }) => Some(*s),
+                _ => None,
+            })
+            .collect();
+        let joined = style_words.join(" ");
+        let lower = joined.to_ascii_lowercase();
+        if lower.contains("italic") || lower.contains("oblique") {
+            decls.push(PropertyDeclaration {
+                property: PropertyId::FontStyle,
+                value: parse_font_style(prefix)?,
+                important,
+            });
+        }
+        decls.push(PropertyDeclaration {
+            property: PropertyId::FontWeight,
+            value: parse_font_weight(prefix)?,
+            important,
+        });
+    }
+    decls.push(PropertyDeclaration {
+        property: PropertyId::FontSize,
+        value: parse_font_size(&value_trimmed[size_idx..size_idx + 1])?,
+        important,
+    });
+    let family_part = &value_trimmed[size_idx + 1..];
+    if !family_part.is_empty() {
+        decls.push(PropertyDeclaration {
+            property: PropertyId::FontFamily,
+            value: parse_font_family(family_part)?,
+            important,
+        });
+    }
+    Ok(decls)
+}
 
 fn parse_box_shorthand(
     value: &[ComponentValue<'_>],

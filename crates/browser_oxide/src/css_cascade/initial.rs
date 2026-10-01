@@ -18,6 +18,9 @@ pub fn initial_value(property: &PropertyId) -> CssValue {
         PropertyId::MaxWidth | PropertyId::MaxHeight => {
             CssValue::LengthPercentageAuto(LengthPercentageAuto::Auto)
         }
+        PropertyId::Left | PropertyId::Top | PropertyId::Right | PropertyId::Bottom => {
+            CssValue::LengthPercentageAuto(LengthPercentageAuto::Auto)
+        }
         PropertyId::MarginTop
         | PropertyId::MarginRight
         | PropertyId::MarginBottom

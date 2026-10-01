@@ -27,6 +27,33 @@ pub fn computed_to_taffy(style: &ComputedStyle, ctx: &ResolveContext) -> taffy::
         };
     }
 
+    // Insets (left/top/right/bottom). Chrome positions an absolutely
+    // placed box by its insets; probes measuring off-screen elements
+    // (left: -10000px) read the box back at that offset.
+    let inset_lpa = |prop: &PropertyId| -> taffy::LengthPercentageAuto {
+        match style.get(prop) {
+            Some(CssValue::LengthPercentageAuto(lpa)) => match lpa {
+                crate::css_values::types::length::LengthPercentageAuto::Length(l) => {
+                    taffy::LengthPercentageAuto::length(resolve_length(l, ctx))
+                }
+                crate::css_values::types::length::LengthPercentageAuto::Percentage(p) => {
+                    taffy::LengthPercentageAuto::percent(*p as f32 / 100.0)
+                }
+                crate::css_values::types::length::LengthPercentageAuto::Auto => {
+                    taffy::LengthPercentageAuto::auto()
+                }
+                crate::css_values::types::length::LengthPercentageAuto::Calc(_) => {
+                    taffy::LengthPercentageAuto::auto()
+                }
+            },
+            _ => taffy::LengthPercentageAuto::auto(),
+        }
+    };
+    ts.inset.left = inset_lpa(&PropertyId::Left);
+    ts.inset.top = inset_lpa(&PropertyId::Top);
+    ts.inset.right = inset_lpa(&PropertyId::Right);
+    ts.inset.bottom = inset_lpa(&PropertyId::Bottom);
+
     // Width / Height
     ts.size.width = css_to_dimension(style, &PropertyId::Width, ctx);
     ts.size.height = css_to_dimension(style, &PropertyId::Height, ctx);

@@ -95,6 +95,10 @@ fn all_property_ids() -> Vec<PropertyId> {
     vec![
         PropertyId::Display,
         PropertyId::Position,
+        PropertyId::Left,
+        PropertyId::Top,
+        PropertyId::Right,
+        PropertyId::Bottom,
         PropertyId::Width,
         PropertyId::Height,
         PropertyId::MinWidth,
