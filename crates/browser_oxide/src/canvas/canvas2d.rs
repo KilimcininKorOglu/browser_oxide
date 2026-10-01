@@ -620,7 +620,7 @@ pub struct Canvas2D {
 }
 
 impl Canvas2D {
-    pub fn new(width: u32, height: u32, os_name: String, seed: u64) -> Option<Self> {
+    pub fn new(width: u32, height: u32, os_name: String, _seed: u64) -> Option<Self> {
         if width == 0 || height == 0 {
             return None;
         }
