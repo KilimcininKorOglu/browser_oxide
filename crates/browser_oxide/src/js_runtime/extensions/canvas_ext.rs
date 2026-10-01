@@ -366,39 +366,36 @@ pub fn op_canvas_scale(state: &mut OpState, #[smi] id: i32, x: f64, y: f64) {
 #[op2]
 #[string]
 pub fn op_canvas_to_data_url(state: &mut OpState, #[smi] id: i32) -> String {
+    canvas_to_data_url_raw(state, id, "image/png", None)
+}
+
+/// `toDataURL(type, quality)` — each format through its own encoder. The
+/// old dead-code jitter here was never applied (the pixels were computed
+/// and discarded), which is just as well: two identical draws must produce
+/// identical bytes, the way a real browser behaves.
+#[op2]
+#[string]
+pub fn op_canvas_to_data_url_typed(
+    state: &mut OpState,
+    #[smi] id: i32,
+    #[string] mime: &str,
+    quality: Option<f64>,
+) -> String {
+    canvas_to_data_url_raw(state, id, mime, quality)
+}
+
+fn canvas_to_data_url_raw(
+    state: &mut OpState,
+    id: i32,
+    mime: &str,
+    quality: Option<f64>,
+) -> String {
     let state = state.borrow::<CanvasState>();
-    tracing::debug!("Canvas to_data_url called");
     state
         .canvases
         .get(&id)
-        .map(|c| {
-            let mut pixels = c.get_image_data(0, 0, c.width(), c.height());
-            // Add tiny, invisible jitter to the lowest bit of random pixels
-            // to break deterministic canvas fingerprinting.
-            if !pixels.is_empty() {
-                let mut rng = 0x9e3779b9u32; // Deterministic-ish seed
-                for i in (0..pixels.len()).step_by(4) {
-                    rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
-                    if (rng % 100) < 5 {
-                        // Jitter 5% of pixels
-                        pixels[i] = pixels[i].wrapping_add((rng & 1) as u8);
-                        pixels[i + 1] = pixels[i + 1].wrapping_sub(((rng >> 1) & 1) as u8);
-                        pixels[i + 2] = pixels[i + 2].wrapping_add(((rng >> 2) & 1) as u8);
-                    }
-                }
-            }
-
-            // Encode the jittered pixels to PNG base64
-            // (Note: This requires a PNG encoder that can take raw RGBA)
-            // For now, we'll use the existing to_data_url which uses tiny-skia's encoder.
-            // To be truly SOTA we should encode our jittered buffer.
-
-            // Falling back to standard for now as tiny-skia's Canvas2D doesn't
-            // expose the raw buffer easily for re-encoding without extra crates.
-            // Wait, Canvas2D is our own struct!
-            c.to_data_url_with_jitter()
-        })
-        .unwrap_or_default()
+        .and_then(|c| c.to_data_url_type(mime, quality))
+        .unwrap_or_else(|| "data:,".to_string())
 }
 
 #[op2(fast)]
@@ -681,6 +678,7 @@ deno_core::extension!(
         op_canvas_rotate,
         op_canvas_scale,
         op_canvas_to_data_url,
+        op_canvas_to_data_url_typed,
         op_canvas_measure_text,
         op_canvas_measure_text_full,
         op_canvas_get_image_data,

@@ -85,6 +85,7 @@ png = "0.17"
 image = { version = "0.25", default-features = false, features = [
   "png",
   "jpeg",
+  "webp",
 ] }
 fontdb = { version = "0.23", default-features = false }
 ttf-parser = "0.25"

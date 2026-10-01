@@ -1108,9 +1108,59 @@ impl Canvas2D {
 
     /// Encode the canvas as a PNG data URL.
     pub fn to_data_url(&self) -> String {
-        let png_bytes = self.to_png_bytes();
-        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
-        format!("data:image/png;base64,{}", b64)
+        self.to_data_url_type("image/png", None)
+            .unwrap_or_else(|| "data:,".to_string())
+    }
+
+    /// `canvas.toDataURL(type, quality)`. Chrome encodes each requested
+    /// format with its own encoder; falling back to PNG bytes under a
+    /// jpeg/webp MIME (the old behaviour) is trivially detectable — the
+    /// bytes do not even carry the format's magic.
+    pub fn to_data_url_type(&self, mime: &str, quality: Option<f64>) -> Option<String> {
+        use std::io::Cursor;
+use base64::Engine;
+        let unpremultiplied = self.get_image_data(0, 0, self.width, self.height);
+        let (mime, bytes) = match mime {
+            "image/jpeg" => {
+                // The spec composites onto BLACK before JPEG (no alpha).
+                let mut rgb = Vec::with_capacity((self.width * self.height * 3) as usize);
+                for px in unpremultiplied.chunks_exact(4) {
+                    let a = px[3] as u32;
+                    rgb.push((px[0] as u32 * a / 255) as u8);
+                    rgb.push((px[1] as u32 * a / 255) as u8);
+                    rgb.push((px[2] as u32 * a / 255) as u8);
+                }
+                let mut buf = Vec::new();
+                let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                    &mut buf,
+                    quality.map(|q| (q.clamp(0.0, 1.0) * 100.0).round() as u8).unwrap_or(92),
+                );
+                encoder
+                    .encode(&rgb, self.width, self.height, image::ExtendedColorType::Rgb8)
+                    .ok()?;
+                ("image/jpeg", buf)
+            }
+            "image/webp" => {
+                let mut buf = Vec::new();
+                let mut cursor = Cursor::new(&mut buf);
+                let mut encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut cursor);
+                encoder
+                    .encode(
+                        &unpremultiplied,
+                        self.width,
+                        self.height,
+                        image::ExtendedColorType::Rgba8,
+                    )
+                    .ok()?;
+                ("image/webp", buf)
+            }
+            _ => {
+                let png_bytes = self.to_png_bytes();
+                ("image/png", png_bytes)
+            }
+        };
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Some(format!("data:{mime};base64,{b64}"))
     }
 
     /// Encode with tiny invisible noise to break deterministic fingerprinting.

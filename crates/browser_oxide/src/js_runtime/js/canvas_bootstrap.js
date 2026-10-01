@@ -1639,11 +1639,13 @@
             }
             return null;
         }
-        toDataURL(type) {
+        toDataURL(type, quality) {
             if (!this.#canvasId) {
                 this.#canvasId = ops.op_canvas_create(parseInt(this.#attrs.width, 10) || 300, parseInt(this.#attrs.height, 10) || 150, _getOsName(), _getCanvasSeed());
             }
-            return ops.op_canvas_to_data_url(this.#canvasId);
+            const mime = typeof type === "string" && type.startsWith("image/") ? type : "image/png";
+            return ops.op_canvas_to_data_url_typed(this.#canvasId, mime,
+                typeof quality === "number" && Number.isFinite(quality) ? quality : null);
         }
         toBlob(cb, type) { cb(new Blob([this.toDataURL()])); }
         // Minimal Node API
@@ -1869,7 +1871,7 @@
         });
 
         Object.defineProperty(_HTMLCanvasProto, "toDataURL", {
-            value: function toDataURL(_type) {
+            value: function toDataURL(type, quality) {
                 _requireCanvas(this, "toDataURL");
                 // Auto-allocate a canvas if none yet — real Chrome
                 // serializes any HTMLCanvasElement, even one whose 2D
@@ -1879,7 +1881,9 @@
                     try { this.getContext("2d"); } catch (_e) {}
                 }
                 if (!this._canvasId) return "data:,";
-                return ops.op_canvas_to_data_url(this._canvasId);
+                const mime = typeof type === "string" && type.startsWith("image/") ? type : "image/png";
+                return ops.op_canvas_to_data_url_typed(this._canvasId, mime,
+                    typeof quality === "number" && Number.isFinite(quality) ? quality : null);
             },
             writable: true,
             configurable: true,

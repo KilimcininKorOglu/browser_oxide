@@ -1896,7 +1896,9 @@
             } catch (_e) { /* fall back to defaults */ }
             this._canvasId = ops.op_canvas_create(this.width, this.height, osName, canvasSeed);
         }
-        return ops.op_canvas_to_data_url(this._canvasId);
+        const mime = typeof type === "string" && type.startsWith("image/") ? type : "image/png";
+        return ops.op_canvas_to_data_url_typed(this._canvasId, mime,
+            typeof quality === "number" && Number.isFinite(quality) ? quality : null);
     };
     class HTMLScriptElement extends HTMLElement {}
     class HTMLStyleElement extends HTMLElement {
