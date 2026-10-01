@@ -5024,4 +5024,48 @@
             }
         }
     }
+    // Document-level on* handlers: Chrome exposes onchange/onkeydown/…
+    // (null when unset) on Document.prototype — the engine had none, so
+    // `typeof document.onchange` read undefined (a parity tell).
+    (() => {
+        const Doc = globalThis.Document;
+        if (!Doc || !Doc.prototype) return;
+        // Keyed by document object; Map (not WeakMap) so reset_for_reuse
+        // can clear every page-authored handler in one sweep. The entries
+        // are per-document maps; the document itself is replaced per page,
+        // so the Map only ever holds a couple of keys.
+        const _docHandlers = new Map();
+        Object.defineProperty(globalThis, Symbol.for("__oxDocHandlers"), {
+            value: { clear: () => _docHandlers.clear() },
+            configurable: true, enumerable: false, writable: true,
+        });
+        const _names = ("onabort onauxclick onbeforeinput onbeforematch onbeforetoggle onblur " +
+            "oncancel oncanplay oncanplaythrough onchange onclick onclose oncontextmenu " +
+            "oncopy oncuechange oncut ondblclick ondrag ondragend ondragenter ondragleave " +
+            "ondragover ondragstart ondrop ondurationchange onemptied onended onerror " +
+            "onfocus onformdata onfullscreenchange onfullscreenerror oninput oninvalid " +
+            "onkeydown onkeypress onkeyup onload onloadeddata onloadedmetadata onloadstart " +
+            "onmousedown onmouseenter onmouseleave onmousemove onmouseout onmouseover " +
+            "onmouseup onpaste onpause onplay onplaying onpointercancel onpointerdown " +
+            "onpointerenter onpointerleave onpointermove onpointerout onpointerover " +
+            "onpointerrawupdate onpointerup onprogress onratechange onreadystatechange " +
+            "onreset onresize onscroll onscrollend onsearch onsecuritypolicyviolation " +
+            "onseeked onseeking onselect onselectionchange onselectstart onslotchange " +
+            "onstalled onsubmit onsuspend ontimeupdate ontoggle ontransitioncancel " +
+            "ontransitionend ontransitionrun ontransitionstart onvisibilitychange " +
+            "onvolumechange onwaiting onwheel").split(/\s+/);
+        for (const name of _names) {
+            if (Object.getOwnPropertyDescriptor(Doc.prototype, name)) continue;
+            Object.defineProperty(Doc.prototype, name, {
+                get() { const m = _docHandlers.get(this); return (m && m.get(name)) || null; },
+                set(v) {
+                    let m = _docHandlers.get(this);
+                    if (!m) { m = new Map(); _docHandlers.set(this, m); }
+                    m.set(name, typeof v === "function" ? v : null);
+                },
+                enumerable: true, configurable: true,
+            });
+        }
+    })();
+
 })(globalThis);

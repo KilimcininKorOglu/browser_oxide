@@ -402,6 +402,14 @@ pub fn op_canvas_to_data_url(state: &mut OpState, #[smi] id: i32) -> String {
 }
 
 #[op2(fast)]
+pub fn op_canvas_resize(state: &mut OpState, #[smi] id: i32, #[smi] w: i32, #[smi] h: i32) {
+    let state = state.borrow_mut::<CanvasState>();
+    if let Some(c) = state.canvases.get_mut(&id) {
+        c.resize(w.max(1) as u32, h.max(1) as u32);
+    }
+}
+
+#[op2(fast)]
 pub fn op_canvas_measure_text(state: &mut OpState, #[smi] id: i32, #[string] text: &str) -> f64 {
     let state = state.borrow::<CanvasState>();
     state
@@ -642,6 +650,7 @@ pub fn op_canvas_draw_decoded_image(
 deno_core::extension!(
     canvas_extension,
     ops = [
+        op_canvas_resize,
         op_canvas_create,
         op_canvas_fill_rect,
         op_canvas_stroke_rect,

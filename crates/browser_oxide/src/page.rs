@@ -1609,6 +1609,7 @@ impl Page {
             r#"(function() {
                 const g = globalThis;
                 try { g.__cancelAllTimers && g.__cancelAllTimers(); } catch (_) {}
+                try { globalThis[Symbol.for("__oxDocHandlers")] && globalThis[Symbol.for("__oxDocHandlers")].clear(); } catch (_) {}
                 try { g.__cancelAllListeners && g.__cancelAllListeners(); } catch (_) {}
                 try { g.__resetDomRegistries && g.__resetDomRegistries(); } catch (_) {}
                 try { g.__resetCustomElements && g.__resetCustomElements(); } catch (_) {}

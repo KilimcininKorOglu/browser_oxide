@@ -1144,6 +1144,13 @@ impl Canvas2D {
             let mut encoder = png::Encoder::new(&mut buf, self.width, self.height);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
+            // Same pinned compression/filter as `to_png_bytes`: without
+            // these the encoder emits ~75x-larger PNGs for simple canvases
+            // (a 16x16 solid fill measured 13,954 base64 chars vs Chrome's
+            // 186) — a size tell any canvas fingerprint picks up.
+            encoder.set_compression(png::Compression::Best);
+            encoder.set_filter(png::FilterType::Paeth);
+            encoder.set_adaptive_filter(png::AdaptiveFilterType::Adaptive);
             let mut writer = encoder.write_header().expect("PNG header write failed");
             writer
                 .write_image_data(&pixels)
@@ -1191,6 +1198,17 @@ impl Canvas2D {
                 .expect("PNG data write failed");
         }
         buf
+    }
+
+    /// Resize the backing store. Mirrors the HTML spec: setting
+    /// `canvas.width/height` clears the bitmap and resets the drawing
+    /// state, whatever was drawn before is gone.
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.width = width.max(1);
+        self.height = height.max(1);
+        self.pixels = vec![0; (self.width as usize) * (self.height as usize) * 4];
+        self.state = CanvasState::default();
+        self.state_stack.clear();
     }
 
     /// Check if any pixels have been drawn (non-transparent).

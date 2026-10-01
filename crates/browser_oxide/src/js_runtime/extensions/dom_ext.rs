@@ -919,6 +919,12 @@ pub fn op_dom_get_computed_style(
     }
 
     let raw = computed_property_raw(state, id, property);
+    // Inline boxes have no used width/height: the computed value reads
+    // `auto` however the declarations say (Chrome behavior; the engine
+    // echoed the declared px — a `width` tell on hidden-span audits).
+    if (property == "width" || property == "height") && element_display_is_inline(state, id) {
+        return "auto".to_string();
+    }
     if crate::js_runtime::extensions::dom_ext::is_color_property(property) {
         if let Some(c) = normalize_computed_color(&raw) {
             return c;
@@ -1143,6 +1149,17 @@ fn normalize_computed_color(value: &str) -> Option<String> {
         });
     }
     None
+}
+
+/// True when the element's computed display is an inline-level keyword.
+fn element_display_is_inline(state: &DomState, id: NodeId) -> bool {
+    let Some(elem) = state.dom.get(id).and_then(|n| n.as_element()) else {
+        return false;
+    };
+    matches!(
+        crate::css_cascade::ua::element_ua_display(elem),
+        "inline" | "inline-block" | "ruby"
+    )
 }
 
 /// Extract a property value from an element's inline style attribute.

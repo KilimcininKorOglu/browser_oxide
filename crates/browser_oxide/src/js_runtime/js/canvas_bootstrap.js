@@ -1560,10 +1560,8 @@
         #canvasId;
         #attrs;
         constructor(width = 300, height = 150) {
-            this.#canvasId = ops.op_canvas_create(width, height, _getOsName(), _getCanvasSeed());
+            this.#canvasId = null;
             this.#attrs = { width: String(width), height: String(height) };
-            Object.defineProperty(this, 'width', { value: width, writable: true, enumerable: true, configurable: true });
-            Object.defineProperty(this, 'height', { value: height, writable: true, enumerable: true, configurable: true });
             // Element base properties — fpCollect and bot.sannysoft expect these.
             // Use defineProperty because Element.prototype (which we chain into
             // at the bottom of this file) has tagName/nodeName/etc. as getters
@@ -1584,17 +1582,34 @@
         // `canvas.setAttribute('width', 200)` before drawing.
         setAttribute(name, value) {
             this.#attrs[name] = String(value);
-            if (name === "width") {
-                Object.defineProperty(this, 'width', { value: parseInt(value, 10) || this.width, writable: true, enumerable: true, configurable: true });
-            }
-            if (name === "height") {
-                Object.defineProperty(this, 'height', { value: parseInt(value, 10) || this.height, writable: true, enumerable: true, configurable: true });
+            // Chrome: changing width/height clears and resizes the bitmap.
+            if (name === "width" || name === "height") {
+                this.#resizeFromAttrs();
             }
         }
+        #resizeFromAttrs() {
+            if (this.#canvasId) {
+                ops.op_canvas_resize(
+                    this.#canvasId,
+                    parseInt(this.#attrs.width, 10) || 300,
+                    parseInt(this.#attrs.height, 10) || 150,
+                );
+            }
+        }
+        get width() { return parseInt(this.#attrs.width, 10) || 300; }
+        set width(v) { this.#attrs.width = String(Math.max(0, v | 0) || 300); this.#resizeFromAttrs(); }
+        get height() { return parseInt(this.#attrs.height, 10) || 150; }
+        set height(v) { this.#attrs.height = String(Math.max(0, v | 0) || 150); this.#resizeFromAttrs(); }
         getAttribute(name) { return this.#attrs[name] !== undefined ? this.#attrs[name] : null; }
         removeAttribute(name) { delete this.#attrs[name]; }
         hasAttribute(name) { return name in this.#attrs; }
         getContext(type) {
+            if (!this.#canvasId) {
+                this.#canvasId = ops.op_canvas_create(
+                    parseInt(this.#attrs.width, 10) || 300,
+                    parseInt(this.#attrs.height, 10) || 150,
+                    _getOsName(), _getCanvasSeed());
+            }
             if (type === "2d") return _context2d(this, this.#canvasId);
             if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
                 // FIX-D2: webgl2 → WebGL2RenderingContext (distinct class +
@@ -1610,7 +1625,12 @@
             }
             return null;
         }
-        toDataURL(type) { return ops.op_canvas_to_data_url(this.#canvasId); }
+        toDataURL(type) {
+            if (!this.#canvasId) {
+                this.#canvasId = ops.op_canvas_create(parseInt(this.#attrs.width, 10) || 300, parseInt(this.#attrs.height, 10) || 150, _getOsName(), _getCanvasSeed());
+            }
+            return ops.op_canvas_to_data_url(this.#canvasId);
+        }
         toBlob(cb, type) { cb(new Blob([this.toDataURL()])); }
         // Minimal Node API
         appendChild(child) { this.childNodes.push(child); return child; }
@@ -1783,6 +1803,28 @@
                 self._canvasId = ops.op_canvas_create(w, h, _getOsName(), _getCanvasSeed());
             }
         }
+
+        // canvas.width/height are IDL attributes: assignment writes the
+        // content attribute AND resizes (clears) the backing bitmap —
+        // Chrome semantics. A plain property assignment used to leave the
+        // store at the 300x150 default, so every explicitly-sized canvas
+        // rendered (and PNG-encoded) a 300x150 bitmap.
+        Object.defineProperty(_HTMLCanvasProto, "width", {
+            get() { return parseInt(this.getAttribute("width")) || 300; },
+            set(v) {
+                this.setAttribute("width", String(Math.max(0, v | 0) || 300));
+                if (this._canvasId) ops.op_canvas_resize(this._canvasId, parseInt(this.getAttribute("width")), parseInt(this.getAttribute("height")) || 150);
+            },
+            enumerable: true, configurable: true,
+        });
+        Object.defineProperty(_HTMLCanvasProto, "height", {
+            get() { return parseInt(this.getAttribute("height")) || 150; },
+            set(v) {
+                this.setAttribute("height", String(Math.max(0, v | 0) || 150));
+                if (this._canvasId) ops.op_canvas_resize(this._canvasId, parseInt(this.getAttribute("width")) || 300, parseInt(this.getAttribute("height")));
+            },
+            enumerable: true, configurable: true,
+        });
 
         Object.defineProperty(_HTMLCanvasProto, "getContext", {
             value: function getContext(type) {
