@@ -182,6 +182,27 @@
         // parity — see __oxSyncFrameIndices in window_bootstrap).
         if (childTag === 'iframe' || childTag === 'frame') {
             try { globalThis.__oxSyncFrameIndices && globalThis.__oxSyncFrameIndices(); } catch (_e) {}
+            // CHILD REALM: when a nested <iframe> gains a src, fetch the
+            // content and execute its scripts INLINE in this realm. Turnstile
+            // hosts its inner widget frame one level down — without loading it,
+            // the round stalls at the food=26 checkpoint.
+            try {
+                if (globalThis.__oxSelfNodeId) {
+                    const _nf = child.querySelector ? child.querySelector('iframe[src]') : null;
+                    const _nfSrc = _nf ? _nf.getAttribute('src') : (child.getAttribute && child.getAttribute('src'));
+                    if (_nfSrc && _nfSrc.startsWith('http')) {
+                        const base = globalThis.location ? globalThis.location.href : '';
+                        const fullUrl = new URL(_nfSrc, base).href;
+                        fetch(fullUrl).then(r => r.text()).then(html => {
+                            // Parse and execute scripts from the nested frame
+                            const doc = new DOMParser().parseFromString(html, 'text/html');
+                            doc.querySelectorAll('script').forEach(s => {
+                                try { _runClassicScript(s.textContent, fullUrl); } catch (_e) {}
+                            });
+                        }).catch(() => {});
+                    }
+                }
+            } catch (_e) {}
         }
         // Containers with nested iframes: when a div/span/container enters
         // the document carrying iframe descendants, trigger each iframe's
