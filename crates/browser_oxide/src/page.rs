@@ -937,7 +937,8 @@ impl Page {
             }
             if let Some(srcdoc) = &info.srcdoc {
                 match iframe::ChildIframe::from_srcdoc(info.node_id, srcdoc, profile).await {
-                    Ok(child) => {
+                    Ok(mut child) => {
+                        let _nested = child.materialize_children(client, profile, base_url).await;
                         self.children.push(child);
                         materialized += 1;
                     }
@@ -958,7 +959,13 @@ impl Page {
                     )
                     .await
                     {
-                        Ok(child) => {
+                        Ok(mut child) => {
+                            // Nested frames inside the challenge frame must
+                            // materialize too — Turnstile hosts its widget
+                            // one level down; an unloaded nested frame
+                            // stalls the round.
+                            let _nested =
+                                child.materialize_children(client, profile, &full_src).await;
                             self.children.push(child);
                             materialized += 1;
                         }

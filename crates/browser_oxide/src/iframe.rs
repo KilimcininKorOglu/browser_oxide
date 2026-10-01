@@ -36,6 +36,11 @@ pub struct IframeInfo {
 pub struct ChildIframe {
     pub node_id: NodeId,
     pub event_loop: BrowserEventLoop,
+    /// Frames nested INSIDE this frame's own document. Turnstile hosts its
+    /// inner widget frame here; without materializing this level the inner
+    /// VM never loads and the round stalls.
+    pub children: Vec<ChildIframe>,
+    pub depth: usize,
 }
 
 impl ChildIframe {
@@ -77,6 +82,8 @@ impl ChildIframe {
         Ok(Self {
             node_id,
             event_loop,
+            children: Vec::new(),
+            depth: 0,
         })
     }
 
@@ -276,6 +283,8 @@ impl ChildIframe {
         Ok(Self {
             node_id,
             event_loop,
+            children: Vec::new(),
+            depth: 0,
         })
     }
 
@@ -285,6 +294,114 @@ impl ChildIframe {
     }
 
     /// Query the child's DOM for text content of a selector match.
+    /// Scan THIS frame's document for nested <iframe> elements and
+    /// materialize each as a full child realm (one level per call). The
+    /// challenge flow nests its widget frame inside the challenge frame;
+    /// a never-loaded nested frame stalls the whole round.
+    pub async fn materialize_children(
+        &mut self,
+        client: &crate::net::HttpClient,
+        profile: &crate::stealth::StealthProfile,
+        base_url: &str,
+    ) -> usize {
+        if self.depth >= 3 {
+            return 0;
+        }
+        let iframes = {
+            let dom = self.event_loop.runtime_mut().inner();
+            let state = dom.op_state();
+            let state = state.borrow();
+            let dom_state = state.borrow::<crate::js_runtime::state::DomState>();
+            find_iframes(&dom_state.dom)
+        };
+        let already: Vec<_> = self.children.iter().map(|c| c.node_id).collect();
+        let mut materialized = 0usize;
+        for info in &iframes {
+            if already.contains(&info.node_id) {
+                continue;
+            }
+            let child = if let Some(srcdoc) = &info.srcdoc {
+                ChildIframe::from_srcdoc(info.node_id, srcdoc, profile).await
+            } else if let Some(src) = &info.src {
+                if src.is_empty() || src.starts_with("javascript:") {
+                    continue;
+                }
+                let full = if src.starts_with("http") {
+                    src.clone()
+                } else if let Ok(base) = url::Url::parse(base_url) {
+                    base.join(src)
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|_| src.clone())
+                } else {
+                    src.clone()
+                };
+                ChildIframe::from_url(info.node_id, &full, client, Some(profile), None).await
+            } else {
+                continue;
+            };
+            if let Ok(mut child) = child {
+                child.depth = self.depth + 1;
+                // Recurse: the nested frame may itself contain frames.
+                let inner = Box::pin(child.materialize_children(client, profile, base_url)).await;
+                materialized += 1 + inner;
+                self.children.push(child);
+            }
+        }
+        materialized
+    }
+
+    /// Route frame messages between this realm and its nested children
+    /// (mirror of the page-level pump).
+    pub async fn pump_frames(&mut self, budget: Duration) -> usize {
+        const TO_PARENT: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b && b.drainToParent ? b.drainToParent() : '[]'; })()";
+        const TO_CHILDREN: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b && b.drainToChildren ? b.drainToChildren() : '[]'; })()";
+        let mut delivered = 0usize;
+        for child in self.children.iter_mut() {
+            if let Err(e) = child.event_loop.run_until_idle(budget).await {
+                tracing::warn!(error = %e, "nested frame event loop error");
+            }
+            let queued = child.evaluate(TO_PARENT).unwrap_or_default();
+            for msg in parse_frame_messages(&queued) {
+                let js = format!(
+                    "globalThis[Symbol.for('__ox_frames')].deliverFromChild({}, {}, {})",
+                    child.node_id.to_raw(),
+                    serde_json::Value::String(msg.data),
+                    serde_json::Value::String(msg.origin)
+                );
+                if self.event_loop.execute_script(&js).is_ok() {
+                    delivered += 1;
+                }
+            }
+        }
+        let queued = self
+            .event_loop
+            .execute_script(TO_CHILDREN)
+            .unwrap_or_default();
+        for msg in parse_frame_messages(&queued) {
+            if let Some(node) = msg.node {
+                if let Some(child) = self
+                    .children
+                    .iter_mut()
+                    .find(|c| c.node_id.to_raw() == node)
+                {
+                    let js = format!(
+                        "globalThis[Symbol.for('__ox_frames')].deliverFromParent({}, {})",
+                        serde_json::Value::String(msg.data),
+                        serde_json::Value::String(msg.origin)
+                    );
+                    if child.evaluate(&js).is_ok() {
+                        delivered += 1;
+                    }
+                }
+            }
+        }
+        delivered
+    }
+
+    pub fn materialize_grandchildren_sync(&mut self) {
+        // placeholder to keep borrow checker simple at call sites
+    }
+
     pub fn query_text(&mut self, selector: &str) -> Option<String> {
         self.evaluate(&format!(
             r#"(() => {{ const el = document.querySelector("{}"); return el ? el.textContent : ""; }})()"#,
