@@ -30,12 +30,24 @@ async fn main() {
     local
         .run_until(async move {
             let t0 = Instant::now();
-            let diag_init = r#"
+            let diag_init = r##"
                 globalThis.__evts = {};
+                globalThis.__entryVals = {};
+                setTimeout(() => {
+                    const E = globalThis.__entryVals;
+                    try { const cs = getComputedStyle(document.body); let h = 0; for (let i = 0; i < cs.length; i++) h = (h * 31 + cs.getPropertyValue(cs[i]).length) | 0; E.csHash = cs.length + ":" + h; } catch(e) { E.csHash = "ERR"; }
+                    try { let n = 0; for (const s of document.styleSheets) { try { n += s.cssRules.length; } catch(e) {} } E.cssRules = n; } catch(e) { E.cssRules = "ERR"; }
+                    try { E.docTitle = document.title.length; } catch(e) { E.docTitle = "ERR"; }
+                    try { const c = document.createElement("canvas").getContext("2d"); c.font = "14px sans-serif"; E.emoji = String(c.measureText("\u{1F600}").width); } catch(e) { E.emoji = "ERR"; }
+                    try { const c = document.createElement("canvas").getContext("2d"); c.font = "14px Arial"; E.font = String(c.measureText("mmmmmmmmmmlli").width); } catch(e) { E.font = "ERR"; }
+                    try { E.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) { E.tz = "ERR"; }
+                    try { E.lang = navigator.language; } catch(e) { E.lang = "ERR"; }
+                    try { E.uad = navigator.userAgentData.brands.map(b => b.brand + ":" + b.version).join(","); } catch(e) { E.uad = "ERR"; }
+                }, 3000);
                 addEventListener('message', (e) => {
                     try { const ev = e.data && e.data.event; if (ev) globalThis.__evts[ev] = (globalThis.__evts[ev] || 0) + 1; } catch (_) {}
                 });
-            "#;
+            "##;
             let mut page = match browser_oxide::Page::navigate_with_init(&url, profile.clone(), 3, vec![diag_init.to_string()]).await {
                 Ok(p) => p,
                 Err(e) => {
@@ -168,6 +180,9 @@ async fn main() {
                     println!("iframes={}", page.child_iframe_count());
                     if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__evts || {})") {
                         eprintln!("[EVENTS] {}", v);
+                    }
+                    if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__entryVals || {})") {
+                        eprintln!("[ENTRY-VALS] {}", v);
                     }
                     page.consume_and_print_logs();
                     std::process::exit(2);

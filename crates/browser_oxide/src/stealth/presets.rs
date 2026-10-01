@@ -182,19 +182,19 @@ pub fn chrome_148_windows() -> StealthProfile {
 pub fn chrome_148_macos() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
-        user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.48 Safari/537.36".into(),
         browser_name: "Chrome".into(),
         // browser_version stores the FULL version — used by sec-ch-ua-full-version-list
         // and by build_sec_ch_ua's major-version split. The UA string above uses
         // the reduced 148.0.0.0 form per Chrome's UA-reduction policy.
-        browser_version: "148.0.7778.168".into(),
+        browser_version: "153.0.8010.48".into(),
         os_name: "macOS".into(),
         os_version: "15.2".into(),
         platform: "MacIntel".into(),
         vendor: "Google Inc.".into(),
         vendor_sub: "".into(),
         product_sub: "20030107".into(),
-        app_version: "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".into(),
+        app_version: "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.48 Safari/537.36".into(),
 
         // Phase 7 — match real Chrome 148 on macOS arm64 (M3 MacBook Pro):
         // 1512x982 viewport, availHeight 949 (982 - 33 top), colorDepth 30,

@@ -1020,7 +1020,7 @@
     _defNav('maxTouchPoints', () => _pInt("max_touch_points", 0));
     _defNav('pdfViewerEnabled', () => true);
     // webdriver: present on Navigator.prototype per W3C WebDriver spec.
-    // Modern Chrome (>=89, incl. the Chrome-148 we impersonate) ALWAYS
+    // Modern Chrome (>=89, incl. the Chrome-153 we impersonate) ALWAYS
     // defines navigator.webdriver: it returns `false` for normal
     // browsing (`undefined` differs from a real modern browser). This is
     // consistent with worker_bootstrap.js (already `false`). The prior
@@ -1871,7 +1871,7 @@
         };
 
         // Phase 7 — real Chrome 147 GREASE entry is
-        // `{brand: "Not.A/Brand", version: "8"}`, not "24".
+        // `{brand: "Not_A Brand", version: "8"}`, not "24".
         // Chrome rotates the GREASE version periodically.
         const _makeLowBrands = () => Object.freeze(_shuffled([
             Object.freeze({ brand: "Chromium", version: _uaBrowserMajor() }),
