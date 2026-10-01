@@ -17,6 +17,11 @@ use std::sync::OnceLock;
 
 pub struct FontDatabase {
     inner: Database,
+    /// Family names of the bundled (Linux-style) faces. Outside a Linux
+    /// persona these must not resolve by NAME: a real Mac or Windows
+    /// machine has no Liberation Sans, and "detecting" one is a
+    /// fingerprint tell. Generic resolution still falls back to them.
+    bundled_families: std::collections::HashSet<String>,
 }
 
 /// Bundled font data. `include_bytes!` keeps these in the final binary
@@ -117,13 +122,41 @@ impl FontDatabase {
             }
         }
 
-        FontDatabase { inner: db }
+        let bundled: std::collections::HashSet<String> = db
+            .faces()
+            .take(BUNDLED_FACE_COUNT)
+            .map(|f| {
+                f.families
+                    .first()
+                    .map(|(name, _)| name.to_lowercase())
+                    .unwrap_or_default()
+            })
+            .collect();
+        FontDatabase {
+            inner: db,
+            bundled_families: bundled,
+        }
+    }
+
+
+    /// True when a BY-NAME lookup must miss: the requested family is one
+    /// of our bundled Linux faces and the persona is not Linux. The emoji
+    /// face is exempt — it is the internal rendering fallback.
+    fn name_lookup_refused(&self, family: &str, os_name: &str) -> bool {
+        if os_name == "Linux" {
+            return false;
+        }
+        let lower = family.to_lowercase();
+        lower != "noto emoji" && self.bundled_families.contains(&lower)
     }
 
     /// Look up a face by family name + weight + italic style. Uses
     /// fontdb's selection algorithm which includes weight-closeness and
     /// style-closeness fallbacks.
     pub fn query(&self, family: &str, weight: u16, italic: bool, os_name: &str) -> Option<ID> {
+        if self.name_lookup_refused(family, os_name) {
+            return None;
+        }
         let style = if italic { Style::Italic } else { Style::Normal };
         let families = resolve_family(family, os_name);
         let query = Query {
@@ -137,7 +170,28 @@ impl FontDatabase {
         }
         // Final fallback: sans-serif generic. We configured this to
         // point at Liberation Sans above so a misspelled family or an
-        // exotic one still renders something plausible.
+        // exotic one still renders something plausible. Outside a Linux
+        // persona that fallback is refused by name (a real Mac has no
+        // Liberation), so the lookup honestly misses.
+        // CSS font matching is case-insensitive ("LUCIDA GRANDE" must find
+        // the "Lucida Grande" face); fontdb's name match is not. The scan
+        // skips bundled families the same way the by-name lookup does.
+        let target = family.to_ascii_lowercase();
+        let refused = |fam: &str| {
+            os_name != "Linux"
+                && fam.to_ascii_lowercase() != "noto emoji"
+                && self.bundled_families.contains(&fam.to_ascii_lowercase())
+        };
+        if let Some(f) = self.inner.faces().find(|f| {
+            f.families
+                .iter()
+                .any(|(name, _)| !refused(name) && name.to_ascii_lowercase() == target)
+        }) {
+            return Some(f.id);
+        }
+        if self.name_lookup_refused("Liberation Sans", os_name) {
+            return None;
+        }
         let fallback = [Family::SansSerif];
         self.inner.query(&Query {
             families: &fallback,
@@ -157,14 +211,30 @@ impl FontDatabase {
     }
 
     fn query_strict(&self, family: &str, weight: u16, italic: bool, os_name: &str) -> Option<ID> {
+        if self.name_lookup_refused(family, os_name) {
+            return None;
+        }
         let style = if italic { Style::Italic } else { Style::Normal };
         let families = resolve_family(family, os_name);
-        self.inner.query(&Query {
+        if let Some(id) = self.inner.query(&Query {
             families: &families,
             weight: Weight(weight),
             stretch: Stretch::Normal,
             style,
-        })
+        }) {
+            return Some(id);
+        }
+        // CSS font matching is case-insensitive ("LUCIDA GRANDE" must find
+        // the "Lucida Grande" face); fontdb's name match is not.
+        let target = family.to_ascii_lowercase();
+        self.inner
+            .faces()
+            .find(|f| {
+                f.families
+                    .iter()
+                    .any(|(name, _)| name.to_ascii_lowercase() == target)
+            })
+            .map(|f| f.id)
     }
 
     /// First-match query across a family fallback chain. Tries each
@@ -255,17 +325,19 @@ fn resolve_family<'a>(name: &'a str, os_name: &str) -> Vec<Family<'a>> {
             }
         }
         "times" | "times new roman" | "georgia" => {
-            if os_name == "Windows" || os_name == "macOS" || os_name == "Linux" {
-                vec![Family::Name("Liberation Serif"), Family::Serif]
-            } else {
+            if os_name == "macOS" {
+                // A real Mac resolves these by name (Supplemental holds
+                // Times New Roman and Georgia) — no Linux substitution.
                 vec![Family::Name(name)]
+            } else {
+                vec![Family::Name("Liberation Serif"), Family::Serif]
             }
         }
         "courier" | "courier new" | "consolas" | "menlo" | "monaco" => {
-            if os_name == "Windows" || os_name == "macOS" || os_name == "Linux" {
-                vec![Family::Name("Liberation Mono"), Family::Monospace]
-            } else {
+            if os_name == "macOS" {
                 vec![Family::Name(name)]
+            } else {
+                vec![Family::Name("Liberation Mono"), Family::Monospace]
             }
         }
         _ => vec![Family::Name(name)],
