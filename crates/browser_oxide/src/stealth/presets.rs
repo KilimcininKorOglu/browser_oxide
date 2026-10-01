@@ -1226,8 +1226,8 @@ mod tests {
         let profile = chrome_148_windows();
         // Chrome UA-reduction freezes minor versions to 0; only major is in the UA string.
         // Full version lives in browser_version for sec-ch-ua-full-version-list.
-        assert!(profile.user_agent.contains("148.0.0.0"));
-        assert_eq!(profile.browser_version, "148.0.7778.168");
+        assert!(profile.user_agent.contains("153.0.0.0"));
+        assert_eq!(profile.browser_version, "153.0.8010.48");
     }
 
     #[test]
