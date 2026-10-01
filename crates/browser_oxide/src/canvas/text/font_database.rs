@@ -360,14 +360,15 @@ mod tests {
     }
 
     #[test]
-    fn bundled_face_count_matches_advertised() {
-        // Sanity check against the constant document.fonts.size reports.
+    fn bundled_face_count_at_least_advertised() {
+        // System fonts are loaded on macOS for real font metrics —
+        // the database now contains bundled + system faces. The count
+        // must be at least the bundled count.
         let db = FontDatabase::get();
         let loaded = db.inner.faces().count();
-        assert_eq!(
-            loaded, BUNDLED_FACE_COUNT,
-            "fontdb loaded {} faces, advertised {}",
-            loaded, BUNDLED_FACE_COUNT
+        assert!(
+            loaded >= BUNDLED_FACE_COUNT,
+            "fontdb loaded {loaded} faces, expected at least {BUNDLED_FACE_COUNT}"
         );
     }
 
