@@ -414,6 +414,120 @@ async fn computed_style_stringifies_like_chrome() {
 }
 
 #[tokio::test]
+async fn webrtc_gathers_a_host_candidate_without_ice_servers() {
+    // `iceServers: []` is the one case where a real Chrome has no reflexive
+    // mapping, so no STUN round is sent. Gathering still completes, still
+    // announces the mDNS host candidate, and the m-line still takes a real
+    // port — a description stuck on the pre-gathering placeholder (port 9,
+    // no candidates) is the tell.
+    let mut page = Page::from_html_with_url(
+        &html(""),
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    page.evaluate(
+        r#"window.__cands = [];
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        window.__pc = pc;
+        pc.onicecandidate = (e) => window.__cands.push(e.candidate ? e.candidate.candidate : null);
+        pc.createOffer({ offerToReceiveAudio: true })
+          .then((o) => pc.setLocalDescription(o));"#,
+    )
+    .unwrap();
+    poll_async(
+        &mut page,
+        "window.__pc.iceGatheringState === 'complete'",
+        3000,
+    )
+    .await;
+    let out = page
+        .evaluate(
+            r#"(() => {
+                const sdp = window.__pc.localDescription.sdp;
+                const host = window.__cands[0] || '';
+                return [
+                    window.__cands.length,
+                    /typ host generation 0 network-cost 999/.test(host) ? 1 : 0,
+                    / 1 udp 2122260223 /.test(host) ? 1 : 0,
+                    /[0-9a-f-]{36}\.local/.test(host) ? 1 : 0,
+                    window.__cands[1] === null ? 1 : 0,
+                    /^m=audio [1-9]/m.test(sdp) ? 1 : 0,
+                    (sdp.match(/a=candidate:/g) || []).length,
+                    /a=end-of-candidates/.test(sdp) ? 1 : 0,
+                ].join('/');
+            })()"#,
+        )
+        .unwrap_or_else(|e| format!("ERROR: {e}"));
+    assert_eq!(out, "2/1/1/1/1/1/1/1", "host-only gathering: {out}");
+}
+
+/// Drive the event loop until `ready` reads true, so a promise resolved by an
+/// async op — a STUN round, whose answer arrives from the network — gets its
+/// turn. An idle page's loop ends on its own long before the answer lands.
+async fn poll_async(page: &mut Page, ready: &str, budget_ms: u64) {
+    let step = std::time::Duration::from_millis(100);
+    let mut waited = 0;
+    while waited < budget_ms {
+        page.evaluate_async("void 0", step).await.ok();
+        waited += step.as_millis() as u64;
+        if page.evaluate(ready).unwrap_or_default() == "true" {
+            return;
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a reachable STUN server"]
+async fn webrtc_gathers_a_srflx_candidate_over_stun() {
+    // The measured shape of a real Chrome session: the description grows from
+    // the pre-gathering form to one that names a reflexive address and carries
+    // both candidates. Before this the SDP never left the placeholder, and a
+    // fingerprint that strings it into its report reads a tell.
+    let mut page = Page::from_html_with_url(
+        &html(""),
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    page.evaluate(
+        r#"window.__cands = [];
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        });
+        window.__pc = pc;
+        pc.onicecandidate = (e) => window.__cands.push(e.candidate ? e.candidate.candidate : null);
+        pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          .then((o) => pc.setLocalDescription(o));"#,
+    )
+    .unwrap();
+    poll_async(
+        &mut page,
+        "window.__pc.iceGatheringState === 'complete'",
+        8000,
+    )
+    .await;
+    let out = page
+        .evaluate(
+            r#"(() => {
+                const sdp = window.__pc.localDescription.sdp;
+                const cands = window.__cands.join(' | ');
+                return [
+                    /typ srflx raddr 0\.0\.0\.0 rport 0 generation 0 network-cost 999/.test(cands) ? 1 : 0,
+                    /typ host generation 0 network-cost 999/.test(cands) ? 1 : 0,
+                    /^c=IN IP4 (?!0\.0\.0\.0)/m.test(sdp) ? 1 : 0,
+                    (sdp.match(/a=candidate:/g) || []).length,
+                    /a=end-of-candidates/.test(sdp) ? 1 : 0,
+                ].join('/');
+            })()"#,
+        )
+        .unwrap_or_else(|e| format!("ERROR: {e}"));
+    assert_eq!(out, "1/1/1/2/1", "srflx gathering: {out}");
+}
+
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }

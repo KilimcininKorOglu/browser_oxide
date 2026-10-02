@@ -9,6 +9,7 @@ use crate::js_runtime::extensions::input_ext::input_extension;
 use crate::js_runtime::extensions::layout_ext::layout_extension;
 use crate::js_runtime::extensions::nav_ext::{nav_extension, NavSignal};
 use crate::js_runtime::extensions::perf_ext::{perf_extension, PerfState};
+use crate::js_runtime::extensions::rtc_ext::rtc_extension;
 use crate::js_runtime::extensions::sse_ext::{sse_extension, SseState};
 use crate::js_runtime::extensions::stealth_ext::{stealth_extension, StealthState};
 use crate::js_runtime::extensions::timer_ext::{timer_extension, TimerState};
@@ -260,6 +261,7 @@ pub fn create_runtime_with_signals(
             perf_extension::init(),
             nav_extension::init(),
             url_extension::init(),
+            rtc_extension::init(),
         ],
         startup_snapshot: options.startup_snapshot,
         create_params: Some(create_params),

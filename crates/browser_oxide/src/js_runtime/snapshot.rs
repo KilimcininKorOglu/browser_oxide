@@ -101,6 +101,7 @@ pub fn get_snapshot() -> &'static [u8] {
                 crate::js_runtime::extensions::perf_ext::perf_extension::init(),
                 crate::js_runtime::extensions::nav_ext::nav_extension::init(),
                 crate::js_runtime::extensions::url_ext::url_extension::init(),
+                crate::js_runtime::extensions::rtc_ext::rtc_extension::init(),
             ],
             // Match runtime.rs's heap config so the snapshot deserializes into an
             // identically-configured V8 heap (candidate fix for the V8-149

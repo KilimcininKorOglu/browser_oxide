@@ -5989,6 +5989,21 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
     };
     const _rtcSid = () => String(1 + Math.floor(Math.random() * 9)) +
         Array.from({ length: 18 }, () => Math.floor(Math.random() * 10)).join('');
+    // Chrome's mDNS candidate names are UUIDs; the resolver cache keeps one
+    // per session, so every m-line of a session shares it.
+    const _rtcUuid = () => {
+        let s = '';
+        for (let i = 0; i < 36; i++) {
+            if (i === 8 || i === 13 || i === 18 || i === 23) s += '-';
+            else if (i === 14) s += '4';
+            else if (i === 19) s += (8 + Math.floor(Math.random() * 4)).toString(16);
+            else s += Math.floor(Math.random() * 16).toString(16);
+        }
+        return s;
+    };
+    // ICE foundation: Chrome draws it from a random 32-bit value, and the
+    // foundation groups candidates that share a base + protocol pair.
+    const _rtcFoundation = () => String(Math.floor(Math.random() * 4_000_000_000));
     const _rtcPrint = () => {
         const bytes = new Uint8Array(32);
         try {
@@ -6025,7 +6040,138 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
                 config: (config && typeof config === 'object') ? config : {},
                 closed: false,
                 data: false,
+                gathered: false,
             };
+            // Chrome's own default: one STUN server, mDNS host candidates.
+            // A page that passes `iceServers: []` gets host candidates only,
+            // and so do we — that is the one case where a real Chrome has no
+            // reflexive mapping either.
+            const servers = this._rtc.config.iceServers;
+            this._rtc.stun = Array.isArray(servers)
+                ? servers
+                    .filter((s) => s && (s.urls || s.url))
+                    .map((s) => {
+                        const u = s.urls || s.url;
+                        return String(Array.isArray(u) ? u[0] : u)
+                            .replace(/^stun:/, '')
+                            .replace(/^stuns:/, '');
+                    })
+                    .filter((u) => u && !u.startsWith('turn:'))
+                    .join(',')
+                : 'stun.l.google.com:19302';
+            // One mDNS name per session, like Chrome's resolver cache.
+            this._rtc.mdns = _rtcUuid() + '.local';
+            this._rtc.foundations = {
+                host: _rtcFoundation(),
+                srflx: _rtcFoundation(),
+            };
+        }
+        // Chrome's UDP priorities: host wins over srflx at equal cost.
+        _rtcGather() {
+            if (this._rtc.gathering || this._rtc.closed) return;
+            this._rtc.gathering = true;
+            this.iceGatheringState = "gathering";
+            const st = this._rtc;
+            const emit = (candidate) => {
+                // The end-of-gathering event carries a null candidate, not a
+                // zero-length one: `event.candidate === null` is what every
+                // fingerprint checks, and an RTCIceCandidate whose text is ''
+                // reads as a real candidate with no candidate in it.
+                const ev = { candidate: candidate
+                    ? new globalThis.RTCIceCandidate({
+                        candidate, sdpMid: '0', sdpMLineIndex: 0 })
+                    : null };
+                if (typeof this.onicecandidate === 'function') this.onicecandidate(ev);
+            };
+            // Both candidates carry the port of the socket ICE opened, so
+            // neither is announced before the round has a port to name. A
+            // candidate with port 0, or a host candidate whose port differs
+            // from the m-line, is not something Chrome produces.
+            const done = (ok, ip, port, localPort) => {
+                const hostPort = localPort || 1024 + Math.floor(Math.random() * 60000);
+                emit(`candidate:${st.foundations.host} 1 udp 2122260223 ${st.mdns} ` +
+                    `${hostPort} typ host generation 0 network-cost 999`);
+                if (ok) {
+                    st.gathered = true;
+                    st.srflxPort = port;
+                    emit(`candidate:${st.foundations.srflx} 1 udp 1686052607 ${ip} ` +
+                        `${port} typ srflx raddr 0.0.0.0 rport 0 generation 0 ` +
+                        `network-cost 999`);
+                }
+                emit(null);
+                this.iceGatheringState = "complete";
+                this._rtcRewrite(hostPort, ok ? ip : '');
+            };
+            if (!st.stun) {
+                setTimeout(() => done(false, '', 0, 0), 8);
+                return;
+            }
+            let pending = null;
+            try {
+                pending = ops.op_rtc_gather(st.stun);
+            } catch (e) {
+                setTimeout(() => done(false, '', 0, 0), 8);
+                return;
+            }
+            // The op serializes its struct as-is, so the keys are the Rust
+            // field names, not a camelCase rewrite of them.
+            Promise.resolve(pending).then((r) => {
+                if (r && r.ok && r.srflx_ip) {
+                    done(true, r.srflx_ip, r.srflx_port, r.local_port);
+                } else {
+                    if (r && r.error) {
+                        try { console.warn('[webrtc] no reflexive address: ' + r.error); } catch (_) {}
+                    }
+                    done(false, '', 0, (r && r.local_port) || 0);
+                }
+            }, (e) => {
+                try { console.warn('[webrtc] gather failed: ' + ((e && e.message) || e)); } catch (_) {}
+                done(false, '', 0, 0);
+            });
+        }
+        // Fold the gathered numbers into the description Chrome is showing:
+        // the m-line takes the socket's port, `c=IN IP4` names the reflexive
+        // address when there is one, and the candidates plus
+        // `a=end-of-candidates` land inside the media section. Without this
+        // the SDP stays at the pre-gathering `c=IN IP4 0.0.0.0` with no
+        // candidates at all. A session with no reachable STUN server still
+        // gets its host candidate — only the reflexive one is missing.
+        _rtcRewrite(hostPort, srflxIp) {
+            const st = this._rtc;
+            if (!this.localDescription || st.rewritten) return;
+            st.rewritten = true;
+            const sdp = this.localDescription.sdp;
+            if (hostPort) {
+                this.localDescription.sdp =
+                    sdp.replace(/^(m=\S+) 9 UDP/gm, '$1 ' + hostPort + ' UDP');
+            }
+            const lines = ['a=candidate:' + st.foundations.host +
+                ' 1 udp 2122260223 ' + st.mdns + ' ' + hostPort +
+                ' typ host generation 0 network-cost 999'];
+            if (srflxIp) {
+                lines.push('a=candidate:' + st.foundations.srflx +
+                    ' 1 udp 1686052607 ' + srflxIp + ' ' + st.srflxPort +
+                    ' typ srflx raddr 0.0.0.0 rport 0 generation 0 network-cost 999');
+            }
+            this._rtcInsertCandidates(lines.concat('a=end-of-candidates'), srflxIp);
+        }
+        // Put the candidate lines inside the first media section — BUNDLE
+        // keeps them all in one — and name the reflexive address on the
+        // connection line when there is one.
+        _rtcInsertCandidates(lines, srflxIp) {
+            const st = this._rtc;
+            const out = [];
+            const src = this.localDescription.sdp.split('\r\n');
+            for (let i = 0; i < src.length; i++) {
+                const line = src[i];
+                out.push(srflxIp && /^c=IN IP4 0\.0\.0\.0$/.test(line)
+                    ? 'c=IN IP4 ' + srflxIp : line);
+                if (/^a=setup:/.test(line) && !st.candidatesIn) {
+                    st.candidatesIn = true;
+                    for (const l of lines) out.push(l);
+                }
+            }
+            this.localDescription.sdp = out.join('\r\n');
         }
         _rtcKinds() {
             const k = this._rtc.tx.map((t) => t.kind);
@@ -6104,37 +6250,11 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
             if (was !== this.signalingState && typeof this.onsignalingstatechange === 'function') {
                 try { this.onsignalingstatechange({ type: 'signalingstatechange' }); } catch (_) {}
             }
-            // Real Chrome (since 2019, mDNS-anonymized) emits an mDNS host
-            // candidate followed by `null` to signal gathering complete.
-            // Returning ONLY `{candidate: null}` is itself a tell — every
-            // legitimate Chrome session yields at least one mDNS host.
-            // The `<uuid>.local` form is privacy-preserving (no real IP).
-            // Some fingerprint scripts probe candidate
-            // length; one mDNS host closes the parity gap without leaking.
-            const _hex = (n) => Math.floor(Math.random() * 16).toString(16);
-            const _uuid4 = () => {
-                let s = '';
-                for (let i = 0; i < 36; i++) {
-                    if (i === 8 || i === 13 || i === 18 || i === 23) s += '-';
-                    else if (i === 14) s += '4';
-                    else if (i === 19) s += (8 + Math.floor(Math.random() * 4)).toString(16);
-                    else s += _hex();
-                }
-                return s;
-            };
-            const mdnsHost = _uuid4() + '.local';
-            const foundation = String(Math.floor(Math.random() * 4_000_000_000));
-            const candidate = `candidate:${foundation} 1 udp 2113937151 ${mdnsHost} ${1024 + Math.floor(Math.random() * 60000)} typ host generation 0 network-cost 999`;
-            const iceCandidate = new globalThis.RTCIceCandidate({
-                candidate, sdpMid: '0', sdpMLineIndex: 0,
-            });
-            setTimeout(() => {
-                if (this.onicecandidate) this.onicecandidate({ candidate: iceCandidate });
-                setTimeout(() => {
-                    if (this.onicecandidate) this.onicecandidate({ candidate: null });
-                    this.iceGatheringState = "complete";
-                }, 12);
-            }, 8);
+            // Gathering starts here, and `localDescription.sdp` is what the
+            // caller keeps reading while it runs: unchanged for the first
+            // tick, then rewritten with the port, the reflexive address and
+            // the candidate lines.
+            this._rtcGather();
             return Promise.resolve();
         }
         setRemoteDescription(desc) {
