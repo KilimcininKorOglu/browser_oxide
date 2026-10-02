@@ -350,9 +350,19 @@ fn resolve_fallback_face(
                 || (0x2600..=0x27BF).contains(&u)
                 || u == 0xFE0F
         });
+    // CSS per-glyph fallback walks the AUTHOR's family list first — a face
+    // named in the request that misses the glyph hands off to the next
+    // requested family, not to a system default. Measured tell: probing
+    // "Apple Color Emoji, monospace" with latin text must measure like
+    // monospace (Chrome), not like whatever system face covers latin.
+    // Only the primary face (already tried) is skipped; the rest of the
+    // author's list comes before the platform defaults.
     let mut chain: Vec<&str> = Vec::new();
     if is_symbol {
         chain.push("Noto Emoji");
+    }
+    for fam in font.families.iter().skip(1) {
+        chain.push(fam.as_str());
     }
     if os_name == "macOS" {
         chain.extend(["PingFang SC", "Hiragino Sans", "Arial Unicode MS", "Apple Symbols", "STHeiti", "Heiti SC"]);
@@ -361,9 +371,9 @@ fn resolve_fallback_face(
     } else {
         chain.extend(["Noto Sans CJK SC", "Noto Sans", "DejaVu Sans"]);
     }
-    // The primary families last — better to reuse them than to fail.
-    for fam in &font.families {
-        chain.push(fam);
+    // The primary family last — better to reuse it than to fail.
+    if let Some(primary) = font.families.first() {
+        chain.push(primary.as_str());
     }
     for name in chain {
         if let Some(id) = db.query_strict_public(name) {

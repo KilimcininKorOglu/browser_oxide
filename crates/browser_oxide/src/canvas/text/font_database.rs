@@ -156,7 +156,17 @@ impl FontDatabase {
             return false;
         }
         let lower = family.to_lowercase();
-        lower != "noto emoji" && self.bundled_families.contains(&lower)
+        if lower == "noto emoji" {
+            return false;
+        }
+        // Chrome never resolves the color-emoji face for a measured text
+        // run: a "Apple Color Emoji, monospace" probe measures like plain
+        // monospace (the whole span falls through to the next author
+        // family), so by-name lookups must miss the same way.
+        if lower == "apple color emoji" || lower == "apple color emoji ui" {
+            return true;
+        }
+        self.bundled_families.contains(&lower)
     }
 
     /// Look up a face by family name + weight + italic style. Uses
