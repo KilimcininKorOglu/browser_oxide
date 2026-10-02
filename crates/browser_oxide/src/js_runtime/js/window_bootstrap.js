@@ -3937,6 +3937,9 @@ const CHROME_COMPUTED_STYLE_PROPS = JSON.parse(
     "[\"accent-color\",\"align-content\",\"align-items\",\"align-self\",\"alignment-baseline\",\"anchor-name\",\"anchor-scope\",\"animation-composition\",\"animation-delay\",\"animation-direction\",\"animation-duration\",\"animation-fill-mode\",\"animation-iteration-count\",\"animation-name\",\"animation-play-state\",\"animation-range-end\",\"animation-range-start\",\"animation-timeline\",\"animation-timing-function\",\"animation-trigger\",\"app-region\",\"appearance\",\"aspect-ratio\",\"backdrop-filter\",\"backface-visibility\",\"background-attachment\",\"background-blend-mode\",\"background-clip\",\"background-color\",\"background-image\",\"background-origin\",\"background-position\",\"background-repeat\",\"background-size\",\"baseline-shift\",\"baseline-source\",\"block-size\",\"border-block-end-color\",\"border-block-end-style\",\"border-block-end-width\",\"border-block-start-color\",\"border-block-start-style\",\"border-block-start-width\",\"border-bottom-color\",\"border-bottom-left-radius\",\"border-bottom-right-radius\",\"border-bottom-style\",\"border-bottom-width\",\"border-collapse\",\"border-end-end-radius\",\"border-end-start-radius\",\"border-image-outset\",\"border-image-repeat\",\"border-image-slice\",\"border-image-source\",\"border-image-width\",\"border-inline-end-color\",\"border-inline-end-style\",\"border-inline-end-width\",\"border-inline-start-color\",\"border-inline-start-style\",\"border-inline-start-width\",\"border-left-color\",\"border-left-style\",\"border-left-width\",\"border-right-color\",\"border-right-style\",\"border-right-width\",\"border-shape\",\"border-start-end-radius\",\"border-start-start-radius\",\"border-top-color\",\"border-top-left-radius\",\"border-top-right-radius\",\"border-top-style\",\"border-top-width\",\"bottom\",\"box-decoration-break\",\"box-shadow\",\"box-sizing\",\"break-after\",\"break-before\",\"break-inside\",\"buffered-rendering\",\"caption-side\",\"caret-animation\",\"caret-color\",\"caret-shape\",\"clear\",\"clip\",\"clip-path\",\"clip-rule\",\"color\",\"color-interpolation\",\"color-interpolation-filters\",\"color-rendering\",\"color-scheme\",\"column-count\",\"column-fill\",\"column-gap\",\"column-height\",\"column-rule-break\",\"column-rule-color\",\"column-rule-inset-cap-end\",\"column-rule-inset-cap-start\",\"column-rule-inset-junction-end\",\"column-rule-inset-junction-start\",\"column-rule-style\",\"column-rule-visibility-items\",\"column-rule-width\",\"column-span\",\"column-width\",\"column-wrap\",\"contain\",\"contain-intrinsic-block-size\",\"contain-intrinsic-height\",\"contain-intrinsic-inline-size\",\"contain-intrinsic-size\",\"contain-intrinsic-width\",\"container-name\",\"container-type\",\"content\",\"content-visibility\",\"corner-bottom-left-shape\",\"corner-bottom-right-shape\",\"corner-end-end-shape\",\"corner-end-start-shape\",\"corner-start-end-shape\",\"corner-start-start-shape\",\"corner-top-left-shape\",\"corner-top-right-shape\",\"counter-increment\",\"counter-reset\",\"counter-set\",\"cursor\",\"cx\",\"cy\",\"d\",\"direction\",\"display\",\"dominant-baseline\",\"dynamic-range-limit\",\"empty-cells\",\"field-sizing\",\"fill\",\"fill-opacity\",\"fill-rule\",\"filter\",\"flex-basis\",\"flex-direction\",\"flex-grow\",\"flex-line-count\",\"flex-shrink\",\"flex-wrap\",\"float\",\"flood-color\",\"flood-opacity\",\"font-family\",\"font-feature-settings\",\"font-kerning\",\"font-language-override\",\"font-optical-sizing\",\"font-palette\",\"font-size\",\"font-size-adjust\",\"font-stretch\",\"font-style\",\"font-synthesis-small-caps\",\"font-synthesis-style\",\"font-synthesis-weight\",\"font-variant\",\"font-variant-alternates\",\"font-variant-caps\",\"font-variant-east-asian\",\"font-variant-emoji\",\"font-variant-ligatures\",\"font-variant-numeric\",\"font-variant-position\",\"font-variation-settings\",\"font-weight\",\"forced-color-adjust\",\"frame-sizing\",\"grid-auto-columns\",\"grid-auto-flow\",\"grid-auto-rows\",\"grid-column-end\",\"grid-column-start\",\"grid-row-end\",\"grid-row-start\",\"grid-template-areas\",\"grid-template-columns\",\"grid-template-rows\",\"height\",\"hyphenate-character\",\"hyphenate-limit-chars\",\"hyphens\",\"image-orientation\",\"image-rendering\",\"initial-letter\",\"inline-size\",\"inset-block-end\",\"inset-block-start\",\"inset-inline-end\",\"inset-inline-start\",\"interactivity\",\"interest-delay-end\",\"interest-delay-start\",\"interpolate-size\",\"isolation\",\"justify-content\",\"justify-items\",\"justify-self\",\"left\",\"letter-spacing\",\"lighting-color\",\"line-break\",\"line-height\",\"list-style-image\",\"list-style-position\",\"list-style-type\",\"margin-block-end\",\"margin-block-start\",\"margin-bottom\",\"margin-inline-end\",\"margin-inline-start\",\"margin-left\",\"margin-right\",\"margin-top\",\"marker-end\",\"marker-mid\",\"marker-start\",\"mask-clip\",\"mask-composite\",\"mask-image\",\"mask-mode\",\"mask-origin\",\"mask-position\",\"mask-repeat\",\"mask-size\",\"mask-type\",\"math-depth\",\"math-shift\",\"math-style\",\"max-block-size\",\"max-height\",\"max-inline-size\",\"max-width\",\"min-block-size\",\"min-height\",\"min-inline-size\",\"min-width\",\"mix-blend-mode\",\"object-fit\",\"object-position\",\"object-view-box\",\"offset-anchor\",\"offset-distance\",\"offset-path\",\"offset-position\",\"offset-rotate\",\"opacity\",\"order\",\"orphans\",\"outline-color\",\"outline-offset\",\"outline-style\",\"outline-width\",\"overflow-anchor\",\"overflow-block\",\"overflow-clip-margin\",\"overflow-inline\",\"overflow-wrap\",\"overflow-x\",\"overflow-y\",\"overlay\",\"overscroll-behavior-block\",\"overscroll-behavior-inline\",\"overscroll-behavior-x\",\"overscroll-behavior-y\",\"padding-block-end\",\"padding-block-start\",\"padding-bottom\",\"padding-inline-end\",\"padding-inline-start\",\"padding-left\",\"padding-right\",\"padding-top\",\"paint-order\",\"perspective\",\"perspective-origin\",\"pointer-events\",\"position\",\"position-anchor\",\"position-area\",\"position-try-fallbacks\",\"position-try-order\",\"position-visibility\",\"print-color-adjust\",\"quotes\",\"r\",\"reading-flow\",\"reading-order\",\"resize\",\"right\",\"rotate\",\"row-gap\",\"row-rule-break\",\"row-rule-color\",\"row-rule-inset-cap-end\",\"row-rule-inset-cap-start\",\"row-rule-inset-junction-end\",\"row-rule-inset-junction-start\",\"row-rule-style\",\"row-rule-visibility-items\",\"row-rule-width\",\"ruby-align\",\"ruby-overhang\",\"ruby-position\",\"rule-overlap\",\"rx\",\"ry\",\"scale\",\"scroll-axis-lock\",\"scroll-behavior\",\"scroll-initial-target\",\"scroll-margin-block-end\",\"scroll-margin-block-start\",\"scroll-margin-bottom\",\"scroll-margin-inline-end\",\"scroll-margin-inline-start\",\"scroll-margin-left\",\"scroll-margin-right\",\"scroll-margin-top\",\"scroll-marker-group\",\"scroll-padding-block-end\",\"scroll-padding-block-start\",\"scroll-padding-bottom\",\"scroll-padding-inline-end\",\"scroll-padding-inline-start\",\"scroll-padding-left\",\"scroll-padding-right\",\"scroll-padding-top\",\"scroll-snap-align\",\"scroll-snap-stop\",\"scroll-snap-type\",\"scroll-target-group\",\"scroll-timeline-axis\",\"scroll-timeline-name\",\"scrollbar-color\",\"scrollbar-gutter\",\"scrollbar-width\",\"shape-image-threshold\",\"shape-margin\",\"shape-outside\",\"shape-rendering\",\"speak\",\"stop-color\",\"stop-opacity\",\"stroke\",\"stroke-dasharray\",\"stroke-dashoffset\",\"stroke-linecap\",\"stroke-linejoin\",\"stroke-miterlimit\",\"stroke-opacity\",\"stroke-width\",\"tab-size\",\"table-layout\",\"text-align\",\"text-align-last\",\"text-anchor\",\"text-autospace\",\"text-box-edge\",\"text-box-trim\",\"text-combine-upright\",\"text-decoration\",\"text-decoration-color\",\"text-decoration-line\",\"text-decoration-skip-ink\",\"text-decoration-style\",\"text-decoration-thickness\",\"text-emphasis-color\",\"text-emphasis-position\",\"text-emphasis-style\",\"text-fit\",\"text-indent\",\"text-justify\",\"text-orientation\",\"text-overflow\",\"text-rendering\",\"text-shadow\",\"text-size-adjust\",\"text-spacing-trim\",\"text-transform\",\"text-underline-offset\",\"text-underline-position\",\"text-wrap-mode\",\"text-wrap-style\",\"timeline-scope\",\"timeline-trigger-activation-range-end\",\"timeline-trigger-activation-range-start\",\"timeline-trigger-active-range-end\",\"timeline-trigger-active-range-start\",\"timeline-trigger-name\",\"timeline-trigger-source\",\"top\",\"touch-action\",\"transform\",\"transform-box\",\"transform-origin\",\"transform-style\",\"transition-behavior\",\"transition-delay\",\"transition-duration\",\"transition-property\",\"transition-timing-function\",\"translate\",\"trigger-scope\",\"unicode-bidi\",\"user-select\",\"vector-effect\",\"vertical-align\",\"view-timeline-axis\",\"view-timeline-inset\",\"view-timeline-name\",\"view-transition-class\",\"view-transition-group\",\"view-transition-name\",\"view-transition-scope\",\"visibility\",\"white-space-collapse\",\"widows\",\"width\",\"will-change\",\"window-drag\",\"word-break\",\"word-spacing\",\"writing-mode\",\"x\",\"y\",\"z-index\",\"zoom\",\"-webkit-border-horizontal-spacing\",\"-webkit-border-image\",\"-webkit-border-vertical-spacing\",\"-webkit-box-align\",\"-webkit-box-decoration-break\",\"-webkit-box-direction\",\"-webkit-box-flex\",\"-webkit-box-ordinal-group\",\"-webkit-box-orient\",\"-webkit-box-pack\",\"-webkit-box-reflect\",\"-webkit-font-smoothing\",\"-webkit-line-break\",\"-webkit-line-clamp\",\"-webkit-locale\",\"-webkit-mask-box-image\",\"-webkit-mask-box-image-outset\",\"-webkit-mask-box-image-repeat\",\"-webkit-mask-box-image-slice\",\"-webkit-mask-box-image-source\",\"-webkit-mask-box-image-width\",\"-webkit-mask-position-x\",\"-webkit-mask-position-y\",\"-webkit-rtl-ordering\",\"-webkit-ruby-position\",\"-webkit-tap-highlight-color\",\"-webkit-text-combine\",\"-webkit-text-decorations-in-effect\",\"-webkit-text-fill-color\",\"-webkit-text-orientation\",\"-webkit-text-security\",\"-webkit-text-stroke-color\",\"-webkit-text-stroke-width\",\"-webkit-user-drag\",\"-webkit-user-modify\",\"-webkit-writing-mode\"]"
 );
 globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
+const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
+    "[\"additiveSymbols\",\"all\",\"animation\",\"animationRange\",\"ascentOverride\",\"background\",\"backgroundPositionX\",\"backgroundPositionY\",\"basePalette\",\"border\",\"borderBlock\",\"borderBlockColor\",\"borderBlockEnd\",\"borderBlockStart\",\"borderBlockStyle\",\"borderBlockWidth\",\"borderBottom\",\"borderColor\",\"borderImage\",\"borderInline\",\"borderInlineColor\",\"borderInlineEnd\",\"borderInlineStart\",\"borderInlineStyle\",\"borderInlineWidth\",\"borderLeft\",\"borderRadius\",\"borderRight\",\"borderSpacing\",\"borderStyle\",\"borderTop\",\"borderWidth\",\"columnRule\",\"columnRuleInset\",\"columnRuleInsetCap\",\"columnRuleInsetEnd\",\"columnRuleInsetJunction\",\"columnRuleInsetStart\",\"columns\",\"container\",\"cornerBlockEndShape\",\"cornerBlockStartShape\",\"cornerBottomShape\",\"cornerInlineEndShape\",\"cornerInlineStartShape\",\"cornerLeftShape\",\"cornerRightShape\",\"cornerShape\",\"cornerTopShape\",\"descentOverride\",\"fallback\",\"flex\",\"flexFlow\",\"font\",\"fontDisplay\",\"fontSynthesis\",\"gap\",\"grid\",\"gridArea\",\"gridColumn\",\"gridColumnGap\",\"gridGap\",\"gridRow\",\"gridRowGap\",\"gridTemplate\",\"inherits\",\"initialValue\",\"inset\",\"insetBlock\",\"insetInline\",\"interestDelay\",\"lineGapOverride\",\"listStyle\",\"margin\",\"marginBlock\",\"marginInline\",\"marker\",\"mask\",\"navigation\",\"negative\",\"offset\",\"outline\",\"overflow\",\"overrideColors\",\"overscrollBehavior\",\"pad\",\"padding\",\"paddingBlock\",\"paddingInline\",\"page\",\"pageBreakAfter\",\"pageBreakBefore\",\"pageBreakInside\",\"pageMarginSafety\",\"pageOrientation\",\"placeContent\",\"placeItems\",\"placeSelf\",\"positionTry\",\"prefix\",\"range\",\"result\",\"rowRule\",\"rowRuleInset\",\"rowRuleInsetCap\",\"rowRuleInsetEnd\",\"rowRuleInsetJunction\",\"rowRuleInsetStart\",\"rule\",\"ruleBreak\",\"ruleColor\",\"ruleInset\",\"ruleInsetCap\",\"ruleInsetEnd\",\"ruleInsetJunction\",\"ruleInsetStart\",\"ruleStyle\",\"ruleVisibilityItems\",\"ruleWidth\",\"scrollMargin\",\"scrollMarginBlock\",\"scrollMarginInline\",\"scrollPadding\",\"scrollPaddingBlock\",\"scrollPaddingInline\",\"scrollTimeline\",\"size\",\"sizeAdjust\",\"speakAs\",\"src\",\"suffix\",\"symbols\",\"syntax\",\"system\",\"textBox\",\"textEmphasis\",\"textWrap\",\"timelineTrigger\",\"timelineTriggerActivationRange\",\"timelineTriggerActiveRange\",\"transition\",\"types\",\"unicodeRange\",\"viewTimeline\",\"webkitAlignContent\",\"webkitAlignItems\",\"webkitAlignSelf\",\"webkitAnimation\",\"webkitAnimationDelay\",\"webkitAnimationDirection\",\"webkitAnimationDuration\",\"webkitAnimationFillMode\",\"webkitAnimationIterationCount\",\"webkitAnimationName\",\"webkitAnimationPlayState\",\"webkitAnimationTimingFunction\",\"webkitAppRegion\",\"webkitAppearance\",\"webkitBackfaceVisibility\",\"webkitBackgroundClip\",\"webkitBackgroundOrigin\",\"webkitBackgroundSize\",\"webkitBorderAfter\",\"webkitBorderAfterColor\",\"webkitBorderAfterStyle\",\"webkitBorderAfterWidth\",\"webkitBorderBefore\",\"webkitBorderBeforeColor\",\"webkitBorderBeforeStyle\",\"webkitBorderBeforeWidth\",\"webkitBorderBottomLeftRadius\",\"webkitBorderBottomRightRadius\",\"webkitBorderEnd\",\"webkitBorderEndColor\",\"webkitBorderEndStyle\",\"webkitBorderEndWidth\",\"webkitBorderRadius\",\"webkitBorderStart\",\"webkitBorderStartColor\",\"webkitBorderStartStyle\",\"webkitBorderStartWidth\",\"webkitBorderTopLeftRadius\",\"webkitBorderTopRightRadius\",\"webkitBoxShadow\",\"webkitBoxSizing\",\"webkitClipPath\",\"webkitColumnBreakAfter\",\"webkitColumnBreakBefore\",\"webkitColumnBreakInside\",\"webkitColumnCount\",\"webkitColumnGap\",\"webkitColumnRule\",\"webkitColumnRuleColor\",\"webkitColumnRuleStyle\",\"webkitColumnRuleWidth\",\"webkitColumnSpan\",\"webkitColumnWidth\",\"webkitColumns\",\"webkitFilter\",\"webkitFlex\",\"webkitFlexBasis\",\"webkitFlexDirection\",\"webkitFlexFlow\",\"webkitFlexGrow\",\"webkitFlexShrink\",\"webkitFlexWrap\",\"webkitFontFeatureSettings\",\"webkitHyphenateCharacter\",\"webkitJustifyContent\",\"webkitLogicalHeight\",\"webkitLogicalWidth\",\"webkitMarginAfter\",\"webkitMarginBefore\",\"webkitMarginEnd\",\"webkitMarginStart\",\"webkitMask\",\"webkitMaskClip\",\"webkitMaskComposite\",\"webkitMaskImage\",\"webkitMaskOrigin\",\"webkitMaskPosition\",\"webkitMaskRepeat\",\"webkitMaskSize\",\"webkitMaxLogicalHeight\",\"webkitMaxLogicalWidth\",\"webkitMinLogicalHeight\",\"webkitMinLogicalWidth\",\"webkitOpacity\",\"webkitOrder\",\"webkitPaddingAfter\",\"webkitPaddingBefore\",\"webkitPaddingEnd\",\"webkitPaddingStart\",\"webkitPerspective\",\"webkitPerspectiveOrigin\",\"webkitPerspectiveOriginX\",\"webkitPerspectiveOriginY\",\"webkitPrintColorAdjust\",\"webkitShapeImageThreshold\",\"webkitShapeMargin\",\"webkitShapeOutside\",\"webkitTextEmphasis\",\"webkitTextEmphasisColor\",\"webkitTextEmphasisPosition\",\"webkitTextEmphasisStyle\",\"webkitTextSizeAdjust\",\"webkitTextStroke\",\"webkitTransform\",\"webkitTransformOrigin\",\"webkitTransformOriginX\",\"webkitTransformOriginY\",\"webkitTransformOriginZ\",\"webkitTransformStyle\",\"webkitTransition\",\"webkitTransitionDelay\",\"webkitTransitionDuration\",\"webkitTransitionProperty\",\"webkitTransitionTimingFunction\",\"webkitUserSelect\",\"whiteSpace\",\"wordWrap\"]"
+);
 
             // Chrome returns a new live declaration on every call.
             let styleProxy;
@@ -3989,6 +3992,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                     if (/^\d+$/.test(prop)) {
                         return CHROME_COMPUTED_STYLE_PROPS[parseInt(prop, 10)];
                     }
+                    if (_isComputedShorthand(prop)) return _resolveShorthand(prop);
                     return _resolveComputed(prop);
                 }
                 return undefined;
@@ -4004,15 +4008,10 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 for (let i = 0; i < CHROME_COMPUTED_STYLE_PROPS.length; i++) {
                     keys.push(String(i));
                 }
-                for (const kebab of CHROME_COMPUTED_STYLE_PROPS) {
-                    // Inverse of the read path's camel-to-kebab: a leading
-                    // dash (vendor properties) goes first, then dashes fold,
-                    // and the head stays lowercase (`-webkit-x` is
-                    // `webkitX` in IDL, not `WebkitX`).
-                    const bare = kebab.startsWith("-") ? kebab.slice(1) : kebab;
-                    const cc = bare.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-                    keys.push(cc.charAt(0).toLowerCase() + cc.slice(1));
-                }
+                // Indexed names, then every name Chrome enumerates: the
+                // longhands plus the shorthands, ASCII-sorted as one list.
+                // A bare longhand list drops 261 shorthand keys outright.
+                for (const n of _allComputedNames()) keys.push(n);
                 return keys;
             },
             getOwnPropertyDescriptor(target, prop) {
@@ -4031,23 +4030,350 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                     };
                 }
                 if (typeof prop === "string") {
+                    const v = _isComputedShorthand(prop)
+                        ? _resolveShorthand(prop)
+                        : _resolveComputed(prop);
                     return {
-                        value: _resolveComputed(prop),
+                        value: v === null ? null : v,
                         writable: false, enumerable: true, configurable: true,
                     };
                 }
                 return undefined;
             }
         });
+        const _SHORTHAND_SET = (() => {
+            const s = new Set();
+            for (const n of CHROME_COMPUTED_SHORTHANDS) s.add(n);
+            return s;
+        })();
+        function _isComputedShorthand(prop) {
+            return _SHORTHAND_SET.has(prop);
+        }
+        // Shorthand serialization from resolved longhands, in Chrome's order.
+        // Every branch mirrors what Chrome answers for the same longhands;
+        // the 34 descriptor shorthands (additiveSymbols, src, syntax, …) are
+        // always "" there, so they are "" here too.
+        const _SHORTHAND_EMPTY = new Set([
+            "additiveSymbols", "all", "ascentOverride", "basePalette",
+            "descentOverride", "fallback", "fontDisplay", "inherits",
+            "initialValue", "lineGapOverride", "navigation", "negative",
+            "overrideColors", "pad", "pageMarginSafety", "pageOrientation",
+            "prefix", "range", "result", "size", "sizeAdjust", "speakAs",
+            "src", "suffix", "symbols", "syntax", "system", "types",
+            "unicodeRange", "webkitPerspectiveOriginX",
+            "webkitPerspectiveOriginY", "webkitTransformOriginX",
+            "webkitTransformOriginY", "webkitTransformOriginZ",
+        ]);
+        function _resolveShorthand(prop) {
+            if (prop === "superellipse") return null;
+            if (_SHORTHAND_EMPTY.has(prop)) return "";
+            const v = (camel) => _resolveComputed(camel);
+            const side = (w, s, c) => v(w) + " " + v(s) + " " + v(c);
+            const webkitShorthand = (rest) => {
+                const logical = {
+                    MarginBefore: "marginBlockStart", MarginAfter: "marginBlockEnd",
+                    MarginStart: "marginInlineStart", MarginEnd: "marginInlineEnd",
+                    PaddingBefore: "paddingBlockStart", PaddingAfter: "paddingBlockEnd",
+                    PaddingStart: "paddingInlineStart", PaddingEnd: "paddingInlineEnd",
+                    BorderBeforeColor: "borderBlockStartColor",
+                    BorderBeforeStyle: "borderBlockStartStyle",
+                    BorderBeforeWidth: "borderBlockStartWidth",
+                    BorderAfterColor: "borderBlockEndColor",
+                    BorderAfterStyle: "borderBlockEndStyle",
+                    BorderAfterWidth: "borderBlockEndWidth",
+                    BorderStartColor: "borderInlineStartColor",
+                    BorderStartStyle: "borderInlineStartStyle",
+                    BorderStartWidth: "borderInlineStartWidth",
+                    BorderEndColor: "borderInlineEndColor",
+                    BorderEndStyle: "borderInlineEndStyle",
+                    BorderEndWidth: "borderInlineEndWidth",
+                };
+                if (rest === "BorderBefore") return side("borderBlockStartWidth", "borderBlockStartStyle", "borderBlockStartColor");
+                if (rest === "BorderAfter") return side("borderBlockEndWidth", "borderBlockEndStyle", "borderBlockEndColor");
+                if (rest === "BorderStart") return side("borderInlineStartWidth", "borderInlineStartStyle", "borderInlineStartColor");
+                if (rest === "BorderEnd") return side("borderInlineEndWidth", "borderInlineEndStyle", "borderInlineEndColor");
+                if (rest === "LogicalHeight") return _resolveComputed("height");
+                if (rest === "LogicalWidth") return _resolveComputed("width");
+                if (rest === "MinLogicalHeight") return _resolveComputed("minHeight");
+                if (rest === "MinLogicalWidth") return _resolveComputed("minWidth");
+                if (rest === "MaxLogicalHeight") return _resolveComputed("maxHeight");
+                if (rest === "MaxLogicalWidth") return _resolveComputed("maxWidth");
+                if (Object.prototype.hasOwnProperty.call(logical, rest)) {
+                    return v(logical[rest]);
+                }
+                const direct = rest.charAt(0).toLowerCase() + rest.slice(1);
+                // Bare textStroke is not enumerated by Chrome, so it has no
+                // case of its own; its only reader is this branch.
+                if (direct === "textStroke") return v("textStrokeWidth") + " " + v("textStrokeColor");
+                if (_isComputedShorthand(direct)) return _resolveShorthand(direct);
+                return _resolveComputed(direct);
+            };
+            if (/^webkit[A-Z]/.test(prop)) return webkitShorthand(prop.slice(6));
+            const four = (a, b, c, d) => {
+                const w = [v(a), v(b), v(c), v(d)];
+                if (w[0] === w[1] && w[1] === w[2] && w[2] === w[3]) return w[0];
+                if (w[0] === w[2] && w[1] === w[3]) return w[0] + " " + w[1];
+                if (w[1] === w[3]) return w[0] + " " + w[1] + " " + w[2];
+                return w.join(" ");
+            };
+            const pair = (a, b) => {
+                const x = v(a), y = v(b);
+                return x === y ? x : x + " " + y;
+            };
+            // Shorthand-aware resolve for mid-level names that are
+            // themselves enumerated shorthands (columnRuleInsetStart,
+            // ruleWidth, pageBreakAfter, …). Plain v() would bypass the
+            // composer and read "" straight from the op table.
+            const vs = (n) => _isComputedShorthand(n) ? _resolveShorthand(n) : _resolveComputed(n);
+            const vspair = (a, b) => {
+                const x = vs(a), y = vs(b);
+                return x === y ? x : x + " " + y;
+            };
+            // The rule-inset families have no resolvable longhands behind
+            // them, so an empty read is the initial, never a hole: `0px`.
+            const _v0 = (n) => {
+                const x = v(n);
+                return x === "" ? "0px" : x;
+            };
+            const _pair0 = (a, b) => {
+                const x = _v0(a), y = _v0(b);
+                return x === y ? x : x + " " + y;
+            };
+            switch (prop) {
+                case "margin": return four("marginTop", "marginRight", "marginBottom", "marginLeft");
+                case "marginBlock": return pair("marginBlockStart", "marginBlockEnd");
+                case "marginInline": return pair("marginInlineStart", "marginInlineEnd");
+                case "padding": return four("paddingTop", "paddingRight", "paddingBottom", "paddingLeft");
+                case "paddingBlock": return pair("paddingBlockStart", "paddingBlockEnd");
+                case "paddingInline": return pair("paddingInlineStart", "paddingInlineEnd");
+                case "inset": return four("top", "right", "bottom", "left");
+                case "insetBlock": return pair("insetBlockStart", "insetBlockEnd");
+                case "insetInline": return pair("insetInlineStart", "insetInlineEnd");
+                case "scrollMargin": return four("scrollMarginTop", "scrollMarginRight", "scrollMarginBottom", "scrollMarginLeft");
+                case "scrollMarginBlock": return pair("scrollMarginBlockStart", "scrollMarginBlockEnd");
+                case "scrollMarginInline": return pair("scrollMarginInlineStart", "scrollMarginInlineEnd");
+                case "scrollPadding": return four("scrollPaddingTop", "scrollPaddingRight", "scrollPaddingBottom", "scrollPaddingLeft");
+                case "scrollPaddingBlock": return pair("scrollPaddingBlockStart", "scrollPaddingBlockEnd");
+                case "scrollPaddingInline": return pair("scrollPaddingInlineStart", "scrollPaddingInlineEnd");
+                case "gap": return pair("rowGap", "columnGap");
+                case "gridRowGap": return v("rowGap");
+                case "gridColumnGap": return v("columnGap");
+                case "overflow": return pair("overflowX", "overflowY");
+                case "overscrollBehavior": return pair("overscrollBehaviorX", "overscrollBehaviorY");
+                case "borderWidth": return four("borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth");
+                case "borderStyle": return four("borderTopStyle", "borderRightStyle", "borderBottomStyle", "borderLeftStyle");
+                case "borderColor": return four("borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor");
+                case "borderTop": return side("borderTopWidth", "borderTopStyle", "borderTopColor");
+                case "borderRight": return side("borderRightWidth", "borderRightStyle", "borderRightColor");
+                case "borderBottom": return side("borderBottomWidth", "borderBottomStyle", "borderBottomColor");
+                case "borderLeft": return side("borderLeftWidth", "borderLeftStyle", "borderLeftColor");
+                case "border": return side("borderTopWidth", "borderTopStyle", "borderTopColor");
+                case "borderBlock": return side("borderBlockStartWidth", "borderBlockStartStyle", "borderBlockStartColor");
+                case "borderBlockStart": return side("borderBlockStartWidth", "borderBlockStartStyle", "borderBlockStartColor");
+                case "borderBlockEnd": return side("borderBlockEndWidth", "borderBlockEndStyle", "borderBlockEndColor");
+                case "borderBlockColor": return pair("borderBlockStartColor", "borderBlockEndColor");
+                case "borderBlockStyle": return pair("borderBlockStartStyle", "borderBlockEndStyle");
+                case "borderBlockWidth": return pair("borderBlockStartWidth", "borderBlockEndWidth");
+                case "borderInline": return side("borderInlineStartWidth", "borderInlineStartStyle", "borderInlineStartColor");
+                case "borderInlineStart": return side("borderInlineStartWidth", "borderInlineStartStyle", "borderInlineStartColor");
+                case "borderInlineEnd": return side("borderInlineEndWidth", "borderInlineEndStyle", "borderInlineEndColor");
+                case "borderInlineColor": return pair("borderInlineStartColor", "borderInlineEndColor");
+                case "borderInlineStyle": return pair("borderInlineStartStyle", "borderInlineEndStyle");
+                case "borderInlineWidth": return pair("borderInlineStartWidth", "borderInlineEndWidth");
+                case "borderRadius": return four("borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius", "borderBottomLeftRadius");
+                case "borderSpacing": return pair("webkitBorderHorizontalSpacing", "webkitBorderVerticalSpacing");
+                case "cornerShape": return four("cornerTopLeftShape", "cornerTopRightShape", "cornerBottomRightShape", "cornerBottomLeftShape");
+                case "cornerTopShape": return pair("cornerTopLeftShape", "cornerTopRightShape");
+                case "cornerBottomShape": return pair("cornerBottomLeftShape", "cornerBottomRightShape");
+                case "cornerLeftShape": return pair("cornerTopLeftShape", "cornerBottomLeftShape");
+                case "cornerRightShape": return pair("cornerTopRightShape", "cornerBottomRightShape");
+                case "cornerBlockStartShape": return pair("cornerStartStartShape", "cornerStartEndShape");
+                case "cornerBlockEndShape": return pair("cornerEndStartShape", "cornerEndEndShape");
+                case "cornerInlineStartShape": return pair("cornerStartStartShape", "cornerEndStartShape");
+                case "cornerInlineEndShape": return pair("cornerStartEndShape", "cornerEndEndShape");
+                case "columnRule": return v("columnRuleWidth") + " " + v("columnRuleColor");
+                case "rowRule": return v("rowRuleWidth") + " " + v("rowRuleColor");
+                case "rule": return vs("ruleWidth") + " " + vs("ruleColor");
+                case "outline": return v("outlineColor") + " " + v("outlineStyle") + " " + v("outlineWidth");
+                case "flex": return v("flexGrow") + " " + v("flexShrink") + " " + v("flexBasis");
+                case "flexFlow": return pair("flexDirection", "flexWrap");
+                case "placeContent": return pair("alignContent", "justifyContent");
+                case "placeItems": return pair("alignItems", "justifyItems");
+                case "placeSelf": return pair("alignSelf", "justifySelf");
+                case "whiteSpace": return _resolveComputed("whiteSpace");
+                case "wordWrap": return _resolveComputed("overflowWrap");
+                case "background":
+                    return v("backgroundColor") + " " + v("backgroundImage") + " " +
+                        v("backgroundRepeat") + " " + v("backgroundAttachment") + " " +
+                        v("backgroundPosition") + " / " + v("backgroundSize") + " " +
+                        v("backgroundOrigin") + " " + v("backgroundClip");
+                case "backgroundPositionX": return v("backgroundPositionX");
+                case "backgroundPositionY": return v("backgroundPositionY");
+                case "borderImage":
+                    if (v("borderImageSource") === "none") return "none";
+                    return [v("borderImageSource"), v("borderImageSlice"), v("borderImageWidth"), v("borderImageOutset"), v("borderImageRepeat")].join(" ");
+                case "gridGap": return pair("rowGap", "columnGap");
+                case "gridRowGap": return v("rowGap");
+                case "gridColumnGap": return v("columnGap");
+                case "fontSynthesis": {
+                    // Chrome serializes the active keywords, and the full
+                    // set when nothing is set (all three longhands `auto`).
+                    const parts = [];
+                    if (v("fontSynthesisWeight") !== "auto") parts.push("weight");
+                    if (v("fontSynthesisStyle") !== "auto") parts.push("style");
+                    if (v("fontSynthesisSmallCaps") !== "auto") parts.push("small-caps");
+                    return parts.length ? parts.join(" ") : "weight style small-caps";
+                }
+                case "gridArea": {
+                    const g = [v("gridRowStart"), v("gridColumnStart"), v("gridRowEnd"), v("gridColumnEnd")];
+                    return g.every((x) => x === "auto") ? "auto" : g.join(" / ");
+                }
+                case "gridColumn": {
+                    const a = v("gridColumnStart"), b = v("gridColumnEnd");
+                    return a === "auto" && b === "auto" ? "auto" : a + " / " + b;
+                }
+                case "gridRow": {
+                    const a = v("gridRowStart"), b = v("gridRowEnd");
+                    return a === "auto" && b === "auto" ? "auto" : a + " / " + b;
+                }
+                case "gridTemplate": {
+                    const g = [v("gridTemplateAreas"), v("gridTemplateRows"), v("gridTemplateColumns")];
+                    return (g[0] === "none" && g[1] === "none" && g[2] === "none") ? "none" : g.join(" / ");
+                }
+                case "interestDelay": return pair("interestDelayStart", "interestDelayEnd");
+                case "offset": {
+                    const pos = v("offsetPosition") === "normal" ? "none" : v("offsetPosition");
+                    // The rotate longhand carries its own `auto` (`auto 0deg`);
+                    // the shorthand keeps only the angle.
+                    const rot = v("offsetRotate").replace(/^auto /, "");
+                    return [pos, v("offsetDistance"), v("offsetAnchor"), rot].join(" ");
+                }
+                case "grid":
+                    return [v("gridTemplateAreas"), v("gridTemplateRows"), v("gridTemplateColumns"), v("gridAutoFlow"), v("gridAutoRows"), v("gridAutoColumns")].join(" / ");
+                case "pageBreakAfter": return v("breakAfter") === "" ? "auto" : v("breakAfter");
+                case "pageBreakBefore": return v("breakBefore") === "" ? "auto" : v("breakBefore");
+                case "pageBreakInside": return v("breakInside") === "" ? "auto" : v("breakInside");
+                case "columnRuleInsetStart": return pair("columnRuleInsetCapStart", "columnRuleInsetJunctionStart");
+                case "columnRuleInsetEnd": return pair("columnRuleInsetCapEnd", "columnRuleInsetJunctionEnd");
+                case "columnRuleInsetJunction": return pair("columnRuleInsetJunctionStart", "columnRuleInsetJunctionEnd");
+                case "rowRuleInsetStart": return pair("rowRuleInsetCapStart", "rowRuleInsetJunctionStart");
+                case "rowRuleInsetEnd": return pair("rowRuleInsetCapEnd", "rowRuleInsetJunctionEnd");
+                case "rowRuleInsetCap": return pair("rowRuleInsetCapStart", "rowRuleInsetCapEnd");
+                case "rowRuleInsetJunction": return pair("rowRuleInsetJunctionStart", "rowRuleInsetJunctionEnd");
+                case "ruleColor": return pair("columnRuleColor", "rowRuleColor");
+                case "ruleStyle": return pair("columnRuleStyle", "rowRuleStyle");
+                case "ruleWidth": return pair("columnRuleWidth", "rowRuleWidth");
+                // No longhands exist behind these two, so nothing can ever
+                // style them: the initial is the only correct answer.
+                case "ruleBreak": return "normal";
+                case "ruleVisibilityItems": return "normal";
+                case "ruleInset": return _pair0("ruleInsetStart", "ruleInsetEnd");
+                case "ruleInsetStart": return _pair0("ruleInsetCapStart", "ruleInsetJunctionStart");
+                case "ruleInsetEnd": return _pair0("ruleInsetCapEnd", "ruleInsetJunctionEnd");
+                case "ruleInsetJunction": return _pair0("ruleInsetJunctionStart", "ruleInsetJunctionEnd");
+                case "ruleInsetJunctionStart": return _v0("ruleInsetJunctionStart");
+                case "ruleInsetJunctionEnd": return _v0("ruleInsetJunctionEnd");
+                case "ruleInsetCap": return _pair0("ruleInsetCapStart", "ruleInsetCapEnd");
+                case "ruleInsetCapStart": return _v0("ruleInsetCapStart");
+                case "ruleInsetCapEnd": return _v0("ruleInsetCapEnd");
+                case "font": return _resolveComputed("font");
+                case "listStyle": return v("listStylePosition") + " " + v("listStyleImage") + " " + v("listStyleType");
+                case "marker": {
+                    const s = v("markerStart") + " " + v("markerMid") + " " + v("markerEnd");
+                    return (v("markerStart") === "none" && v("markerMid") === "none" && v("markerEnd") === "none") ? "none" : s;
+                }
+                case "mask": return v("maskImage") === "none" ? "none" :
+                    [v("maskImage"), v("maskPosition"), v("maskSize"), v("maskRepeat"), v("maskOrigin"), v("maskClip"), v("maskComposite"), v("maskMode")].join(" ");
+                case "textEmphasis": return v("textEmphasisStyle") + " " + v("textEmphasisColor");
+                case "columns": {
+                    const w = v("columnWidth"), c = v("columnCount");
+                    return (w === "auto" && c === "auto") ? "auto" : w + " " + c;
+                }
+                case "columnRuleInsetCap": return pair("columnRuleInsetCapStart", "columnRuleInsetCapEnd");
+                case "columnRuleInset": return vspair("columnRuleInsetStart", "columnRuleInsetEnd");
+                case "rowRuleInset": return vspair("rowRuleInsetStart", "rowRuleInsetEnd");
+                case "gridArea": return v("gridRowStart") + " / " + v("gridColumnStart") + " / " + v("gridRowEnd") + " / " + v("gridColumnEnd");
+                case "gridColumn": return v("gridColumnStart") + " / " + v("gridColumnEnd");
+                case "gridRow": return v("gridRowStart") + " / " + v("gridRowEnd");
+                case "gridTemplate": return v("gridTemplateAreas") + " / " + v("gridTemplateRows") + " / " + v("gridTemplateColumns");
+                case "container": return v("containerName") === "none" ? "none" : v("containerName") + " / " + v("containerType");
+                case "animation": {
+                    if (v("animationName") === "none") return "none";
+                    return [v("animationName"), v("animationDuration"), v("animationTimingFunction"), v("animationDelay"), v("animationIterationCount"), v("animationDirection"), v("animationFillMode"), v("animationPlayState"), v("animationTimeline"), v("animationRangeStart"), v("animationRangeEnd")].join(" ");
+                }
+                case "animationRange": return pair("animationRangeStart", "animationRangeEnd");
+                case "transition": {
+                    // Chrome drops trailing default components.
+                    const parts = [v("transitionProperty"), v("transitionDuration"), v("transitionTimingFunction"), v("transitionDelay")];
+                    const initial = ["all", "0s", "ease", "0s"];
+                    let end = parts.length;
+                    while (end > 1 && parts[end - 1] === initial[end - 1]) end--;
+                    return parts.slice(0, end).join(" ");
+                }
+                case "textWrap": return v("textWrapStyle") === "auto" ? v("textWrapMode") : v("textWrapMode") + " " + v("textWrapStyle");
+                case "textBox": return v("textBoxTrim") === "none" ? "normal" : v("textBoxTrim") + " " + v("textBoxEdge");
+                case "scrollTimeline": return v("scrollTimelineName") === "none" ? "none" :
+                    [v("scrollTimelineName"), v("scrollTimelineSource"), v("scrollTimelineAxis")].join(" ");
+                case "viewTimeline": return v("viewTimelineName") === "none" ? "none" :
+                    [v("viewTimelineName"), v("viewTimelineSource"), v("viewTimelineAxis"), v("viewTimelineInset")].join(" ");
+                case "timelineTrigger": return v("timelineTriggerName") === "none" ? "none" :
+                    [v("timelineTriggerName"), v("timelineTriggerSource")].join(" ");
+                case "timelineTriggerActivationRange": return pair("timelineTriggerActivationRangeStart", "timelineTriggerActivationRangeEnd");
+                case "timelineTriggerActiveRange": return pair("timelineTriggerActiveRangeStart", "timelineTriggerActiveRangeEnd");
+                case "positionTry": return v("positionTryFallbacks") === "none" ? "none" : v("positionTryFallbacks");
+                case "page": return vs("pageBreakAfter") === "auto" && vs("pageBreakBefore") === "auto" ? "auto" :
+                    vs("pageBreakAfter") + " " + vs("pageBreakBefore");
+                case "pageBreakAfter": return v("breakAfter");
+                case "pageBreakBefore": return v("breakBefore");
+                case "pageBreakInside": return v("breakInside");
+                default: {
+                    // whiteSpace/wordWrap aliases and any straggler resolve
+                    // through the ordinary longhand path ("" when unknown).
+                    return _resolveComputed(prop);
+                }
+            }
+        }
+        // Indexed names plus every shorthand, ASCII-sorted as one list —
+        // the key order Chrome's declaration enumerates in.
+        let _allComputedNamesCache = null;
+        function _allComputedNames() {
+            if (_allComputedNamesCache) return _allComputedNamesCache;
+            const names = [];
+            for (const kebab of CHROME_COMPUTED_STYLE_PROPS) {
+                const bare = kebab.startsWith("-") ? kebab.slice(1) : kebab;
+                const cc = bare.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+                names.push(cc.charAt(0).toLowerCase() + cc.slice(1));
+            }
+            for (const n of CHROME_COMPUTED_SHORTHANDS) names.push(n);
+            names.sort();
+            _allComputedNamesCache = names;
+            return names;
+        }
         // Shared by the get trap above and the enumeration traps: the
         // computed value for a camelCase (or WebKit-cased) property name.
         function _resolveComputed(prop) {
+            // Used box sizes come from layout, not the cascade: Chrome
+            // answers a block div's width with the viewport-fitting used
+            // value (1512px here), never the specified `auto` the static
+            // table used to hand back. Inline elements keep `auto`.
+            if (prop === "width" || prop === "inlineSize" || prop === "webkitLogicalWidth") {
+                if (_resolveComputed("display") === "inline") return "auto";
+                return _px(element.getBoundingClientRect().width);
+            }
+            if (prop === "height" || prop === "blockSize" || prop === "webkitLogicalHeight") {
+                if (_resolveComputed("display") === "inline") return "auto";
+                return _px(element.getBoundingClientRect().height);
+            }
             let kebab = prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
             if (kebab.startsWith("webkit-")) kebab = "-" + kebab;
             const c = ensureCache();
             if (kebab === "content" && isPseudo) return "none";
             if (Object.prototype.hasOwnProperty.call(c, kebab)) return c[kebab];
             return ops.op_dom_get_computed_style(nodeId, kebab);
+        }
+        function _px(n) {
+            if (typeof n !== "number" || !isFinite(n)) return "auto";
+            return (Math.round(n * 100) / 100) + "px";
         }
         return styleProxy;
         }

@@ -397,15 +397,20 @@ async fn computed_style_stringifies_like_chrome() {
     let js = r#"(() => {
         const cs = getComputedStyle(document.body);
         const s = JSON.stringify(cs);
+        const keys = Object.keys(JSON.parse(s)).length;
         return [
-            s.length > 20000 ? 1 : 0,
-            s.indexOf('"0":"accent-color"') !== -1 ? 1 : 0,
             // Real Chrome 154 enumerates 478 properties here.
             cs.length,
+            // ...plus 261 shorthands, for 1217 keys in total.
+            keys,
+            s.indexOf('"0":"accent-color"') !== -1 ? 1 : 0,
             cs[0] === 'accent-color' ? 1 : 0,
+            // Shorthands compose from longhands, the way Chrome serializes.
+            cs.margin === '0px' ? 1 : 0,
+            cs.border === '0px none rgb(0, 0, 0)' ? 1 : 0,
         ].join('/');
     })()"#;
-    assert_eq!(check(js).await, "1/1/478/1");
+    assert_eq!(check(js).await, "478/1217/1/1/1/1");
 }
 
 #[tokio::test]
