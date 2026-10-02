@@ -439,6 +439,29 @@ impl CdpSession {
                     _ => "",
                 };
 
+                if event_type == "mouseWheel" {
+                    // Trusted wheel: Chrome fires one 'wheel' event with
+                    // delta*; the legacy wheelDelta* fields come from the
+                    // WheelEvent constructor.
+                    let dx = req.params.get("deltaX").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let dy = req.params.get("deltaY").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let dz = req.params.get("deltaZ").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let script = format!(
+                        "(() => {{ \
+                          const d = globalThis.__bo_td_9f27c3a1; \
+                          d({{kind: 'wheel', type: 'wheel', props: {{ \
+                            bubbles: true, cancelable: true, composed: true, \
+                            clientX: {x}, clientY: {y}, screenX: {x}, screenY: {y}, \
+                            deltaX: {dx}, deltaY: {dy}, deltaZ: {dz}, deltaMode: 0 \
+                          }}}}); \
+                        }})()"
+                    );
+                    let _ = page.evaluate(&script);
+                    self.last_mouse_x = x;
+                    self.last_mouse_y = y;
+                    return (serde_json::json!({}).to_string(), Vec::new());
+                }
+
                 if !js_event.is_empty() {
                     let button_n = match button {
                         "left" => 0,
@@ -473,11 +496,9 @@ impl CdpSession {
                                     pointerId: 1, width: 1, height: 1, pressure: {pressure}, \
                                     pointerType: 'mouse', isPrimary: true \
                                   }}; \
-                                  const e = new PointerEvent('pointermove', props); \
-                                  const m = new MouseEvent('mousemove', props); \
-                                  const t = (document.elementFromPoint && document.elementFromPoint({x},{y})) || document.body || document; \
-                                  t.dispatchEvent(e); \
-                                  t.dispatchEvent(m); \
+                                  const d = globalThis.__bo_td_9f27c3a1; \
+                                  d({{kind: 'mouse', type: 'pointermove', props}}); \
+                                  d({{kind: 'mouse', type: 'mousemove', props}}); \
                                 }})()",
                                 x = p.x,
                                 y = p.y,
@@ -512,11 +533,9 @@ impl CdpSession {
                                 pointerId: 1, width: 1, height: 1, pressure: {pressure}, \
                                 pointerType: 'mouse', isPrimary: true \
                               }}; \
-                              const e = new PointerEvent({pointer_type:?}, props); \
-                              const m = new MouseEvent({js_event:?}, props); \
-                              const t = (document.elementFromPoint && document.elementFromPoint({x},{y})) || document.body || document; \
-                              t.dispatchEvent(e); \
-                              t.dispatchEvent(m); \
+                              const d = globalThis.__bo_td_9f27c3a1; \
+                              d({{kind: 'mouse', type: {pointer_type:?}, props}}); \
+                              d({{kind: 'mouse', type: {js_event:?}, props}}); \
                             }})()",
                             pressure = if event_type == "mousePressed" || buttons != 0 { 0.5 } else { 0.0 },
                             ctrl = (modifiers & 2) != 0,
@@ -563,12 +582,12 @@ impl CdpSession {
                 if !js_event.is_empty() {
                     let script = format!(
                         "(() => {{ \
-                          const e = new KeyboardEvent({js_event:?}, {{ \
+                          const d = globalThis.__bo_td_9f27c3a1; \
+                          d({{kind: 'keyboard', type: {js_event:?}, props: {{ \
                             bubbles: true, cancelable: true, \
                             key: {key:?}, code: {code:?}, \
                             ctrlKey: {ctrl}, shiftKey: {shift}, altKey: {alt}, metaKey: {meta} \
-                          }}); \
-                          (document.activeElement || document.body || document).dispatchEvent(e); \
+                          }}}}); \
                           // For 'char' events, also fire an input event so text fields update.
                           {input_extra} \
                         }})()",
@@ -580,7 +599,7 @@ impl CdpSession {
                             format!(
                                 "const ae = document.activeElement; \
                                  if (ae && ('value' in ae)) {{ ae.value = (ae.value || '') + {text:?}; \
-                                 ae.dispatchEvent(new Event('input', {{bubbles: true}})); }}"
+                                 globalThis.__bo_td_9f27c3a1({{kind: 'plain', type: 'input', props: {{bubbles: true}}}}); }}"
                             )
                         } else {
                             String::new()

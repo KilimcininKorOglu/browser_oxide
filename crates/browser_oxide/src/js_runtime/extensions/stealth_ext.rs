@@ -149,6 +149,54 @@ pub fn op_get_profile_value(state: &mut OpState, #[string] key: &str) -> String 
     }
 }
 
+/// The system's speech-synthesis voices, as `[{name, lang}]`. Sourced from
+/// the host synthesizer (`say -v '?'`) so the list matches what a real
+/// Chrome on this machine reports — Chrome exposes the full system voice
+/// inventory, not a hand-picked subset. Empty off macOS (callers fall back
+/// to their per-OS defaults).
+#[op2]
+#[string]
+pub fn op_system_speech_voices() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let Ok(output) = Command::new("say").arg("-v").arg("?").output() else {
+            return "[]".to_string();
+        };
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut voices: Vec<String> = Vec::new();
+        for line in text.lines() {
+            // Format: "<name><2+ spaces><lang-lang...>    # sample text"
+            // The name may contain single spaces ("Bad News").
+            let hash = match line.find(" # ") {
+                Some(h) => h,
+                None => continue,
+            };
+            let head = line[..hash].trim_end();
+            let lang_start = match head.rfind(' ') {
+                Some(i) => i + 1,
+                None => continue,
+            };
+            let lang = head[lang_start..].trim();
+            let name = head[..lang_start].trim();
+            if name.is_empty() || lang.matches('_').count() != 1 {
+                continue;
+            }
+            let bcp = lang.replace('_', "-");
+            voices.push(format!(
+                "{{\"name\":{},\"lang\":\"{}\"}}",
+                serde_json::to_string(name).unwrap_or_default(),
+                bcp
+            ));
+        }
+        format!("[{}]", voices.join(","))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "[]".to_string()
+    }
+}
+
 #[op2(fast)]
 pub fn op_has_stealth_profile(state: &mut OpState) -> bool {
     let state = state.borrow::<StealthState>();
@@ -210,6 +258,7 @@ deno_core::extension!(
     ops = [
         op_get_profile_value,
         op_has_stealth_profile,
+        op_system_speech_voices,
         op_cross_origin_isolated,
         op_is_secure_context,
         op_behavior_mouse_trajectory,

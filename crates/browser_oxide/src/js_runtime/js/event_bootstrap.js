@@ -170,6 +170,11 @@
             this.deltaY = options.deltaY || 0;
             this.deltaZ = options.deltaZ || 0;
             this.deltaMode = options.deltaMode || 0;
+            // Chrome's legacy non-standard fields are live on every real
+            // WheelEvent; missing them is an instant surface tell.
+            this.wheelDeltaX = Math.round(-(options.deltaX || 0));
+            this.wheelDeltaY = Math.round(-(options.deltaY || 0));
+            this.wheelDelta = Math.round(-(options.deltaY || 0));
         }
         static DOM_DELTA_PIXEL = 0;
         static DOM_DELTA_LINE = 1;
@@ -618,6 +623,56 @@
     // synchronously at their top — before any page script runs — so page JS
     // never observes it. Non-enumerable to keep it off Object.keys scans even
     // in the brief window before capture.
+    // Privileged trusted-event dispatcher. The protocol layer's CDP input
+    // handlers call this to produce events with isTrusted === true — the
+    // Camoufox trusted-automation-events behaviour. The non-enumerable
+    // opaque name keeps it out of page-script enumeration; the minter and
+    // the event constructors it uses live in this privileged scope only.
+    try {
+        const _boTrustedDispatch = (spec) => {
+            try {
+                const props = spec.props || {};
+                let e;
+                if (spec.kind === "keyboard") {
+                    e = new KeyboardEvent(spec.type, props);
+                } else if (spec.kind === "wheel") {
+                    e = new WheelEvent(spec.type, props);
+                } else if (spec.kind === "plain") {
+                    e = new Event(spec.type, props);
+                } else {
+                    e = new PointerEvent(spec.type, props);
+                }
+                _markTrusted(e);
+                const target = (spec.kind !== "keyboard" && spec.kind !== "plain"
+                    && typeof props.clientX === "number"
+                    && document.elementFromPoint)
+                    ? (document.elementFromPoint(props.clientX, props.clientY) || document.body || document)
+                    : (document.activeElement || document.body || document);
+                target.dispatchEvent(e);
+                if (spec.kind === "mouse"
+                    && (spec.type === "mousedown" || spec.type === "pointerdown")) {
+                    globalThis.__bo_td_9f27c3a1_ua.active = true;
+                    globalThis.__bo_td_9f27c3a1_ua.been = true;
+                }
+                return true;
+            } catch (_) {
+                return false;
+            }
+        };
+        Object.defineProperty(globalThis, '__bo_td_9f27c3a1_ua', {
+            value: { active: false, been: false },
+            enumerable: false,
+            configurable: false,
+            writable: false,
+        });
+        Object.defineProperty(globalThis, '__bo_td_9f27c3a1', {
+            value: _boTrustedDispatch,
+            enumerable: false,
+            configurable: false,
+            writable: false,
+        });
+    } catch (_) { /* ignore */ }
+
     try {
         Object.defineProperty(globalThis, '__bo_mark_trusted', {
             value: _markTrusted,

@@ -831,14 +831,13 @@
     });
     StorageManager.prototype.estimate = ({
         estimate() {
-            // Real Chrome on modern macOS/Windows desktops reports ~60% of
-            // free disk as quota. ~120 GB is a typical-disk plausible value
-            // — the previous 1 GB constant differs from real Chrome, whose
-            // quota is always many tens of GB. Usage breakdown matches
-            // Chrome's documented `usageDetails` shape so iteration probes
-            // (e.g. `for (k in details)`) see the same key set.
+            // Real Chrome reports the quota manager's capped per-origin
+            // value: exactly 10 GiB on a large-disk desktop (measured on a
+            // real M-series Mac and in the apostate captures — never a raw
+            // disk fraction). Usage breakdown matches Chrome's documented
+            // `usageDetails` shape so iteration probes see the same keys.
             return Promise.resolve({
-                quota: 128849018880,                 // ~120 GB
+                quota: 10737418240,                  // 10 GiB, Chrome's cap
                 usage: 0,
                 usageDetails: { indexedDB: 0, caches: 0, serviceWorkerRegistrations: 0 },
             });
@@ -954,9 +953,12 @@
     const _navUserActivation = (() => {
         const _UAProto = globalThis.UserActivation && globalThis.UserActivation.prototype;
         const u = _UAProto ? Object.create(_UAProto) : {};
+        // Trusted input (the privileged dispatcher) flips these; a fresh
+        // page has neither, exactly like a real browser before any click.
+        const _uaState = globalThis.__bo_td_9f27c3a1_ua || { active: false, been: false };
         Object.defineProperties(u, {
-            isActive: { get: () => false, enumerable: true },
-            hasBeenActive: { get: () => false, enumerable: true },
+            isActive: { get: () => _uaState.active, enumerable: true },
+            hasBeenActive: { get: () => _uaState.been, enumerable: true },
         });
         return u;
     })();
@@ -5810,27 +5812,65 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     // ================================================================
     {
         const _osName = _p("os_name", "Linux");
-        const _voicesByOS = {
-            "Windows": [
-                {name:"Microsoft David",lang:"en-US",localService:true,default:true,voiceURI:"Microsoft David"},
-                {name:"Microsoft Zira",lang:"en-US",localService:true,default:false,voiceURI:"Microsoft Zira"},
-                {name:"Microsoft Mark",lang:"en-US",localService:true,default:false,voiceURI:"Microsoft Mark"},
-                {name:"Google US English",lang:"en-US",localService:false,default:false,voiceURI:"Google US English"},
-                {name:"Google UK English Female",lang:"en-GB",localService:false,default:false,voiceURI:"Google UK English Female"},
-            ],
-            "macOS": [
-                {name:"Alex",lang:"en-US",localService:true,default:true,voiceURI:"com.apple.voice.compact.en-US.Samantha"},
-                {name:"Samantha",lang:"en-US",localService:true,default:false,voiceURI:"com.apple.voice.compact.en-US.Samantha"},
-                {name:"Victoria",lang:"en-US",localService:true,default:false,voiceURI:"com.apple.speech.synthesis.voice.Victoria"},
-                {name:"Google US English",lang:"en-US",localService:false,default:false,voiceURI:"Google US English"},
-            ],
-            "Linux": [
+        // Chrome appends the fixed Google network voices to the END of the
+        // system inventory (measured on a real Mac: system voices first with
+        // localService true and the first one default, then these 19).
+        const _googleVoices = [
+            {name:"Google Deutsch",lang:"de-DE"},
+            {name:"Google US English",lang:"en-US"},
+            {name:"Google UK English Female",lang:"en-GB"},
+            {name:"Google UK English Male",lang:"en-GB"},
+            {name:"Google español",lang:"es-ES"},
+            {name:"Google español de Estados Unidos",lang:"es-US"},
+            {name:"Google français",lang:"fr-FR"},
+            {name:"Google हिन्दी",lang:"hi-IN"},
+            {name:"Google Bahasa Indonesia",lang:"id-ID"},
+            {name:"Google italiano",lang:"it-IT"},
+            {name:"Google 日本語",lang:"ja-JP"},
+            {name:"Google 한국의",lang:"ko-KR"},
+            {name:"Google Nederlands",lang:"nl-NL"},
+            {name:"Google polski",lang:"pl-PL"},
+            {name:"Google português do Brasil",lang:"pt-BR"},
+            {name:"Google русский",lang:"ru-RU"},
+            {name:"Google 普通话（中国大陆）",lang:"zh-CN"},
+            {name:"Google 粤語（香港）",lang:"zh-HK"},
+            {name:"Google 國語（臺灣）",lang:"zh-TW"},
+        ].map(v => ({name: v.name, lang: v.lang, localService: false, default: false, voiceURI: v.name}));
+        let _voices;
+        if (_osName === "macOS") {
+            // Full system inventory from the host synthesizer — real Chrome
+            // exposes every system voice, not a subset.
+            try {
+                const raw = JSON.parse(ops.op_system_speech_voices());
+                _voices = raw.map((v, i) => ({
+                    name: v.name, lang: v.lang, localService: true,
+                    default: i === 0, voiceURI: v.name,
+                })).concat(_googleVoices);
+            } catch (_e) {
+                _voices = null;
+            }
+        } else {
+            const _voicesByOS = {
+                "Windows": [
+                    {name:"Microsoft David",lang:"en-US",localService:true,default:true,voiceURI:"Microsoft David"},
+                    {name:"Microsoft Zira",lang:"en-US",localService:true,default:false,voiceURI:"Microsoft Zira"},
+                    {name:"Microsoft Mark",lang:"en-US",localService:true,default:false,voiceURI:"Microsoft Mark"},
+                    {name:"Google US English",lang:"en-US",localService:false,default:false,voiceURI:"Google US English"},
+                    {name:"Google UK English Female",lang:"en-GB",localService:false,default:false,voiceURI:"Google UK English Female"},
+                ],
+                "Linux": [
+                    {name:"Google US English",lang:"en-US",localService:false,default:true,voiceURI:"Google US English"},
+                    {name:"Google UK English Female",lang:"en-GB",localService:false,default:false,voiceURI:"Google UK English Female"},
+                    {name:"Google UK English Male",lang:"en-GB",localService:false,default:false,voiceURI:"Google UK English Male"},
+                ],
+            };
+            _voices = _voicesByOS[_osName] || _voicesByOS["Linux"];
+        }
+        if (!_voices || !_voices.length) {
+            _voices = [
                 {name:"Google US English",lang:"en-US",localService:false,default:true,voiceURI:"Google US English"},
-                {name:"Google UK English Female",lang:"en-GB",localService:false,default:false,voiceURI:"Google UK English Female"},
-                {name:"Google UK English Male",lang:"en-GB",localService:false,default:false,voiceURI:"Google UK English Male"},
-            ],
-        };
-        const _voices = _voicesByOS[_osName] || _voicesByOS["Linux"];
+            ];
+        }
         // Override the existing speechSynthesis with OS-aware voices
         globalThis.speechSynthesis.getVoices = function() { return _voices; };
     }
