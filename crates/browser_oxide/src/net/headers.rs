@@ -305,16 +305,43 @@ pub fn chrome_headers_fetch(
     ));
     headers.push(("priority".to_string(), "u=1, i".to_string()));
 
-    // Origin + Referer — always set for same-site + cross-site fetches
-    if let Some(o) = origin {
-        headers.push(("origin".to_string(), o.to_string()));
-        headers.push((
-            "referer".to_string(),
-            format!("{}/", o.trim_end_matches('/')),
-        ));
+    // Origin + Referer — always set for same-site + cross-site fetches.
+    // `origin` is the DOCUMENT url (what `location.href` holds), not just
+    // its origin: Chrome's default referrer policy is
+    // `strict-origin-when-cross-origin`, so a same-origin request carries the
+    // whole document url — path and query included — while a cross-origin one
+    // is reduced to the origin. Sending the origin for both (what this did)
+    // gave every same-origin fetch/XHR a Referer no real Chrome would send.
+    if let Some(doc_url) = origin {
+        headers.push(("origin".to_string(), document_origin(doc_url)));
+        headers.push(("referer".to_string(), document_referer(doc_url, site)));
     }
 
     headers
+}
+
+/// The origin serialization of a document url, falling back to the input when
+/// it does not parse (an opaque origin such as `null`).
+fn document_origin(doc_url: &str) -> String {
+    url::Url::parse(doc_url)
+        .map(|u| u.origin().ascii_serialization())
+        .unwrap_or_else(|_| doc_url.to_string())
+}
+
+/// The `Referer` value for a request to `target_url` made from the document
+/// `doc_url`, under `strict-origin-when-cross-origin`: the full document url
+/// for a same-origin request, the bare origin otherwise.
+fn document_referer(doc_url: &str, site: &str) -> String {
+    let doc = match url::Url::parse(doc_url) {
+        Ok(u) => u,
+        // Unparsable document url (opaque origin): Chrome sends no Referer at
+        // all rather than a malformed one.
+        Err(_) => return String::new(),
+    };
+    if site == "same-origin" {
+        return doc.as_str().to_string();
+    }
+    doc.origin().ascii_serialization()
 }
 
 /// Heuristic same-site comparison: registered domain (eTLD+1) would be the
@@ -690,12 +717,9 @@ pub fn firefox_headers_fetch(
     headers.push(("sec-fetch-mode".to_string(), "cors".to_string()));
     headers.push(("sec-fetch-site".to_string(), site.to_string()));
 
-    if let Some(o) = origin {
-        headers.push(("origin".to_string(), o.to_string()));
-        headers.push((
-            "referer".to_string(),
-            format!("{}/", o.trim_end_matches('/')),
-        ));
+    if let Some(doc_url) = origin {
+        headers.push(("origin".to_string(), document_origin(doc_url)));
+        headers.push(("referer".to_string(), document_referer(doc_url, site)));
     }
 
     headers
@@ -789,15 +813,26 @@ pub fn safari_headers_fetch(
         "gzip, deflate, br".to_string(),
     ));
     headers.push(("user-agent".to_string(), profile.user_agent.clone()));
-    if let Some(o) = origin {
-        headers.push(("origin".to_string(), o.to_string()));
+    if let Some(doc_url) = origin {
+        headers.push(("origin".to_string(), document_origin(doc_url)));
         headers.push((
             "referer".to_string(),
-            format!("{}/", o.trim_end_matches('/')),
+            document_referer(doc_url, safari_site(target_url, doc_url)),
         ));
     }
-    let _ = target_url;
     headers
+}
+
+/// `sec-fetch-site` for Safari, which sends it on fetches too.
+fn safari_site(target_url: &str, doc_url: &str) -> &'static str {
+    match (
+        url::Url::parse(target_url).ok(),
+        url::Url::parse(doc_url).ok(),
+    ) {
+        (Some(tu), Some(ou)) if tu.host_str() == ou.host_str() => "same-origin",
+        (Some(tu), Some(ou)) if same_site(&tu, &ou) => "same-site",
+        _ => "cross-site",
+    }
 }
 
 fn safari_headers_impl(profile: &StealthProfile, referer: Option<&str>) -> Vec<(String, String)> {
@@ -1029,6 +1064,70 @@ mod tests {
         assert!(
             agent_pos > platform_pos,
             "user-agent must follow the sec-ch-ua block, got order {names:?}"
+        );
+    }
+
+    #[test]
+    fn same_origin_referer_is_the_whole_document_url() {
+        // Chrome's default referrer policy is strict-origin-when-cross-origin:
+        // a same-origin request carries the full document url, path and query
+        // included. Sending only the origin is a tell no real Chrome produces
+        // (it is what the Turnstile challenge's /fo/ POST used to arrive with).
+        let profile = crate::stealth::presets::chrome_153_macos();
+        let doc = "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/f/av0/rch/x/auto/new/invisible?lang=auto";
+        let hdrs = chrome_headers_fetch(
+            &profile,
+            "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/fo/1",
+            Some(doc),
+        );
+        let get = |name: &str| {
+            hdrs.iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(get("referer"), doc);
+        assert_eq!(
+            get("origin"),
+            "https://challenges.cloudflare.com",
+            "Origin is the serialization, never the path"
+        );
+        assert_eq!(get("sec-fetch-site"), "same-origin");
+    }
+
+    #[test]
+    fn cross_origin_referer_is_reduced_to_the_origin() {
+        // strict-origin-when-cross-origin: cross-origin drops path and query.
+        let profile = crate::stealth::presets::chrome_153_macos();
+        let hdrs = chrome_headers_fetch(
+            &profile,
+            "https://evil.example/x",
+            Some("https://example.com/deep/page?q=1"),
+        );
+        let referer = hdrs
+            .iter()
+            .find(|(k, _)| k == "referer")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        assert_eq!(
+            referer, "https://example.com",
+            "origin serialization carries no trailing slash"
+        );
+        assert!(!referer.contains("/deep/page"), "path must be dropped");
+        assert!(!referer.contains("q=1"), "query must be dropped");
+    }
+
+    #[test]
+    fn bare_origin_document_url_still_gets_a_referer() {
+        // Callers that only know the origin (a root document) must keep
+        // working: the referer is that origin with its path.
+        assert_eq!(
+            document_referer("https://example.com", "same-origin"),
+            "https://example.com/"
+        );
+        assert_eq!(
+            document_referer("https://example.com/a", "cross-site"),
+            "https://example.com"
         );
     }
 

@@ -148,6 +148,20 @@ async fn fn_clear_interval() {
     assert_eq!(check("typeof clearInterval").await, "function");
 }
 #[tokio::test]
+async fn timer_ids_start_small_like_chrome() {
+    // Real Chrome hands out small sequential timer ids (1, 2, 3...);
+    // a huge engine offset is a fingerprint tell. Engine-internal
+    // timers live in a separate id space and must not inflate page ids.
+    let first: i64 = check("setTimeout(()=>{},0)")
+        .await
+        .parse()
+        .expect("timer id parses");
+    assert!(
+        first < 100,
+        "first page timer id should be small like Chrome, got {first}"
+    );
+}
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }

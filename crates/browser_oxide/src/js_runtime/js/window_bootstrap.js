@@ -4122,7 +4122,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 const startTime = performance.now();
                 try {
                     const origin = (globalThis.location && globalThis.location.origin !== 'null')
-                        ? globalThis.location.origin : '';
+                        ? (globalThis.location.href || globalThis.location.origin) : '';
                     const headersJson = JSON.stringify(
                         Object.entries(xhr._headers).map(([k, v]) => [k, String(v)])
                     );
@@ -4311,7 +4311,12 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     const _HistoryProto = History.prototype;
     _defProtoGetter(_HistoryProto, 'length', () => _historyStack.length);
     _defProtoGetter(_HistoryProto, 'state', () => _historyStack[_historyIndex]?.state || null);
-    _defProtoGetter(_HistoryProto, 'scrollRestoration', () => "auto");
+    // scrollRestoration is an enum: only 'auto'/'manual' stick, anything
+    // else is silently ignored (no throw), initial 'auto'.
+    let _scrollRestoration = 'auto';
+    _defProtoGetter(_HistoryProto, 'scrollRestoration',
+        () => _scrollRestoration,
+        (v) => { if (v === 'auto' || v === 'manual') _scrollRestoration = v; });
     // Resolve a pushState/replaceState URL against the document URL. HTML's
     // "can have its URL rewritten" refuses a different scheme, credentials,
     // host or port, and Chrome reports an unparsable URL the same way, with
@@ -4334,11 +4339,30 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         return target.href;
     }
     // A successful call moves location to the new URL without loading it.
+    // State is structurally cloned at push time (functions/symbols throw
+    // DataCloneError with Chrome's message), so later mutation of the
+    // caller's object cannot rewrite history.
+    function _cloneHistoryState(method, state) {
+        if (typeof structuredClone !== 'function') return state;
+        try {
+            return structuredClone(state);
+        } catch (e) {
+            const reason = String((e && e.message) || e)
+                .replace(/^Failed to execute '[^']*' on '[^']*': /, '');
+            throw new DOMException("Failed to execute '" + method +
+                "' on 'History': " + reason, "DataCloneError");
+        }
+    }
     function _historyEntry(method, state, title, url) {
-        if (url === undefined || url === null) return { state, title, url: _locationData.href };
+        // Spec order: URL validation (SecurityError) precedes state
+        // serialization (DataCloneError).
+        if (url === undefined || url === null) {
+            return { state: _cloneHistoryState(method, state), title, url: _locationData.href };
+        }
         const href = _historyTargetUrl(method, url);
+        const cloned = _cloneHistoryState(method, state);
         _parseLocationUrl(href);
-        return { state, title, url: href };
+        return { state: cloned, title, url: href };
     }
     _defProtoMethod(_HistoryProto, 'pushState', function pushState(state, title, url) {
         const entry = _historyEntry('pushState', state, title, url);

@@ -341,16 +341,18 @@
             headers["content-type"] = "text/plain;charset=UTF-8";
         }
 
-        // Pass the page's origin as a pseudo header so the net layer can
+        // Pass the page's document url as a pseudo header so the net layer can
         // compute sec-fetch-site (same-origin vs cross-site) and set Origin /
         // Referer correctly. Chrome's fetch API always carries these.
+        // The full href, not just the origin: a same-origin Referer is the
+        // whole document url (path and query included) under Chrome's default
+        // `strict-origin-when-cross-origin`.
         try {
             const loc = globalThis.location;
-            if (loc && loc.origin && loc.origin !== "null") {
+            if (loc && loc.href && loc.href !== "about:blank") {
+                headers["x-browser-oxide-origin"] = loc.href;
+            } else if (loc && loc.origin && loc.origin !== "null") {
                 headers["x-browser-oxide-origin"] = loc.origin;
-            } else if (loc && loc.href && loc.href !== "about:blank") {
-                const u = new URL(loc.href);
-                headers["x-browser-oxide-origin"] = u.origin;
             }
         } catch {}
 

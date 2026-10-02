@@ -127,13 +127,13 @@
             callback = _stringHandler(callback, 'setTimeout');
         }
         const ms = Math.max(0, delay | 0);
-        const id = ops.op_set_timeout(ms);
-        _liveTimers.add(id);
+        // Engine-space id: never added to _liveTimers, so page-side
+        // clearTimeout can neither see nor cancel engine timers.
+        const id = ops.op_set_timeout_engine(ms);
         const p = ops.op_timer_sleep(ms);
         if (_unrefRaw) _unrefRaw(p);
         const myGen = _timerGen;
         p.then(() => {
-            _liveTimers.delete(id);
             if (myGen !== _timerGen) return;
             if (!_cancelledTimers.has(id)) {
                 callback(...args);

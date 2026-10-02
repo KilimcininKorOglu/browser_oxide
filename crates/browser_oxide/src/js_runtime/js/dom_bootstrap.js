@@ -59,6 +59,22 @@
         return id;
     }
 
+    // WebIDL Node conversion: a non-Node argument is a TypeError that names the
+    // parameter, the way Chrome words it:
+    //   Failed to execute 'appendChild' on 'Node':
+    //   parameter 1 is not of type 'Node'.
+    // `_nodeIds` is the registry every wrapped node lands in, so membership is
+    // the brand test — a plain object or a primitive is never in it.
+    function _requireNode(method, owner, value, index) {
+        if (value !== null && typeof value === "object" && _nodeIds.has(value)) {
+            return value;
+        }
+        throw new TypeError(
+            "Failed to execute '" + method + "' on '" + owner + "': " +
+            "parameter " + index + " is not of type 'Node'."
+        );
+    }
+
     function _wrapNode(nodeId) {
         if (nodeId === null || nodeId === undefined || nodeId === -1) return null;
         const cached = _nodeCache.get(nodeId);
@@ -701,6 +717,7 @@
         get textContent() { return ops.op_dom_get_text_content(_getNodeId(this)); }
         set textContent(val) { ops.op_dom_set_text_content(_getNodeId(this), String(val)); }
         appendChild(child) {
+            _requireNode("appendChild", "Node", child, 1);
             const moved = _fragmentChildren(child);
             if (moved) {
                 for (const node of moved) this.appendChild(node);
@@ -711,6 +728,7 @@
             return child;
         }
         removeChild(child) {
+            _requireNode("removeChild", "Node", child, 1);
             _ceDisconnected(child);
             ops.op_dom_remove_child(_getNodeId(this), _getNodeId(child));
             return child;
@@ -2223,6 +2241,35 @@
     const _HTML_NS = "http://www.w3.org/1999/xhtml";
     const _SVG_NS = "http://www.w3.org/2000/svg";
 
+    // DOM "validate and extract" (Infra §name): a local name is the Name
+    // production — a NameStartChar then NameChar*. Chrome refuses anything
+    // else with InvalidCharacterError, so an engine that accepts `div#x` or
+    // `span"` hands back an element no browser could have produced.
+    const _DOM_NAME_RE = /^[:\p{ID_Start}][:\p{ID_Continue}.-]*$/u;
+
+    // Chrome's wording, taken verbatim from its own console:
+    //   Failed to execute 'createElement' on 'Document':
+    //   The tag name provided ('span"') is not a valid name.
+    function _requireValidDOMName(method, owner, name) {
+        if (_DOM_NAME_RE.test(name)) return name;
+        throw new DOMException(
+            "Failed to execute '" + method + "' on '" + owner + "': " +
+            "The tag name provided ('" + name + "') is not a valid name.",
+            "InvalidCharacterError"
+        );
+    }
+
+    // WebIDL arity: a missing required argument is a TypeError before the
+    // operation looks at anything else. Chrome reports the call's own name.
+    function _requireArgs(method, owner, args, needed) {
+        if (args.length >= needed) return;
+        throw new TypeError(
+            "Failed to execute '" + method + "' on '" + owner + "': " +
+            needed + " argument" + (needed === 1 ? "" : "s") +
+            " required, but only " + args.length + " present."
+        );
+    }
+
     // The DOM stores the HTML namespace as no namespace at all, and an
     // element created in no namespace as the empty string.
     function _namespaceOf(el) {
@@ -2497,6 +2544,7 @@
             if (el) { el.textContent = val; }
         }
         getElementById(id) {
+            _requireArgs("getElementById", "Document", arguments, 1);
             if (this !== _document) {
                 return this.querySelector('[id="' + String(id).replace(/["\\]/g, "\\$&") + '"]');
             }
@@ -2504,21 +2552,29 @@
             return nodeId !== null ? _wrapNode(nodeId) : null;
         }
         getElementsByTagName(tag) {
+            _requireArgs("getElementsByTagName", "Document", arguments, 1);
             return new HTMLCollection(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
         }
         getElementsByClassName(cls) {
+            _requireArgs("getElementsByClassName", "Document", arguments, 1);
             return new HTMLCollection(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
         }
         querySelector(sel) {
+            _requireArgs("querySelector", "Document", arguments, 1);
             const id = ops.op_dom_query_selector(_getNodeId(this), sel);
             return id !== null ? _wrapNode(id) : null;
         }
         querySelectorAll(sel) {
+            _requireArgs("querySelectorAll", "Document", arguments, 1);
             return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
         }
         createElement(tag) {
-            const el = _wrapNode(ops.op_dom_create_element(tag));
-            if (tag.toLowerCase() === "script") {
+            _requireArgs("createElement", "Document", arguments, 1);
+            const name = _requireValidDOMName(
+                "createElement", "Document", String(tag)
+            );
+            const el = _wrapNode(ops.op_dom_create_element(name));
+            if (name.toLowerCase() === "script") {
                 let _src = "";
                 // Capture the real descriptor to avoid infinite recursion
                 const proto = Object.getPrototypeOf(el);
@@ -2543,8 +2599,12 @@
             return el;
         }
         createElementNS(ns, tag) {
-            if (ns === _HTML_NS) return this.createElement(tag);
-            const nodeId = ops.op_dom_create_element_ns(ns === null || ns === undefined ? "" : String(ns), String(tag));
+            _requireArgs("createElementNS", "Document", arguments, 2);
+            const name = _requireValidDOMName(
+                "createElementNS", "Document", String(tag)
+            );
+            if (ns === _HTML_NS) return this.createElement(name);
+            const nodeId = ops.op_dom_create_element_ns(ns === null || ns === undefined ? "" : String(ns), name);
             return _wrapNode(nodeId);
         }
         createTextNode(text) {
