@@ -46,6 +46,10 @@ pub enum Method {
 /// HTTP response.
 #[derive(Debug, Clone, Default)]
 pub struct TimingStats {
+    /// The URL this timing belongs to. It travels with the stamps because
+    /// `PerformanceResourceTiming.name` is read by scripts, and a list whose
+    /// entries all carry one placeholder URL is a tell no browser produces.
+    pub url: String,
     pub dns_start_ms: f64,
     pub dns_end_ms: f64,
     pub connect_start_ms: f64,
@@ -1489,7 +1493,10 @@ impl HttpClient {
             body: decompressed,
             url: url.to_string(),
             accept_ch_upgrade: false,
-            timings: TimingStats::default(),
+            timings: TimingStats {
+                url: url.to_string(),
+                ..TimingStats::default()
+            },
         })
     }
 
@@ -1523,7 +1530,10 @@ impl HttpClient {
             body: decompressed,
             url: url.to_string(),
             accept_ch_upgrade: false,
-            timings: TimingStats::default(),
+            timings: TimingStats {
+                url: url.to_string(),
+                ..TimingStats::default()
+            },
         })
     }
 }

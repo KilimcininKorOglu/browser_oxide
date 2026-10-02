@@ -165,8 +165,11 @@ pub fn op_perf_get_resource_timings(state: &mut OpState) -> Vec<JsResourceTiming
     state
         .resource_timings
         .iter()
+        // A timing with no URL behind it is not a resource: it would show up
+        // as an entry for a URL the page never requested.
+        .filter(|t| !t.url.is_empty())
         .map(|t| JsResourceTiming {
-            name: "https://example.com/placeholder".to_string(),
+            name: t.url.clone(),
             entry_type: "resource".to_string(),
             start_time: t.request_start_ms,
             duration: t.response_end_ms - t.request_start_ms,

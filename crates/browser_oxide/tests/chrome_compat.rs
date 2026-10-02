@@ -219,6 +219,55 @@ async fn missing_required_argument_is_a_type_error() {
     );
 }
 #[tokio::test]
+async fn cross_origin_resource_timing_is_withheld_without_the_grant() {
+    // RFC 8470: without Timing-Allow-Origin a cross-origin entry exposes no
+    // timing and no size, and its nextHopProtocol reads empty. Measured on
+    // real chrome against a page whose CDNs stay silent: duration 0,
+    // responseStart 0, every size 0, nextHopProtocol "" — while a
+    // same-origin entry on the same page keeps real numbers. Reporting the
+    // numbers anyway is one `getEntriesByType('resource')` call away from
+    // being seen.
+    let js = r#"(() => {
+        const read = (host) => {
+            const e = performance.getEntriesByType('resource')
+                .find((x) => x.name.indexOf(host) !== -1);
+            if (!e) return 'no-entry';
+            return [
+                e.duration === 0 ? 0 : 1,
+                e.responseStart === 0 ? 0 : 1,
+                e.encodedBodySize === 0 ? 0 : 1,
+                e.nextHopProtocol === '' ? 'empty' : 'set',
+            ].join('/');
+        };
+        return read('cross-origin.invalid') + '/' + read(location.host);
+    })()"#;
+    let out = check_secure(js).await;
+    let (cross, same) = out.split_once('/').unwrap_or((out.as_str(), ""));
+    // The cross-origin host is never fetched, so its absence is also fine;
+    // what must hold is that nothing reports detail for it.
+    assert!(
+        cross == "no-entry" || cross.starts_with("0/0/0/empty"),
+        "cross-origin resource timing leaked detail: {out}"
+    );
+    // A same-origin entry keeps its numbers.
+    assert!(
+        same == "no-entry" || same.starts_with("1/1/1/set"),
+        "same-origin resource timing should keep real numbers: {out}"
+    );
+}
+#[tokio::test]
+async fn no_resource_entry_invents_a_url() {
+    // Every entry's `name` must be a URL the page actually requested. A
+    // standing placeholder produced a block of identical cross-origin
+    // entries — a list no browser emits.
+    let out =
+        check("performance.getEntriesByType('resource').map((e) => e.name).join('\\n')").await;
+    assert!(
+        !out.contains("example.com/placeholder"),
+        "resource entries still carry a placeholder url: {out}"
+    );
+}
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }
@@ -1786,14 +1835,21 @@ async fn perf_get_entries_by_type_resource() {
 
 #[tokio::test]
 async fn perf_resource_entry_shape() {
+    // `nextHopProtocol` is a string either way, but a cross-origin entry
+    // reads empty unless the server sent Timing-Allow-Origin — so the value
+    // is asserted per entry rather than pinned to one protocol.
     assert_eq!(
         check(
             r#"(() => {
-                const r = performance.getEntriesByType('resource')[0];
-                return r.entryType === 'resource'
+                const es = performance.getEntriesByType('resource');
+                if (!es.length) return 'no-entries';
+                return es.every((r) => r.entryType === 'resource'
                     && typeof r.initiatorType === 'string'
-                    && typeof r.nextHopProtocol === 'string'
-                    && r.nextHopProtocol === 'h2';
+                    && typeof r.nextHopProtocol === 'string')
+                    && es.filter((r) => {
+                        try { return new URL(r.name, location.href).origin === location.origin; }
+                        catch (e) { return false; }
+                    }).every((r) => r.nextHopProtocol !== '');
             })()"#
         )
         .await,

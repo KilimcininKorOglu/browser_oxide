@@ -368,7 +368,19 @@
 
             const entries = browser_oxide && browser_oxide.__perfResourceEntries;
             if (entries) {
-                entries.push({ url, type: "fetch", startTime, duration: performance.now() - startTime, size: result.body ? result.body.length : 0 });
+                // RFC 8470: whether the response granted Timing-Allow-Origin,
+                // so a cross-origin entry reports detail only then.
+                let tao = false;
+                try {
+                    const grant = result.headers && (result.headers.get
+                        ? result.headers.get("timing-allow-origin") : null);
+                    if (grant) {
+                        const g = String(grant).trim();
+                        tao = g === '*' || g.split(/[,\s]+/)
+                            .includes((globalThis.location && globalThis.location.origin) || '');
+                    }
+                } catch (_) {}
+                entries.push({ url, type: "fetch", startTime, duration: performance.now() - startTime, size: result.body ? result.body.length : 0, tao });
             }
 
             // Sync cookies from the net jar into document.cookie so subsequent JS

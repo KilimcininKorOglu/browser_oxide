@@ -3053,7 +3053,48 @@
                 entries.push(mk(`${origin}/analytics.gif?t=` + (Date.now() % 1_000_000), 65, 18, "img", 35));
                 entries.push(mk(`${origin}/sw.js`, 95, 14, "script", 1840));
             }
-            return entries;
+            return entries.map((e) => _withheldTimingUnlessAllowed(e, origin));
+        };
+
+        // RFC 8470 Timing-Allow-Origin: a cross-origin resource exposes its
+        // timing and size detail ONLY when its response opts in. Measured on
+        // real chrome: with the header silent, a script reading
+        // getEntriesByType sees duration 0, responseStart 0, every size 0 and
+        // nextHopProtocol "" for that host, while a same-origin entry keeps
+        // real numbers. Reporting the numbers anyway — as this did — is
+        // something a challenge can see with one call, and no real browser
+        // produces it.
+        const _withheldTimingUnlessAllowed = (entry, docOrigin) => {
+            let cross = true;
+            try {
+                cross = new URL(entry.name, docOrigin).origin !== docOrigin;
+            } catch (_) { /* unparsable: treat as cross-origin */ }
+            if (!cross) return entry;
+            // `tao` is read off the response when the engine saw the headers.
+            // Absent that, assume the server stayed silent — which is what
+            // withholding must default to.
+            if (!entry.tao) {
+                entry.duration = 0;
+                entry.workerStart = 0;
+                entry.redirectStart = 0;
+                entry.redirectEnd = 0;
+                entry.domainLookupStart = 0;
+                entry.domainLookupEnd = 0;
+                entry.connectStart = 0;
+                entry.connectEnd = 0;
+                entry.secureConnectionStart = 0;
+                entry.requestStart = 0;
+                entry.responseStart = 0;
+                entry.responseEnd = 0;
+                entry.encodedBodySize = 0;
+                entry.decodedBodySize = 0;
+                entry.nextHopProtocol = "";
+                entry.serverTiming = [];
+            }
+            // transferSize is never exposed cross-origin: it counts header
+            // bytes the TAO grant does not cover.
+            entry.transferSize = 0;
+            return entry;
         };
         const _navEntry = () => {
             const entry = Object.assign({}, _perfNav);
@@ -4133,7 +4174,15 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                     
                     const _internalEntries = _browser_oxide.__perfResourceEntries;
                     if (_internalEntries) {
-                        _internalEntries.push({ url: xhr._url, type: "xmlhttprequest", startTime, duration: performance.now() - startTime, size: result.body ? result.body.length : 0 });
+                        // RFC 8470: record whether the response granted
+                        // Timing-Allow-Origin, so a cross-origin entry reports
+                        // its numbers only when the server allowed it.
+                        const _tao = (Array.isArray(result.headers) ? result.headers : [])
+                            .some((h) => String(h[0]).toLowerCase() === "timing-allow-origin"
+                                && (String(h[1]).trim() === '*'
+                                    || String(h[1]).split(/[,\s]+/).includes(
+                                        (globalThis.location && globalThis.location.origin) || '')));
+                        _internalEntries.push({ url: xhr._url, type: "xmlhttprequest", startTime, duration: performance.now() - startTime, size: result.body ? result.body.length : 0, tao: _tao });
                     }
                     
                     xhr.status = result.status || 0;
@@ -4173,6 +4222,17 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                     if (_internalEntries && _internalEntries.length > 0) {
                         _internalEntries[_internalEntries.length - 1].type = "xmlhttprequest";
                     }
+                    // RFC 8470 grant, recorded on the entry fetch() created.
+                    try {
+                        const _grant = resp.headers && resp.headers.get
+                            ? resp.headers.get("timing-allow-origin") : null;
+                        if (_grant && _internalEntries && _internalEntries.length > 0) {
+                            const _g = String(_grant).trim();
+                            _internalEntries[_internalEntries.length - 1].tao =
+                                _g === '*' || _g.split(/[,\s]+/)
+                                    .includes((globalThis.location && globalThis.location.origin) || '');
+                        }
+                    } catch (_) {}
                     if (xhr._aborted) return;
                     xhr.status = resp.status;
                     xhr.statusText = resp.statusText || "";
