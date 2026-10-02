@@ -142,7 +142,6 @@ fn display_for_tag(state: &mut OpState, node_id: i32) -> String {
 /// verbatim. Regenerate from a live capture if the table ever needs to move.
 pub fn css_default(property: &str) -> String {
     match property {
-
         "-webkit-border-horizontal-spacing" => "0px".into(),
         "-webkit-border-image" => "none".into(),
         "-webkit-border-vertical-spacing" => "0px".into(),
