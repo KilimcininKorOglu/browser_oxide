@@ -1622,23 +1622,29 @@
         set: function(_v) {},
         enumerable: true, configurable: true,
     });
+    // A desktop window the size of the work area sits at the work-area
+    // origin: x = 0, y = the menu-bar/dock-adjusted top from the profile.
+    // Fixed 0/0 reads as a frameless embedded view (CloakBrowser patches
+    // window position for the same reason).
+    const _winX = 0;
+    const _winY = _pInt("screen_avail_top", 0);
     Object.defineProperty(globalThis, 'screenX', {
-        get: function() { return 0; },
+        get: function() { return _winX; },
         set: function(_v) {},
         enumerable: true, configurable: true,
     });
     Object.defineProperty(globalThis, 'screenY', {
-        get: function() { return 0; },
+        get: function() { return _winY; },
         set: function(_v) {},
         enumerable: true, configurable: true,
     });
     Object.defineProperty(globalThis, 'screenLeft', {
-        get: function() { return 0; },
+        get: function() { return _winX; },
         set: function(_v) {},
         enumerable: true, configurable: true,
     });
     Object.defineProperty(globalThis, 'screenTop', {
-        get: function() { return 0; },
+        get: function() { return _winY; },
         set: function(_v) {},
         enumerable: true, configurable: true,
     });
