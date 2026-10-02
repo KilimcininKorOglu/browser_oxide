@@ -116,11 +116,40 @@ pub fn measure_text_metrics(text: &str, font: &ParsedFont, os_name: &str) -> Tex
     // only the uncovered segments are reshaped with a fallback face.
     // Handing the WHOLE string to the emoji face made every family
     // measure alike whenever one CJK/emoji codepoint was present.
-    let run = if !face_covers(data, idx, text) {
+    let mut run = if !face_covers(data, idx, text) {
         shape_with_fallback(text, data, idx, font, os_name)
     } else {
         shaper::shape(text, data, idx, font.size_px)
     };
+    // Legacy Apple faces: Chrome (following the system text stack) reports
+    // QuickDraw-era vertical metrics for these, NOT their hhea values —
+    // constant fractions of the em, linear in size (verified on a real
+    // Chrome at 20/40/80px: Courier 0.9/0.25, Times 0.9/0.25,
+    // Helvetica 0.925/0.225 — while hhea says 0.753/0.246 etc.).
+    if os_name == "macOS" {
+        // The override keys on the RESOLVED face (a `serif` request that
+        // lands on Times still gets Times's legacy values), never on the
+        // requested name — "Times New Roman" is a modern MS face and must
+        // keep its hhea metrics.
+        let resolved_family = resolve_face(font, os_name)
+            .and_then(|(_, _)| {
+                let db = FontDatabase::get();
+                db.query_chain(&font.families, font.weight, font.italic, os_name)
+                    .and_then(|id| db.family_of(id))
+            })
+            .map(|f| f.to_lowercase());
+        if let Some(fam) = resolved_family {
+            let (asc, desc): (f32, f32) = match fam.as_str() {
+                "courier" | "times" => (0.9, 0.25),
+                "helvetica" => (0.925, 0.225),
+                _ => (run.ascent / font.size_px, run.descent / font.size_px),
+            };
+            if asc != run.ascent / font.size_px || desc != run.descent / font.size_px {
+                run.ascent = asc * font.size_px;
+                run.descent = desc * font.size_px;
+            }
+        }
+    }
 
     // em-height approximations: CSS spec says em_height_ascent ≈ 0.8 *
     // size and em_height_descent ≈ 0.2 * size for most Latin fonts.

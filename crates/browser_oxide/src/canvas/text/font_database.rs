@@ -102,6 +102,15 @@ impl FontDatabase {
         // uses system fonts (Helvetica, Arial, etc.) — bundled fonts have
         // different metrics, and font measurement differences are a
         // fingerprint vector. Load system font files directly.
+        #[cfg(target_os = "macos")]
+        {
+            // Chrome's macOS default fonts for the generic families are
+            // the system faces (monospace = Courier, serif = Times,
+            // sans-serif = Helvetica) — real device captures match these.
+            db.set_monospace_family("Courier");
+            db.set_serif_family("Times");
+            db.set_sans_serif_family("Helvetica");
+        }
         if cfg!(target_os = "macos") {
             for dir in [
                 "/System/Library/Fonts",
@@ -277,6 +286,27 @@ impl FontDatabase {
     /// Returns `None` for faces backed by a file source (we only ever
     /// load binary sources, so this is effectively infallible, but the
     /// `fontdb::Source` enum forces us to handle both).
+    /// The primary family name of a face id.
+    pub fn family_of(&self, id: ID) -> Option<String> {
+        self.inner
+            .face(id)
+            .and_then(|f| f.families.first().map(|(n, _)| n.clone()))
+    }
+
+    /// Debug: every stored family name containing `needle` (case-insensitive).
+    pub fn families_matching(&self, needle: &str) -> Vec<String> {
+        let lower = needle.to_lowercase();
+        let mut out = Vec::new();
+        for f in self.inner.faces() {
+            for (name, _) in &f.families {
+                if name.to_lowercase().contains(&lower) && !out.contains(name) {
+                    out.push(name.clone());
+                }
+            }
+        }
+        out
+    }
+
     pub fn face_data(&self, id: ID) -> Option<(&[u8], u32)> {
         let face = self.inner.face(id)?;
         // `init_bundled` only loads binary sources, so `face.source`

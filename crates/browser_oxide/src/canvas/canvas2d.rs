@@ -974,20 +974,11 @@ impl Canvas2D {
     /// Falls back to the rustybuzz-based measurement if the font face
     /// can't be loaded into Skia.
     pub fn measure_text(&self, text: &str) -> f64 {
-        use skia_safe::{Font as SkFont, FontMgr as SkFontMgr};
-        let Some((data, idx, _run)) = text::shape_run(text, &self.state.font, &self.os_name) else {
-            return 0.0;
-        };
-        let size_px = self.state.font.size_px;
-        let mgr = SkFontMgr::new();
-        let Some(typeface) = mgr.new_from_data(data, Some(idx as usize)) else {
-            return text::measure_text_width(text, &self.state.font, &self.os_name);
-        };
-        let mut font = SkFont::from_typeface(typeface, Some(size_px));
-        font.set_subpixel(true);
-        font.set_linear_metrics(true);
-        let (width, _bounds) = font.measure_text(text, None);
-        width as f64
+        // GPOS kerning included: Chrome measures through its shaping
+        // pipeline (HarfBuzz), so an x-p / p-g pair narrows. Skia's
+        // measureText sums raw advances and misses the kerns (~2% wide on
+        // Arial and friends). The shaped run carries the kerned advances.
+        text::measure_text_width(text, &self.state.font, &self.os_name)
     }
 
     /// Full 13-field `TextMetrics` object for
