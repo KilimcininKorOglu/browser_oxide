@@ -389,6 +389,26 @@ async fn webrtc_offer_is_chrome_shaped() {
 }
 
 #[tokio::test]
+async fn computed_style_stringifies_like_chrome() {
+    // `JSON.stringify(getComputedStyle(el))` is a ~30KB object in Chrome:
+    // indexed property names plus camelCase values. A challenge stringifies
+    // exactly this into its report; without enumeration traps the same call
+    // reads `{}` here and a 30KB report field collapses to two chars.
+    let js = r#"(() => {
+        const cs = getComputedStyle(document.body);
+        const s = JSON.stringify(cs);
+        return [
+            s.length > 20000 ? 1 : 0,
+            s.indexOf('"0":"accent-color"') !== -1 ? 1 : 0,
+            // Real Chrome 154 enumerates 478 properties here.
+            cs.length,
+            cs[0] === 'accent-color' ? 1 : 0,
+        ].join('/');
+    })()"#;
+    assert_eq!(check(js).await, "1/1/478/1");
+}
+
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }
