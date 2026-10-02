@@ -350,6 +350,8 @@ pub fn create_runtime_with_signals(
             "\n",
             include_str!("js/canvas_bootstrap.js"),
             "\n",
+            include_str!("js/rtc_chrome_data.js"),
+            "\n",
             include_str!("js/window_bootstrap.js"),
             "\n",
             include_str!("js/trusted_types_bootstrap.js"),

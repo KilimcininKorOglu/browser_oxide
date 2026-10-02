@@ -5600,6 +5600,28 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         send() {}
         close() {}
     };
+    // Chrome-shaped WebRTC session values. ufrag/pwd come from the ICE
+    // base64 alphabet via crypto randomness; the session id is 19 digits;
+    // the DTLS fingerprint is 32 random bytes as upper-case hex pairs.
+    const _rtcB64 = (n) => {
+        const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        const bytes = new Uint8Array(n);
+        try {
+            if (globalThis.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+            else bytes.fill(7);
+        } catch (_) { bytes.fill(7); }
+        return Array.from(bytes, (b) => abc[b & 63]).join('');
+    };
+    const _rtcSid = () => String(1 + Math.floor(Math.random() * 9)) +
+        Array.from({ length: 18 }, () => Math.floor(Math.random() * 10)).join('');
+    const _rtcPrint = () => {
+        const bytes = new Uint8Array(32);
+        try {
+            if (globalThis.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+            else bytes.fill(7);
+        } catch (_) { bytes.fill(7); }
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+    };
     globalThis.RTCPeerConnection = class RTCPeerConnection extends EventTarget {
         constructor(config) {
             super();
@@ -5615,21 +5637,98 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             this.ondatachannel = null;
             this.ontrack = null;
             this._channels = [];
+            // Per-session values, generated once like Chrome's own
+            // randomized session state: a numeric session id, ICE ufrag and
+            // password, and a fresh DTLS-SHA256 fingerprint.
+            this._rtc = {
+                sid: _rtcSid(),
+                ufrag: _rtcB64(4),
+                pwd: _rtcB64(24),
+                print: _rtcPrint(),
+                kinds: [],
+                tx: [],
+                config: (config && typeof config === 'object') ? config : {},
+                closed: false,
+                data: false,
+            };
+        }
+        _rtcKinds() {
+            const k = this._rtc.tx.map((t) => t.kind);
+            if (this._rtc.data) k.push('application');
+            return k.length ? k : ['application'];
+        }
+        _rtcSection(kind, mid) {
+            const st = this._rtc;
+            const data = globalThis.__oxRtcChrome;
+            let sec = (data && data.sections && (data.sections[kind] || data.sections.application)) || '';
+            sec = sec.split('{UFRAG}').join(st.ufrag)
+                .split('{PWD}').join(st.pwd)
+                .split('{FP}').join(st.print)
+                .replace(/a=mid:\d+/, 'a=mid:' + mid);
+            return sec;
+        }
+        _rtcSdp() {
+            const st = this._rtc;
+            const data = globalThis.__oxRtcChrome;
+            const kinds = st.kinds.length ? st.kinds : this._rtcKinds();
+            const head = data && data.head
+                ? data.head.split('{SID}').join(st.sid)
+                    .replace(/a=group:BUNDLE[^\r]*/, 'a=group:BUNDLE ' + kinds.map((_, i) => i).join(' '))
+                : ('v=0\r\no=- ' + st.sid + ' 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n');
+            return head + kinds.map((k, i) => this._rtcSection(k, i)).join('');
         }
         createDataChannel(label, options) {
             const ch = new RTCDataChannel();
             ch.label = label;
             this._channels.push(ch);
+            this._rtc.data = true;
             return ch;
         }
-        createOffer() {
-            return Promise.resolve({ type: "offer", sdp: "v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n" });
+        addTransceiver(kind) {
+            const k = typeof kind === 'string' ? kind : (kind && kind.kind) || 'audio';
+            const t = { kind: k, mid: null, sender: { track: null }, receiver: { track: { kind: k } } };
+            this._rtc.tx.push(t);
+            return t;
+        }
+        createOffer(opts) {
+            if (this._rtc.closed) {
+                throw new __oxT.DOMException(
+                    "Failed to execute 'createOffer' on 'RTCPeerConnection': " +
+                    "The RTCPeerConnection's signalingState is 'closed'.", 'InvalidStateError');
+            }
+            // Legacy offer-to-receive options add transceivers the way
+            // Chrome does; audio sorts first.
+            if (opts && typeof opts === 'object') {
+                for (const [key, kind] of [['offerToReceiveAudio', 'audio'], ['offerToReceiveVideo', 'video']]) {
+                    if (opts[key] && !this._rtc.tx.some((t) => t.kind === kind)) {
+                        this.addTransceiver(kind);
+                    }
+                }
+            }
+            this._rtc.tx.sort((a, b) => (a.kind === 'audio' ? 0 : 1) - (b.kind === 'audio' ? 0 : 1));
+            if (!this._rtc.kinds.length) this._rtc.kinds = this._rtcKinds();
+            // Chrome builds the offer off-thread (~25 ms) and hands back a
+            // plain RTCSessionDescriptionInit dict, not an instance.
+            const sdp = this._rtcSdp();
+            return new Promise((resolve) => setTimeout(
+                () => resolve({ sdp, type: 'offer' }), 20 + Math.random() * 8));
         }
         createAnswer() {
-            return Promise.resolve({ type: "answer", sdp: "v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n" });
+            const sdp = this._rtcSdp().replace(/a=setup:actpass/g, 'a=setup:active');
+            return new Promise((resolve) => setTimeout(
+                () => resolve({ sdp, type: 'answer' }), 5));
         }
         setLocalDescription(desc) {
-            this.localDescription = desc;
+            const type = (desc && desc.type) || 'offer';
+            const value = { type, sdp: (desc && desc.sdp) || this._rtcSdp() };
+            if (!this._rtc.kinds.length) this._rtc.kinds = this._rtcKinds();
+            this.localDescription = value;
+            this._rtc.tx.forEach((t, i) => { t.mid = String(i); });
+            const was = this.signalingState;
+            this.signalingState = type === 'offer' ? 'have-local-offer' : 'stable';
+            if (was !== this.signalingState && typeof this.onsignalingstatechange === 'function') {
+                try { this.onsignalingstatechange({ type: 'signalingstatechange' }); } catch (_) {}
+            }
             // Real Chrome (since 2019, mDNS-anonymized) emits an mDNS host
             // candidate followed by `null` to signal gathering complete.
             // Returning ONLY `{candidate: null}` is itself a tell — every
@@ -5663,15 +5762,22 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             }, 8);
             return Promise.resolve();
         }
-        setRemoteDescription(desc) { this.remoteDescription = desc; return Promise.resolve(); }
+        setRemoteDescription(desc) {
+            this.remoteDescription = desc ? { type: desc.type, sdp: desc.sdp } : null;
+            this.signalingState = 'stable';
+            return Promise.resolve();
+        }
         addIceCandidate(c) { return Promise.resolve(); }
         addTrack() { return { track: null }; }
         addStream() {}
         removeTrack() {}
         getStats() { return Promise.resolve(new Map()); }
-        getSenders() { return []; }
-        getReceivers() { return []; }
-        getTransceivers() { return []; }
+        getSenders() { return this._rtc.tx.map((t) => t.sender); }
+        getReceivers() { return this._rtc.tx.map((t) => t.receiver); }
+        getTransceivers() { return this._rtc.tx.slice(); }
+        getConfiguration() { return this._rtc.config; }
+        setConfiguration(c) { this._rtc.config = c || {}; }
+        restartIce() {}
         close() {
             this.signalingState = "closed";
             this.iceConnectionState = "closed";
@@ -6302,35 +6408,38 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             globalThis.MediaRecorder = MediaRecorder;
         })();
 
-        const _getCapabilities = ({
+        // getCapabilities answers Chrome's own tables (kept in
+        // rtc_chrome_data.js), one per interface and kind. A truncated list
+        // here is what a challenge stringifies into its report, so the full
+        // tables are the only correct answer; unknown kinds read null.
+        const _rtcCaps = (iface) => ({
             getCapabilities(kind) {
-                return {
-                    codecs: kind === 'audio' ? [
-                        { channels: 2, clockRate: 48000, mimeType: "audio/opus" },
-                        { channels: 1, clockRate: 8000, mimeType: "audio/PCMU" },
-                        { channels: 1, clockRate: 8000, mimeType: "audio/PCMA" }
-                    ] : [
-                        { clockRate: 90000, mimeType: "video/VP8" },
-                        { clockRate: 90000, mimeType: "video/VP9", sdpFmtpLine: "profile-id=0" },
-                        { clockRate: 90000, mimeType: "video/H264", sdpFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f" }
-                    ],
-                    headerExtensions: []
-                };
+                if (arguments.length < 1) {
+                    throw new __oxT.TypeError(
+                        "Failed to execute 'getCapabilities' on '" + iface +
+                        "': 1 argument required, but only 0 present.");
+                }
+                const data = globalThis.__oxRtcChrome;
+                const v = data && data.caps && data.caps[iface + '.' + String(kind)];
+                return v ? JSON.parse(JSON.stringify(v)) : null;
             }
         }).getCapabilities;
-        _maskFunction(_getCapabilities, "getCapabilities");
-
-        if (globalThis.RTCRtpReceiver) {
-            Object.defineProperty(globalThis.RTCRtpReceiver, 'getCapabilities', {
-                value: _getCapabilities, configurable: true, writable: true, enumerable: false
+        for (const _iface of ['RTCRtpReceiver', 'RTCRtpSender']) {
+            if (typeof globalThis[_iface] !== 'function') {
+                const _C = function () {
+                    throw new __oxT.TypeError(
+                        "Failed to construct '" + _iface + "': Illegal constructor");
+                };
+                Object.defineProperty(_C, 'name', { value: _iface, configurable: true });
+                Object.defineProperty(globalThis, _iface, {
+                    value: _C, configurable: true, writable: true, enumerable: false,
+                });
+            }
+            Object.defineProperty(globalThis[_iface], 'getCapabilities', {
+                value: _rtcCaps(_iface), configurable: true, writable: true, enumerable: true,
             });
-            _maskFunction(globalThis.RTCRtpReceiver, "RTCRtpReceiver");
-        }
-        if (globalThis.RTCRtpSender) {
-            Object.defineProperty(globalThis.RTCRtpSender, 'getCapabilities', {
-                value: _getCapabilities, configurable: true, writable: true, enumerable: false
-            });
-            _maskFunction(globalThis.RTCRtpSender, "RTCRtpSender");
+            _maskFunction(globalThis[_iface]['getCapabilities'], "getCapabilities");
+            _maskFunction(globalThis[_iface], _iface);
         }
     })();
 

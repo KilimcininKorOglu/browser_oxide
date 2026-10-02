@@ -312,6 +312,83 @@ async fn body_width_matches_the_viewport() {
 }
 
 #[tokio::test]
+async fn webrtc_caps_match_chrome_tables() {
+    // The challenge stringifies getCapabilities into its report. A truncated
+    // table (3 codecs, no header extensions) is not what any Chrome sends:
+    // Chrome 151 answers 8 audio / 13 video codecs for the sender and
+    // 8 / 23 for the receiver, with header extensions on each.
+    let js = r#"(() => [
+        RTCRtpSender.getCapabilities('audio').codecs.length,
+        RTCRtpSender.getCapabilities('video').codecs.length,
+        RTCRtpReceiver.getCapabilities('audio').codecs.length,
+        RTCRtpReceiver.getCapabilities('video').codecs.length,
+        RTCRtpSender.getCapabilities('video').headerExtensions.length,
+        RTCRtpSender.getCapabilities('bogus'),
+    ].join('/'))()"#;
+    // `null` joins as the empty string.
+    assert_eq!(check(js).await, "8/13/8/23/11/");
+}
+
+#[tokio::test]
+async fn webrtc_caps_require_an_argument() {
+    assert_eq!(
+        check(
+            "(() => { try { RTCRtpSender.getCapabilities(); return 'no-throw'; } \
+             catch (e) { return e.name; } })()"
+        )
+        .await,
+        "TypeError"
+    );
+}
+
+#[tokio::test]
+async fn webrtc_offer_is_chrome_shaped() {
+    // `createOffer` must hand back Chrome's own section layout — audio and
+    // video media sections under one BUNDLE group, with a numeric session id,
+    // a 4-char ICE ufrag and a coloned SHA-256 fingerprint — as a plain dict,
+    // not an instance. A 4-line stub SDP is what the report used to carry.
+    let mut page = Page::from_html_with_url(
+        &html(""),
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    page.evaluate(
+        r#"window.__offer = null;
+        const pc = new RTCPeerConnection();
+        pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          .then((o) => { window.__offer = o; });"#,
+    )
+    .unwrap();
+    page.evaluate_async("void 0", std::time::Duration::from_millis(500))
+        .await
+        .ok();
+    let out = page
+        .evaluate(
+            r#"(() => {
+                const o = window.__offer;
+                if (!o) return 'no-offer';
+                const sdp = o.sdp;
+                return [
+                    o.type,
+                    /m=audio 9 UDP\/TLS\/RTP\/SAVPF/.test(sdp) ? 1 : 0,
+                    /m=video 9 UDP\/TLS\/RTP\/SAVPF/.test(sdp) ? 1 : 0,
+                    /a=group:BUNDLE 0 1/.test(sdp) ? 1 : 0,
+                    /a=ice-ufrag:[A-Za-z0-9+/]{4}\r/.test(sdp) ? 1 : 0,
+                    /a=fingerprint:sha-256 ([0-9A-F]{2}:){31}[0-9A-F]{2}/.test(sdp) ? 1 : 0,
+                    /^v=0\r\no=- \d{19} 2 IN IP4 127\.0\.0\.1\r/.test(sdp) ? 1 : 0,
+                ].join('/');
+            })()"#,
+        )
+        .unwrap_or_else(|e| format!("ERROR: {e}"));
+    assert_eq!(
+        out, "offer/1/1/1/1/1/1",
+        "chrome-shaped offer expected: {out}"
+    );
+}
+
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }
