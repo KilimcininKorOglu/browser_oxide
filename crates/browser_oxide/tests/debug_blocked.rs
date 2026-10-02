@@ -66,7 +66,7 @@ async fn debug_probe(url: &str, profile: browser_oxide::stealth::StealthProfile)
 async fn debug_tripadvisor() {
     debug_probe(
         "https://www.tripadvisor.com",
-        browser_oxide::stealth::chrome_148_windows(),
+        browser_oxide::stealth::chrome_153_windows(),
     )
     .await;
 }
@@ -76,7 +76,7 @@ async fn debug_tripadvisor() {
 async fn debug_airbnb() {
     debug_probe(
         "https://www.airbnb.com",
-        browser_oxide::stealth::chrome_148_windows(),
+        browser_oxide::stealth::chrome_153_windows(),
     )
     .await;
 }
@@ -86,7 +86,7 @@ async fn debug_airbnb() {
 async fn debug_amazon() {
     debug_probe(
         "https://www.amazon.com",
-        browser_oxide::stealth::chrome_148_windows(),
+        browser_oxide::stealth::chrome_153_windows(),
     )
     .await;
 }
@@ -96,7 +96,7 @@ async fn debug_amazon() {
 async fn debug_ozon() {
     debug_probe(
         "https://www.ozon.ru",
-        browser_oxide::stealth::presets::chrome_148_ru(),
+        browser_oxide::stealth::presets::chrome_153_ru(),
     )
     .await;
 }
@@ -106,7 +106,7 @@ async fn debug_ozon() {
 async fn debug_ozon_rr1() {
     debug_probe(
         "https://www.ozon.ru/?__rr=1",
-        browser_oxide::stealth::presets::chrome_148_ru(),
+        browser_oxide::stealth::presets::chrome_153_ru(),
     )
     .await;
 }
@@ -116,7 +116,7 @@ async fn debug_ozon_rr1() {
 async fn debug_yandex() {
     debug_probe(
         "https://ya.ru",
-        browser_oxide::stealth::presets::chrome_148_ru(),
+        browser_oxide::stealth::presets::chrome_153_ru(),
     )
     .await;
 }
@@ -126,7 +126,7 @@ async fn debug_yandex() {
 async fn debug_dns_shop() {
     debug_probe(
         "https://www.dns-shop.ru",
-        browser_oxide::stealth::presets::chrome_148_ru(),
+        browser_oxide::stealth::presets::chrome_153_ru(),
     )
     .await;
 }
@@ -137,7 +137,7 @@ async fn debug_dns_shop() {
 async fn debug_amazon_linux() {
     debug_probe(
         "https://www.amazon.com",
-        browser_oxide::stealth::chrome_148_linux(),
+        browser_oxide::stealth::chrome_153_linux(),
     )
     .await;
 }
@@ -147,7 +147,7 @@ async fn debug_amazon_linux() {
 async fn debug_tripadvisor_macos() {
     debug_probe(
         "https://www.tripadvisor.com",
-        browser_oxide::stealth::chrome_148_macos(),
+        browser_oxide::stealth::chrome_153_macos(),
     )
     .await;
 }

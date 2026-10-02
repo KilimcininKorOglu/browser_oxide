@@ -7,7 +7,7 @@ async fn main() {
     let js = std::fs::read_to_string(args.next().expect("js file")).expect("js");
     let local = tokio::task::LocalSet::new();
     local.run_until(async move {
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
         let mut page = browser_oxide::Page::navigate(&url, profile, 3).await.expect("navigate");
         let _ = page.event_loop().run_until_idle(Duration::from_secs(3)).await;
         // The snippet may return a promise; settle it into

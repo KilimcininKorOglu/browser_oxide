@@ -4,7 +4,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_screen_properties_oxide() {
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
         let mut page = Page::from_html_with_url(
             "<!DOCTYPE html><html><body></body></html>",
             "https://example.com",

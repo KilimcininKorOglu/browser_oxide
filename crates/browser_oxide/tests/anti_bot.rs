@@ -676,7 +676,7 @@ async fn document_write_appends_content() {
 #[test]
 fn stealth_profiles_validate() {
     use browser_oxide::stealth::presets::*;
-    for profile in [chrome_148_windows(), chrome_148_macos(), chrome_148_linux()] {
+    for profile in [chrome_153_windows(), chrome_153_macos(), chrome_153_linux()] {
         assert!(profile.validate().is_ok(), "{:?}", profile.validate());
     }
 }

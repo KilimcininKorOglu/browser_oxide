@@ -482,7 +482,7 @@ async fn insert_adjacent_html_builds_complex_dom() {
 
 #[tokio::test]
 async fn stealth_profile_wired_end_to_end() {
-    let profile = browser_oxide::stealth::presets::chrome_148_windows();
+    let profile = browser_oxide::stealth::presets::chrome_153_windows();
     let mut page = Page::with_profile(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         "https://example.com",
@@ -548,7 +548,7 @@ async fn stealth_profile_wired_end_to_end() {
 
 #[tokio::test]
 async fn russian_locale_profile() {
-    let profile = browser_oxide::stealth::presets::chrome_148_ru();
+    let profile = browser_oxide::stealth::presets::chrome_153_ru();
     let mut page = Page::with_profile(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         "https://ya.ru",
@@ -571,7 +571,7 @@ async fn russian_locale_profile() {
 
 #[tokio::test]
 async fn chinese_locale_profile() {
-    let profile = browser_oxide::stealth::presets::chrome_148_cn();
+    let profile = browser_oxide::stealth::presets::chrome_153_cn();
     let mut page = Page::with_profile(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         "https://baidu.com",
@@ -1009,7 +1009,7 @@ async fn is_connected_tracks_dom_attachment() {
 #[tokio::test]
 #[ignore]
 async fn full_pipeline_hacker_news() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let mut page = Page::navigate("https://news.ycombinator.com", profile, 0)
         .await
         .expect("navigate failed");
@@ -1033,7 +1033,7 @@ async fn full_pipeline_hacker_news() {
 #[tokio::test]
 #[ignore]
 async fn full_pipeline_wikipedia() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let mut page = Page::navigate(
         "https://en.wikipedia.org/wiki/Rust_(programming_language)",
         profile,
@@ -1351,7 +1351,7 @@ async fn e2e_websocket_tls_connects() {
 async fn e2e_linked_stylesheet_fetched() {
     // Navigate to a real page that uses <link rel="stylesheet">
     // and verify getComputedStyle picks up external CSS
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     match Page::navigate("https://news.ycombinator.com", profile, 0).await {
         Ok(mut page) => {
             // HN uses <link rel="stylesheet" href="news.css">
@@ -1506,7 +1506,7 @@ async fn e2e_iframe_dom_isolated() {
 #[tokio::test]
 #[ignore] // requires network
 async fn challenge_wildberries() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     match Page::navigate("https://www.wildberries.ru", profile, 2).await {
         Ok(mut page) => {
             let title = page.title();

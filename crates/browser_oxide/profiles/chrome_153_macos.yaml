@@ -1,10 +1,10 @@
 # Chrome 148 on macOS 15 (Apple Silicon) — example StealthProfile.
 #
 # Load with:
-#   let profile = StealthProfile::load_from_file("profiles/chrome_148_macos.yaml")?;
+#   let profile = StealthProfile::load_from_file("profiles/chrome_153_macos.yaml")?;
 #   profile.validate()?;
 #
-# This is the editable counterpart of `stealth::presets::chrome_148_macos()`
+# This is the editable counterpart of `stealth::presets::chrome_153_macos()`
 # — the same profile, expressed as data so it can be shipped, tweaked, and
 # reloaded without recompiling. See `crates/stealth/src/profile.rs` for the
 # full field list and `validate()` rules.

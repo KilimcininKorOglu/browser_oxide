@@ -337,7 +337,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // requires network
     async fn h2_get_httpbin() {
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         let connector = crate::net::tls::chrome_connector(&profile).unwrap();
         let tcp = crate::net::tcp::connect("httpbin.org", 443, std::time::Duration::from_secs(10))
             .await

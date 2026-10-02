@@ -7,7 +7,7 @@
 //! were failing to do before, causing browser_oxide to issue
 //! `/akam/13/...` requests that Chrome never makes.
 
-use browser_oxide::stealth::presets::chrome_148_macos;
+use browser_oxide::stealth::presets::chrome_153_macos;
 use browser_oxide::Page;
 
 /// A miniaturized Walmart-style CSP. The page declares strict-dynamic
@@ -91,7 +91,7 @@ async fn parser_injected_script_without_nonce_is_blocked() {
     // skipped without a network attempt.
     let captured_log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let _captured_for_log = captured_log.clone();
-    let mut page = Page::from_html(HTML, Some(chrome_148_macos()))
+    let mut page = Page::from_html(HTML, Some(chrome_153_macos()))
         .await
         .unwrap();
 
@@ -115,7 +115,7 @@ async fn no_csp_does_not_block_anything() {
 <html><head><title>no csp</title></head><body>
 <script>globalThis.__inline_ran = "yes";</script>
 </body></html>"#;
-    let mut page = Page::from_html(NO_CSP_HTML, Some(chrome_148_macos()))
+    let mut page = Page::from_html(NO_CSP_HTML, Some(chrome_153_macos()))
         .await
         .unwrap();
     let inline = page.evaluate("globalThis.__inline_ran").unwrap();
@@ -155,7 +155,7 @@ async fn securitypolicyviolation_event_fires_on_block() {
 </script>
 </body></html>"#;
 
-    let mut page = Page::from_html(HTML, Some(chrome_148_macos()))
+    let mut page = Page::from_html(HTML, Some(chrome_153_macos()))
         .await
         .unwrap();
 

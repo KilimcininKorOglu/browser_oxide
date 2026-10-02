@@ -24,7 +24,7 @@ fn main() {
 
     local.block_on(&rt, async move {
         // Pick a browser identity. See docs/guides/PROFILES.md for the full set.
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
 
         // Cold navigation. `max_iterations` bounds the redirect/challenge-retry
         // loop (5 is a sane default).

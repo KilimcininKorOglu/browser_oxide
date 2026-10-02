@@ -1,9 +1,9 @@
-use browser_oxide::stealth::presets::chrome_148_ru;
+use browser_oxide::stealth::presets::chrome_153_ru;
 use browser_oxide::Page;
 
 #[tokio::test]
 async fn test_local_storage_persistence_across_navigation() {
-    let profile = chrome_148_ru();
+    let profile = chrome_153_ru();
 
     // Iteration 0: Set a value in localStorage and trigger a reload
     let html_0 = r#"
@@ -36,7 +36,7 @@ async fn test_local_storage_persistence_across_navigation() {
 
 #[tokio::test]
 async fn test_session_storage_persistence_across_navigation() {
-    let profile = chrome_148_ru();
+    let profile = chrome_153_ru();
 
     let html_0 = r#"
         <html>

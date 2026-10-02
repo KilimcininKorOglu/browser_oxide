@@ -13,12 +13,12 @@ async fn evaluate(js: &str) -> String {
     page.evaluate(js).unwrap_or_else(|e| format!("ERROR: {e}"))
 }
 
-/// Same, but with the chrome_148_macos stealth profile active so WebGL reads
+/// Same, but with the chrome_153_macos stealth profile active so WebGL reads
 /// the real apple_m3 surfaces (incl. the FIX-D2 WebGL 1 surface).
 async fn evaluate_macos(js: &str) -> String {
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><body><canvas id='c' width='100' height='100'></canvas></body></html>",
-        Some(browser_oxide::stealth::presets::chrome_148_macos()),
+        Some(browser_oxide::stealth::presets::chrome_153_macos()),
     )
     .await
     .unwrap();

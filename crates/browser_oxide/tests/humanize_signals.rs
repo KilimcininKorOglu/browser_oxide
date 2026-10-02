@@ -17,7 +17,7 @@
 //!    checking that the modal interval is < median, which is what an
 //!    asymmetric-right distribution requires.
 
-use browser_oxide::stealth::presets::chrome_148_macos;
+use browser_oxide::stealth::presets::chrome_153_macos;
 use browser_oxide::Page;
 
 const HTML: &str = r#"<!doctype html><html><head><title>humanize</title></head><body>
@@ -57,7 +57,7 @@ async fn humanize_emits_full_signal_set() {
     //
     // Trick: navigate_humanized takes a URL. We don't want a network test
     // here, so we use a data: URL that decodes to the probe HTML.
-    let mut page = Page::from_html(HTML, Some(chrome_148_macos()))
+    let mut page = Page::from_html(HTML, Some(chrome_153_macos()))
         .await
         .unwrap();
     // Manually inject humanize.js and drive enough time for it to fire.
@@ -155,7 +155,7 @@ async fn humanize_emits_full_signal_set() {
 /// distinguishable from human input.
 #[tokio::test]
 async fn humanize_mouse_intervals_are_right_skewed() {
-    let mut page = Page::from_html(HTML, Some(chrome_148_macos()))
+    let mut page = Page::from_html(HTML, Some(chrome_153_macos()))
         .await
         .unwrap();
     let humanize = include_str!("../src/js/humanize.js");

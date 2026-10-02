@@ -10,7 +10,7 @@
 //! ```no_run
 //! use browser_oxide::stealth::StealthProfile;
 //!
-//! let profile = StealthProfile::load_from_file("profiles/chrome_148_macos.yaml")
+//! let profile = StealthProfile::load_from_file("profiles/chrome_153_macos.yaml")
 //!     .expect("profile loads");
 //! profile.validate().expect("internally consistent");
 //! ```
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn round_trip_yaml() {
-        let original = presets::chrome_148_macos();
+        let original = presets::chrome_153_macos();
         let yaml = original.to_yaml_string().expect("serialise to yaml");
         let parsed = StealthProfile::from_yaml_str(&yaml).expect("parse back");
         assert_eq!(parsed.user_agent, original.user_agent);
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn round_trip_json_matches_yaml() {
-        let original = presets::chrome_148_windows();
+        let original = presets::chrome_153_windows();
         let json = serde_json::to_string(&original).expect("serialise json");
         let parsed = StealthProfile::from_json_str(&json).expect("parse json");
         assert_eq!(parsed.user_agent, original.user_agent);
@@ -145,12 +145,12 @@ mod tests {
 
     #[test]
     fn shipped_example_profile_loads() {
-        // The chrome_148_macos.yaml shipped under crates/browser_oxide/profiles/
+        // The chrome_153_macos.yaml shipped under crates/browser_oxide/profiles/
         // is the example users edit. If a serde rename or required-field
         // addition breaks the example, this test catches it before users do.
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("profiles")
-            .join("chrome_148_macos.yaml");
+            .join("chrome_153_macos.yaml");
         let profile = StealthProfile::load_from_file(&path)
             .unwrap_or_else(|e| panic!("load {:?}: {e}", path));
         assert_eq!(profile.browser_name, "Chrome");

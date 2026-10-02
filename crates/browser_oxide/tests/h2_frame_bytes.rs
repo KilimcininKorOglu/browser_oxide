@@ -96,7 +96,7 @@ async fn h2_handshake_writes_chrome_146_settings_and_window_update() {
     // the connection so writes flush.
     let _client = tokio::spawn(async move {
         let tcp = TcpStream::connect(addr).await.unwrap();
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
         if let Ok((_sender, conn)) = browser_oxide::net::h2_client::handshake(tcp, &profile).await {
             // Drive the connection — without polling, no frames are written.
             let _ = conn.await;

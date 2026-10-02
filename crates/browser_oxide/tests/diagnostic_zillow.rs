@@ -3,7 +3,7 @@
 async fn diagnostic_zillow() {
     use browser_oxide::Page;
 
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let url = "https://www.zillow.com/";
     println!("\n=== ZILLOW-DIAG: {} ===", url);
     let page = Page::navigate_with_init(url, profile, 3, vec![]).await;

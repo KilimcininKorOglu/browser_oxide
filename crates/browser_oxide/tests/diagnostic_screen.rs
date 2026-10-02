@@ -5,7 +5,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "network: live HTTP against example.com"]
     async fn audit_screen_keys() {
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
         let mut page = Page::navigate("https://example.com/", profile, 1)
             .await
             .unwrap();

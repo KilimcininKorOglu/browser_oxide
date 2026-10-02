@@ -15,7 +15,7 @@ async fn main() {
         .expect("usage: idl_gap_probe <idl.json>");
     let idl = std::fs::read_to_string(&path).expect("cannot read the IDL json");
     let eval_only = path.ends_with(".js");
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
 
     let local = tokio::task::LocalSet::new();
     local

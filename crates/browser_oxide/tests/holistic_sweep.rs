@@ -25,16 +25,16 @@ fn now_unix_ms() -> u64 {
 /// Returns (outcome, body_len, navigate_ms, drop_ms).
 /// The split lets us see whether time is in Page::navigate (network/JS work)
 /// or in `drop(page)` (V8 isolate teardown / pending tokio task drain).
-/// Picks profile from BROWSER_OXIDE_PROFILE env var (default `chrome_148_macos`).
-/// Supported values: `chrome_148_macos|windows|linux`, `firefox_135_macos|windows|linux`.
+/// Picks profile from BROWSER_OXIDE_PROFILE env var (default `chrome_153_macos`).
+/// Supported values: `chrome_153_macos|windows|linux`, `firefox_135_macos|windows|linux`.
 fn pick_profile() -> browser_oxide::stealth::StealthProfile {
     match std::env::var("BROWSER_OXIDE_PROFILE")
-        .unwrap_or_else(|_| "chrome_148_macos".into())
+        .unwrap_or_else(|_| "chrome_153_macos".into())
         .as_str()
     {
-        "chrome_148_macos" => browser_oxide::stealth::presets::chrome_148_macos(),
-        "chrome_148_windows" => browser_oxide::stealth::presets::chrome_148_windows(),
-        "chrome_148_linux" => browser_oxide::stealth::presets::chrome_148_linux(),
+        "chrome_153_macos" => browser_oxide::stealth::presets::chrome_153_macos(),
+        "chrome_153_windows" => browser_oxide::stealth::presets::chrome_153_windows(),
+        "chrome_153_linux" => browser_oxide::stealth::presets::chrome_153_linux(),
         "firefox_135_macos" => browser_oxide::stealth::presets::firefox_135_macos(),
         "firefox_135_windows" => browser_oxide::stealth::presets::firefox_135_windows(),
         "firefox_135_linux" => browser_oxide::stealth::presets::firefox_135_linux(),

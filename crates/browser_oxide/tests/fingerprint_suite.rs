@@ -817,7 +817,7 @@ fn write_summary(results: &[SiteResult]) {
         "Run via `cargo test --release -p browser --test fingerprint_suite \
                  -- --ignored --test-threads=1 --nocapture fingerprint_suite_full_run`.\n\n",
     );
-    md.push_str("Profile: `browser_oxide::stealth::presets::chrome_148_windows()` (UA reports Chrome 147).\n\n");
+    md.push_str("Profile: `browser_oxide::stealth::presets::chrome_153_windows()` (UA reports Chrome 147).\n\n");
     md.push_str("| Site | URL | Verdict | Note |\n");
     md.push_str("|------|-----|---------|------|\n");
     for r in results {
@@ -871,26 +871,26 @@ async fn fingerprint_suite_full_run() {
     // is required because the test runner uses --test-threads=1
     // anyway and concurrent isolates inside one tokio task would
     // not help.
-    results.push(run_creepjs(browser_oxide::stealth::presets::chrome_148_windows()).await);
-    results.push(run_pixelscan(browser_oxide::stealth::presets::chrome_148_windows()).await);
+    results.push(run_creepjs(browser_oxide::stealth::presets::chrome_153_windows()).await);
+    results.push(run_pixelscan(browser_oxide::stealth::presets::chrome_153_windows()).await);
     for section in ["canvas", "webgl", "javascript", "fonts", "webrtc", "proxy"] {
         results.push(
             run_browserleaks(
-                browser_oxide::stealth::presets::chrome_148_windows(),
+                browser_oxide::stealth::presets::chrome_153_windows(),
                 section,
             )
             .await,
         );
     }
-    results.push(run_rebrowser(browser_oxide::stealth::presets::chrome_148_windows()).await);
-    results.push(run_fingerprint_demo(browser_oxide::stealth::presets::chrome_148_windows()).await);
-    results.push(run_amiunique(browser_oxide::stealth::presets::chrome_148_windows()).await);
-    results.push(run_eff(browser_oxide::stealth::presets::chrome_148_windows()).await);
-    results.push(run_deviceinfo(browser_oxide::stealth::presets::chrome_148_windows()).await);
+    results.push(run_rebrowser(browser_oxide::stealth::presets::chrome_153_windows()).await);
+    results.push(run_fingerprint_demo(browser_oxide::stealth::presets::chrome_153_windows()).await);
+    results.push(run_amiunique(browser_oxide::stealth::presets::chrome_153_windows()).await);
+    results.push(run_eff(browser_oxide::stealth::presets::chrome_153_windows()).await);
+    results.push(run_deviceinfo(browser_oxide::stealth::presets::chrome_153_windows()).await);
     results.push(
-        run_managed_challenge_page(browser_oxide::stealth::presets::chrome_148_windows()).await,
+        run_managed_challenge_page(browser_oxide::stealth::presets::chrome_153_windows()).await,
     );
-    results.push(run_interstitial(browser_oxide::stealth::presets::chrome_148_windows()).await);
+    results.push(run_interstitial(browser_oxide::stealth::presets::chrome_153_windows()).await);
 
     write_summary(&results);
     print_summary(&results);

@@ -12,7 +12,7 @@
 //! Procedure to use this diagnostic for parity work:
 //!
 //! 1. Run this test against each profile. Capture output to a file:
-//!    `cargo test -p browser --test capture_chrome_148_hello -- \
+//!    `cargo test -p browser --test capture_chrome_153_hello -- \
 //!       --ignored --nocapture --test-threads=1 > /tmp/oxide_tls.json`
 //!
 //! 2. From the same machine, drive real Chrome 148 (headed, via
@@ -30,28 +30,28 @@
 
 #[tokio::test]
 #[ignore = "network: capture our TLS ClientHello via tls.peet.ws/api/all"]
-async fn capture_chrome_148_hello_desktop() {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
-    capture_tls_fingerprint("chrome_148_macos", &profile).await;
+async fn capture_chrome_153_hello_desktop() {
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
+    capture_tls_fingerprint("chrome_153_macos", &profile).await;
 }
 
 #[tokio::test]
 #[ignore = "network: capture Pixel Android TLS via tls.peet.ws/api/all"]
-async fn capture_chrome_148_hello_pixel() {
+async fn capture_chrome_153_hello_pixel() {
     let profile = browser_oxide::stealth::presets::pixel_9_pro_chrome_148();
     capture_tls_fingerprint("pixel_9_pro_chrome_148", &profile).await;
 }
 
 #[tokio::test]
 #[ignore = "network: capture Safari iOS TLS via tls.peet.ws/api/all"]
-async fn capture_chrome_148_hello_iphone() {
+async fn capture_chrome_153_hello_iphone() {
     let profile = browser_oxide::stealth::presets::iphone_15_pro_safari_18();
     capture_tls_fingerprint("iphone_15_pro_safari_18", &profile).await;
 }
 
 #[tokio::test]
 #[ignore = "network: capture Firefox TLS via tls.peet.ws/api/all"]
-async fn capture_chrome_148_hello_firefox() {
+async fn capture_chrome_153_hello_firefox() {
     let profile = browser_oxide::stealth::presets::firefox_135_macos();
     capture_tls_fingerprint("firefox_135_macos", &profile).await;
 }

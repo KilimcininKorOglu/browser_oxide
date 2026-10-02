@@ -17,12 +17,12 @@ async fn main() {
         .expect("usage: turnstile_probe <url> [profile] [budget_secs]");
     let profile_name = args
         .next()
-        .unwrap_or_else(|| "chrome_148_macos".to_string());
+        .unwrap_or_else(|| "chrome_153_macos".to_string());
     let budget_secs: u64 = args.next().and_then(|s| s.parse().ok()).unwrap_or(60);
 
     let profile = match profile_name.as_str() {
-        "chrome_148_macos" => browser_oxide::stealth::presets::chrome_148_macos(),
-        "chrome_148_windows" => browser_oxide::stealth::presets::chrome_148_windows(),
+        "chrome_153_macos" => browser_oxide::stealth::presets::chrome_153_macos(),
+        "chrome_153_windows" => browser_oxide::stealth::presets::chrome_153_windows(),
         other => panic!("unknown profile {other}"),
     };
 

@@ -726,7 +726,7 @@ impl Page {
         event_loop.reset_nav_pending();
 
         // Share the HTTP client with JS fetch()
-        let p = profile.unwrap_or_else(crate::stealth::presets::chrome_148_ru);
+        let p = profile.unwrap_or_else(crate::stealth::presets::chrome_153_ru);
         let client = crate::net::HttpClient::new(&p)
             .map_err(|e| deno_core::error::AnyError::msg(e.to_string()))?;
         crate::js_runtime::extensions::fetch_ext::set_fetch_client(client.clone());
@@ -1107,9 +1107,9 @@ impl Page {
     /// scripts (like Turnstile's api.js creating challenge iframes).
     pub async fn auto_refresh_frames(&mut self) -> usize {
         // Use the navigation client stored on the page
-        let client = crate::net::HttpClient::shared(&crate::stealth::presets::chrome_148_macos())
+        let client = crate::net::HttpClient::shared(&crate::stealth::presets::chrome_153_macos())
             .expect("client");
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         let base = self.url.clone();
         self.rematerialize_iframes(&base, &client, &profile).await
     }
@@ -4783,7 +4783,7 @@ mod tests {
         // used to install a macOS-only shim; the chrome_surface_parity
         // capture and a live check both show real Chrome does not expose
         // it (Apple Pay needs a payment handler; a bare install is a tell).
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         let mut page = Page::from_html_with_url(
             "<html><head></head><body></body></html>",
             "https://example.com/",
@@ -4797,7 +4797,7 @@ mod tests {
 
     #[tokio::test]
     async fn apple_pay_session_absent_on_windows_profile() {
-        let profile = crate::stealth::presets::chrome_148_windows();
+        let profile = crate::stealth::presets::chrome_153_windows();
         let mut page = Page::from_html("<html><head></head><body></body></html>", Some(profile))
             .await
             .unwrap();
@@ -4821,7 +4821,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs real canvas getContext in the test harness"]
     async fn canvas_font_detection_macos_helvetica_neue() {
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         let mut page = Page::from_html(
             "<html><head></head><body><canvas id=\"c\" width=\"200\" height=\"50\"></canvas></body></html>",
             Some(profile),
@@ -4987,12 +4987,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn navigate_httpbin() {
-        let profile = crate::stealth::presets::chrome_148_linux();
+        let profile = crate::stealth::presets::chrome_153_linux();
         let client = crate::net::HttpClient::new(&profile).unwrap();
         let mut page = Page::navigate_simple(
             "https://httpbin.org/html",
             &client,
-            crate::stealth::presets::chrome_148_ru(),
+            crate::stealth::presets::chrome_153_ru(),
         )
         .await
         .expect("navigate to httpbin failed");
@@ -5010,12 +5010,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn navigate_httpbin_user_agent() {
-        let profile = crate::stealth::presets::chrome_148_windows();
+        let profile = crate::stealth::presets::chrome_153_windows();
         let client = crate::net::HttpClient::new(&profile).unwrap();
         let mut page = Page::navigate_simple(
             "https://httpbin.org/user-agent",
             &client,
-            crate::stealth::presets::chrome_148_ru(),
+            crate::stealth::presets::chrome_153_ru(),
         )
         .await
         .expect("navigate to httpbin/user-agent failed");
@@ -5030,12 +5030,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn navigate_stealth_headers_check() {
-        let profile = crate::stealth::presets::chrome_148_linux();
+        let profile = crate::stealth::presets::chrome_153_linux();
         let client = crate::net::HttpClient::new(&profile).unwrap();
         let mut page = Page::navigate_simple(
             "https://httpbin.org/headers",
             &client,
-            crate::stealth::presets::chrome_148_ru(),
+            crate::stealth::presets::chrome_153_ru(),
         )
         .await
         .expect("navigate to httpbin/headers failed");
@@ -5049,7 +5049,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn navigate_stealth_js_fingerprint() {
-        let profile = crate::stealth::presets::chrome_148_linux();
+        let profile = crate::stealth::presets::chrome_153_linux();
         let mut page = Page::navigate_stealth("https://httpbin.org/html", profile)
             .await
             .expect("stealth navigate failed");

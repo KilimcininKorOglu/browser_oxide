@@ -5,7 +5,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "network: live HTTP against pixelscan.net"]
     async fn test_pixelscan_oxide() {
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
         let _page = Page::navigate("https://pixelscan.net/", profile, 5)
             .await
             .unwrap();
@@ -20,7 +20,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "network: live HTTP against pixelscan.net"]
     async fn test_pixelscan_check_oxide() {
-        let profile = browser_oxide::stealth::presets::chrome_148_macos();
+        let profile = browser_oxide::stealth::presets::chrome_153_macos();
         let mut page = Page::navigate("https://pixelscan.net/fingerprint-check", profile, 5)
             .await
             .unwrap();

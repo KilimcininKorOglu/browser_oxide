@@ -139,12 +139,12 @@ pub fn op_blob_revoke(#[string] url: String) {
 pub fn op_worker_sync_fetch(#[string] url: String) -> String {
     // Clone this worker thread's fetch client (seeded by op_worker_spawn
     // from the page's profile + shared cookie jar — F3) so the helper
-    // thread inherits the correct identity + cookies. The chrome_148_linux
+    // thread inherits the correct identity + cookies. The chrome_153_linux
     // fallback is now only reached if the worker was spawned with no
     // profile at all (it used to be the common case, leaking a Linux UA).
     let client = match crate::js_runtime::extensions::fetch_ext::fetch_client() {
         Some(c) => c,
-        None => match crate::net::HttpClient::new(&crate::stealth::chrome_148_linux()) {
+        None => match crate::net::HttpClient::new(&crate::stealth::chrome_153_linux()) {
             Ok(c) => c,
             Err(_) => return String::new(),
         },
@@ -255,7 +255,7 @@ pub fn op_worker_spawn(
     // jar) on the MAIN thread so the worker thread
     // can seed its own thread-local FETCH_CLIENT with it. Without this,
     // `op_worker_sync_fetch` runs on the worker thread where the
-    // thread-local is None and falls back to `chrome_148_linux()` — a Linux
+    // thread-local is None and falls back to `chrome_153_linux()` — a Linux
     // UA leak on a macOS/Windows page, and a window<->worker fetch-identity
     // mismatch — real Chrome's worker shares the document's network identity.
     let parent_fetch_client = crate::js_runtime::extensions::fetch_ext::fetch_client();
@@ -316,7 +316,7 @@ pub fn op_worker_spawn(
             // F3: seed THIS worker thread's fetch client so
             // `op_worker_sync_fetch` inherits the page's profile + shared
             // cookie jar. Falls back to building from the worker's own
-            // profile, and only to chrome_148_linux() if no profile exists
+            // profile, and only to chrome_153_linux() if no profile exists
             // at all (matching the historic last-resort, but now reached
             // far less often).
             let seed_client = parent_fetch_client

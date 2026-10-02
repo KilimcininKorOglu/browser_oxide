@@ -28,7 +28,7 @@ const CANVAS_FP_SEQUENCE_JS: &str = r#"(() => {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let profile = browser_oxide::stealth::chrome_148_macos();
+    let profile = browser_oxide::stealth::chrome_153_macos();
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         Some(profile),

@@ -9,7 +9,7 @@
 //!   cargo run --release -p browser --example sweep_metrics -- \
 //!       <profile> <corpus.json> <out.json>
 //!
-//! `<profile>` ∈ { chrome_148_macos, chrome_148_windows, firefox_135_macos,
+//! `<profile>` ∈ { chrome_153_macos, chrome_153_windows, firefox_135_macos,
 //!                 iphone_15_pro_safari_18, pixel_9_pro_chrome_148 }
 //!
 //! Set `BROWSER_OXIDE_SWEEP_POOL=1` to use the pool path
@@ -111,8 +111,8 @@ async fn main() {
     let out_path = args.next().expect("missing out.json");
 
     let profile = match profile_name.as_str() {
-        "chrome_148_macos" => browser_oxide::stealth::presets::chrome_148_macos(),
-        "chrome_148_windows" => browser_oxide::stealth::presets::chrome_148_windows(),
+        "chrome_153_macos" => browser_oxide::stealth::presets::chrome_153_macos(),
+        "chrome_153_windows" => browser_oxide::stealth::presets::chrome_153_windows(),
         "firefox_135_macos" => browser_oxide::stealth::presets::firefox_135_macos(),
         "iphone_15_pro_safari_18" => browser_oxide::stealth::presets::iphone_15_pro_safari_18(),
         "pixel_9_pro_chrome_148" => browser_oxide::stealth::presets::pixel_9_pro_chrome_148(),
@@ -124,12 +124,12 @@ async fn main() {
 
     // FIX-E: per-site profile sampling for IP-clustering defence.
     // When `BROWSER_OXIDE_SAMPLE_PROFILE=1` is set AND the base profile
-    // is chrome_148_macos, each navigate() gets a freshly-sampled variant
+    // is chrome_153_macos, each navigate() gets a freshly-sampled variant
     // (screen / cores / RAM / canvas+audio seeds vary). For non-macos
     // profiles this currently no-ops — extend to other-OS samplers as
     // they ship.
     let sample_per_site =
-        std::env::var("BROWSER_OXIDE_SAMPLE_PROFILE").is_ok() && profile_name == "chrome_148_macos";
+        std::env::var("BROWSER_OXIDE_SAMPLE_PROFILE").is_ok() && profile_name == "chrome_153_macos";
 
     let corpus_bytes = fs::read(&corpus_path).expect("read corpus");
     let corpus: Vec<Site> = serde_json::from_slice(&corpus_bytes).expect("parse corpus");
@@ -178,7 +178,7 @@ async fn main() {
                 let mut err: Option<String> = None;
                 // Per-site profile (sampled or shared)
                 let site_profile = if sample_per_site {
-                    browser_oxide::stealth::presets::chrome_148_macos_sampled()
+                    browser_oxide::stealth::presets::chrome_153_macos_sampled()
                 } else {
                     profile.clone()
                 };

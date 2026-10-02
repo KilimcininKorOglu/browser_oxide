@@ -310,7 +310,7 @@ pub async fn op_fetch(
     let client = match installed_client.as_ref() {
         Some(c) => c,
         None => {
-            let profile = crate::stealth::chrome_148_linux();
+            let profile = crate::stealth::chrome_153_linux();
             default_client = crate::net::HttpClient::new(&profile)
                 .map_err(|e| deno_error::JsErrorBox::generic(e.to_string()))?;
             &default_client
@@ -613,7 +613,7 @@ pub fn op_net_fetch_sync(#[string] url: String, #[string] referer: String) -> St
             ),
         ),
         None => {
-            let p = crate::stealth::presets::chrome_148_ru();
+            let p = crate::stealth::presets::chrome_153_ru();
             (p.clone(), crate::net::HttpClient::new(&p))
         }
     };
@@ -776,7 +776,7 @@ pub fn op_net_xhr_sync(
                     ).unwrap_or_else(|_| crate::net::HttpClient::new(main.profile()).unwrap())
                 }
                 None => {
-                    let p = crate::stealth::presets::chrome_148_ru();
+                    let p = crate::stealth::presets::chrome_153_ru();
                     crate::net::HttpClient::new(&p).unwrap()
                 }
             };

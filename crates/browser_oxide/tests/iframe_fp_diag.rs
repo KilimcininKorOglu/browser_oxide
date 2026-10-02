@@ -44,7 +44,7 @@ const PROBE: &str = r#"(function(){
 #[tokio::test]
 #[ignore = "diagnostic: prints child-iframe FP surface, compare vs real Chrome"]
 async fn iframe_fp_surface_macos() {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         Some(profile),
@@ -82,7 +82,7 @@ async fn iframe_fp_surface_noprofile() {
 #[tokio::test]
 #[ignore = "diagnostic: deep ifw probe — what does cw look like and why instanceof fails"]
 async fn script_vendor_ifw_deep_probe() {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         Some(profile),
@@ -124,7 +124,7 @@ async fn script_vendor_ifw_deep_probe() {
 #[tokio::test]
 #[ignore = "diagnostic: frame index access (window[0], frames[0], window.length)"]
 async fn script_vendor_frame_index_probe() {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         Some(profile),
@@ -165,7 +165,7 @@ async fn script_vendor_frame_index_probe() {
 #[tokio::test]
 #[ignore = "diagnostic: ifw+smc probe parity check"]
 async fn script_vendor_ifw_smc_probe() {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         Some(profile),
@@ -221,7 +221,7 @@ async fn script_vendor_ifw_smc_probe() {
 #[tokio::test]
 #[ignore = "diagnostic: spd (screen pixel density) probe in child realm"]
 async fn script_vendor_spd_probe() {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let mut page = Page::from_html(
         "<!DOCTYPE html><html><head></head><body></body></html>",
         Some(profile),

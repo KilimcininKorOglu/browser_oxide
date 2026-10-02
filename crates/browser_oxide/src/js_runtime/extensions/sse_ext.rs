@@ -147,7 +147,7 @@ async fn sse_reader(
     tx: &mpsc::UnboundedSender<SseEvent>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Use the stealth HTTP client to fetch the SSE endpoint
-    let profile = crate::stealth::chrome_148_linux();
+    let profile = crate::stealth::chrome_153_linux();
     let client = crate::net::HttpClient::new(&profile)
         .map_err(|e| format!("failed to create HTTP client: {e}"))?;
     let resp = client

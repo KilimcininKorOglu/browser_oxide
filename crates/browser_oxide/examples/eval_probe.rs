@@ -31,7 +31,7 @@ async fn main() {
                 .await
                 .expect("page")
             } else {
-                let profile = browser_oxide::stealth::presets::chrome_148_macos();
+                let profile = browser_oxide::stealth::presets::chrome_153_macos();
                 browser_oxide::Page::navigate(&url, profile, 3)
                     .await
                     .expect("navigate")

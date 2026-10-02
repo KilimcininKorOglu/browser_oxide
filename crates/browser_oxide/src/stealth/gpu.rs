@@ -149,7 +149,7 @@ pub fn apple_m3_macos() -> GpuProfile {
 /// Same ANGLE Metal Renderer driver stack as `apple_m3_macos()` — extension
 /// list, params, and shader precision are byte-identical (the driver is
 /// shared across the M3 chip family). Only the `unmasked_renderer` string
-/// differs. Use with `presets::chrome_148_macos_sampled`-class samplers
+/// differs. Use with `presets::chrome_153_macos_sampled`-class samplers
 /// that vary `cpu_cores` ∈ {10, 12} to stay cross-API-consistent with the
 /// chip's actual core count.
 pub fn apple_m3_pro_macos() -> GpuProfile {

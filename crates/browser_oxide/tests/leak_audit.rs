@@ -3,7 +3,7 @@ use browser_oxide::Page;
 
 #[tokio::test]
 async fn audit_global_this_leaks() {
-    let profile = presets::chrome_148_ru();
+    let profile = presets::chrome_153_ru();
 
     // We use a blank page but our bootstrap scripts will run
     let mut page: Page = Page::with_profile("", "about:blank", profile)
@@ -56,7 +56,7 @@ async fn audit_global_this_leaks() {
 
 #[tokio::test]
 async fn audit_function_to_string_leaks() {
-    let profile = presets::chrome_148_ru();
+    let profile = presets::chrome_153_ru();
 
     let mut page: Page = Page::with_profile("", "about:blank", profile)
         .await
@@ -120,7 +120,7 @@ async fn audit_function_to_string_leaks() {
 // for notifications) is the classic automation tell.
 #[tokio::test]
 async fn test_permissions_query_defaults() {
-    let profile = presets::chrome_148_windows();
+    let profile = presets::chrome_153_windows();
     // Notifications/clipboard/etc. are [SecureContext]-gated; about:blank
     // would return "denied" uniformly. Real Chrome 133's per-name map
     // (the reference here) was captured on a secure context.

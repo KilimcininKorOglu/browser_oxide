@@ -987,7 +987,7 @@ async fn file_exists() {
 #[tokio::test]
 async fn test_media_devices_pre_permission() {
     // Phase 7 — mediaDevices is [SecureContext]; load over https.
-    let profile = browser_oxide::stealth::presets::chrome_148_windows();
+    let profile = browser_oxide::stealth::presets::chrome_153_windows();
     let expected_count = profile.media_devices.len();
     let mut page = Page::with_profile("", "https://example.com/", profile)
         .await

@@ -15,7 +15,7 @@ use browser_oxide::Page;
 #[tokio::test]
 #[ignore]
 async fn managed_challenge_page_nl() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client.get("https://nowsecure.nl").await.unwrap();
     println!("[nowsecure.nl] status: {}", resp.status);
@@ -46,7 +46,7 @@ async fn managed_challenge_page_nl() {
 #[tokio::test]
 #[ignore]
 async fn managed_challenge_full_navigate() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let mut page = Page::navigate_stealth("https://nowsecure.nl", profile)
         .await
         .expect("navigate to nowsecure.nl failed");
@@ -72,7 +72,7 @@ async fn managed_challenge_full_navigate() {
 #[tokio::test]
 #[ignore]
 async fn interstitial_site_nav() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client.get("https://www.g2.com").await.unwrap();
     println!("[g2.com] status: {}", resp.status);
@@ -116,7 +116,7 @@ async fn interstitial_site_nav() {
 #[tokio::test]
 #[ignore]
 async fn sannysoft_bot_detection() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client.get("https://bot.sannysoft.com").await.unwrap();
     println!("[sannysoft] status: {}", resp.status);
@@ -127,7 +127,7 @@ async fn sannysoft_bot_detection() {
     let mut page = Page::with_profile(
         "<html><head></head><body></body></html>",
         "https://bot.sannysoft.com",
-        browser_oxide::stealth::chrome_148_linux(),
+        browser_oxide::stealth::chrome_153_linux(),
     )
     .await
     .expect("create stealth page failed");
@@ -183,7 +183,7 @@ async fn sannysoft_bot_detection() {
 #[tokio::test]
 #[ignore]
 async fn creepjs_fingerprint_page() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client
         .get("https://abrahamjuliot.github.io/creepjs/")
@@ -228,7 +228,7 @@ async fn creepjs_fingerprint_page() {
 #[tokio::test]
 #[ignore]
 async fn tls_fingerprint_check() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client.get("https://tls.peet.ws/api/all").await.unwrap();
     println!("[tls.peet.ws] status: {}", resp.status);
@@ -248,7 +248,7 @@ async fn tls_fingerprint_check() {
 #[tokio::test]
 #[ignore]
 async fn http2_fingerprint() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client.get("https://httpbin.org/get").await.unwrap();
     println!("[http2] status: {}", resp.status);
@@ -270,7 +270,7 @@ async fn http2_fingerprint() {
 #[tokio::test]
 #[ignore]
 async fn scrape_hacker_news() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let mut page = Page::navigate_simple("https://news.ycombinator.com", &client, profile.clone())
         .await
@@ -293,7 +293,7 @@ async fn scrape_hacker_news() {
 #[tokio::test]
 #[ignore]
 async fn scrape_wikipedia() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let mut page = Page::navigate_simple(
         "https://en.wikipedia.org/wiki/Rust_(programming_language)",

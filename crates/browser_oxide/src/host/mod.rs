@@ -11,7 +11,7 @@
 //! ```no_run
 //! let engine = browser_oxide::host::EngineHandle::spawn();
 //! let snap = engine.navigate("https://example.com",
-//!                            browser_oxide::stealth::presets::chrome_148_macos(), 5).unwrap();
+//!                            browser_oxide::stealth::presets::chrome_153_macos(), 5).unwrap();
 //! println!("{} ({} bytes, {})", snap.title, snap.html.len(), snap.verdict);
 //! let ua = engine.evaluate("navigator.userAgent").unwrap();
 //! ```

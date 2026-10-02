@@ -8,7 +8,7 @@
 //!   cargo test -p browser --test phase7_ab_probe -- --test-threads=1 --nocapture phase7_ab_probe_insecure
 //!   cargo test -p browser --test phase7_ab_probe -- --test-threads=1 --nocapture phase7_ab_probe_secure
 
-use browser_oxide::stealth::presets::chrome_148_macos;
+use browser_oxide::stealth::presets::chrome_153_macos;
 use browser_oxide::Page;
 use std::collections::HashMap;
 
@@ -121,7 +121,7 @@ async fn run_probe(_url_label: &str) -> HashMap<String, String> {
     // match Chrome's insecure-context capture). Phase 7 follow-up.
     const PROBE_URL: &str =
         "data:text/html,<!doctype html><html><head><title>probe</title></head><body><canvas id=c width=300 height=80></canvas><div id=test>x</div></body></html>";
-    let mut page = Page::from_html_with_url(PROBE_HTML, PROBE_URL, Some(chrome_148_macos()))
+    let mut page = Page::from_html_with_url(PROBE_HTML, PROBE_URL, Some(chrome_153_macos()))
         .await
         .unwrap();
     let _ = page
@@ -183,11 +183,11 @@ async fn phase7_ab_probe_capture_oxide() {
 #[tokio::test]
 #[ignore = "diagnostic"]
 async fn diag_dump_own_property_names() {
-    use browser_oxide::stealth::presets::chrome_148_macos;
+    use browser_oxide::stealth::presets::chrome_153_macos;
     use browser_oxide::Page;
     let mut p = Page::from_html(
         "<!DOCTYPE html><html><body></body></html>",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -206,12 +206,12 @@ async fn diag_dump_own_property_names() {
 /// explicit <meta charset>.
 #[tokio::test]
 async fn phase7_d5_doc_charset_default() {
-    use browser_oxide::stealth::presets::chrome_148_macos;
+    use browser_oxide::stealth::presets::chrome_153_macos;
     use browser_oxide::Page;
     let mut p = Page::from_html_with_url(
         "<!doctype html><html><body></body></html>",
         "https://example.com/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -230,12 +230,12 @@ async fn phase7_d5_doc_charset_default() {
 /// Phase 7 D4 gates — screen preset, WebGL renderer, Symbol.toStringTag.
 #[tokio::test]
 async fn phase7_d4_screen_webgl_tostringtag() {
-    use browser_oxide::stealth::presets::chrome_148_macos;
+    use browser_oxide::stealth::presets::chrome_153_macos;
     use browser_oxide::Page;
     let mut p = Page::from_html_with_url(
         "<!doctype html><html><body><canvas id=c></canvas></body></html>",
         "https://example.com/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -313,12 +313,12 @@ async fn phase7_d4_screen_webgl_tostringtag() {
 /// revert), eventCounts pre-population, userAgentData GREASE "8".
 #[tokio::test]
 async fn phase7_d3_scroll_eventcounts_grease() {
-    use browser_oxide::stealth::presets::chrome_148_macos;
+    use browser_oxide::stealth::presets::chrome_153_macos;
     use browser_oxide::Page;
     let mut p = Page::from_html_with_url(
         "<!doctype html><html></html>",
         "https://example.com/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -384,13 +384,13 @@ async fn phase7_d3_scroll_eventcounts_grease() {
 #[tokio::test]
 #[ignore = "not yet implemented: insecure-context stripping of optional Web API stubs"]
 async fn phase7_d2_secure_context_gating() {
-    use browser_oxide::stealth::presets::chrome_148_macos;
+    use browser_oxide::stealth::presets::chrome_153_macos;
     use browser_oxide::Page;
 
     // INSECURE: about:blank — every gated API should be undefined
     let mut p = Page::from_html(
         "<!doctype html><html><body></body></html>",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -448,7 +448,7 @@ async fn phase7_d2_secure_context_gating() {
     let mut p = Page::from_html_with_url(
         "<!doctype html><html><body></body></html>",
         "https://example.com/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -491,11 +491,11 @@ async fn phase7_d2_secure_context_gating() {
 /// hides depend on (D2).
 #[tokio::test]
 async fn phase7_d1_is_secure_context_per_scheme() {
-    use browser_oxide::stealth::presets::chrome_148_macos;
+    use browser_oxide::stealth::presets::chrome_153_macos;
     use browser_oxide::Page;
 
     // about:blank — the default `from_html` URL — is insecure
-    let mut p = Page::from_html("<!doctype html><html></html>", Some(chrome_148_macos()))
+    let mut p = Page::from_html("<!doctype html><html></html>", Some(chrome_153_macos()))
         .await
         .unwrap();
     assert_eq!(
@@ -510,7 +510,7 @@ async fn phase7_d1_is_secure_context_per_scheme() {
     let mut p = Page::from_html_with_url(
         "<!doctype html><html></html>",
         "https://example.com/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -526,7 +526,7 @@ async fn phase7_d1_is_secure_context_per_scheme() {
     let mut p = Page::from_html_with_url(
         "<!doctype html><html></html>",
         "http://localhost:3000/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();
@@ -542,7 +542,7 @@ async fn phase7_d1_is_secure_context_per_scheme() {
     let mut p = Page::from_html_with_url(
         "<!doctype html><html></html>",
         "http://example.com/",
-        Some(chrome_148_macos()),
+        Some(chrome_153_macos()),
     )
     .await
     .unwrap();

@@ -96,7 +96,7 @@ fn default_media_devices(seed: &str) -> Vec<MediaDeviceInfo> {
 }
 
 /// Chrome 148 on Windows 10.
-pub fn chrome_148_windows() -> StealthProfile {
+pub fn chrome_153_windows() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
         user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
@@ -180,7 +180,7 @@ pub fn chrome_148_windows() -> StealthProfile {
 /// `148.0.7778.168` is ONLY exposed via sec-ch-ua-full-version-list. Sending the full
 /// version in the UA string is a divergence from real Chrome behavior — confirmed by
 /// comparing real-browser header captures against our pipeline.
-pub fn chrome_148_macos() -> StealthProfile {
+pub fn chrome_153_macos() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
         user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
@@ -208,7 +208,8 @@ pub fn chrome_148_macos() -> StealthProfile {
         screen_color_depth: 30,
         device_pixel_ratio: 2.0,
         cpu_cores: host_cpu_cores().unwrap_or(8),
-        device_memory: host_device_memory_gb().unwrap_or(8),
+        // Real Chrome 153 caps deviceMemory at 32 (headed, 64 GB host → 32).
+        device_memory: host_device_memory_gb().map(|g| g.min(32)).unwrap_or(8),
         max_touch_points: 0,
 
         webgl_vendor: "Google Inc. (Apple)".into(),
@@ -233,7 +234,8 @@ pub fn chrome_148_macos() -> StealthProfile {
         device_class: DeviceClass::Desktop,
         tls_impersonate: "chrome_147".into(),
         connection_effective_type: "4g".into(),
-        connection_rtt: 50,
+        // Real headed Chrome on this host reports rtt 100 (probed live).
+        connection_rtt: 100,
         connection_downlink: 10.0,
 
         pdf_viewer_enabled: true,
@@ -270,7 +272,7 @@ pub fn chrome_148_macos() -> StealthProfile {
 }
 
 /// Chrome 148 on Linux.
-pub fn chrome_148_linux() -> StealthProfile {
+pub fn chrome_153_linux() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
@@ -345,7 +347,7 @@ pub fn chrome_148_linux() -> StealthProfile {
 }
 
 /// Chrome 148 on Windows — Russian locale (Moscow).
-pub fn chrome_148_ru() -> StealthProfile {
+pub fn chrome_153_ru() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
         user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
@@ -394,7 +396,7 @@ pub fn chrome_148_ru() -> StealthProfile {
 }
 
 /// Chrome 148 on Windows — Chinese locale (Shanghai).
-pub fn chrome_148_cn() -> StealthProfile {
+pub fn chrome_153_cn() -> StealthProfile {
     StealthProfile {
         enforce_csp: true,
         user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
@@ -443,8 +445,8 @@ pub fn chrome_148_cn() -> StealthProfile {
 }
 
 /// Chrome 148 on Windows — German locale (Berlin).
-pub fn chrome_148_de() -> StealthProfile {
-    let mut p = chrome_148_windows();
+pub fn chrome_153_de() -> StealthProfile {
+    let mut p = chrome_153_windows();
     p.language = "de-DE".into();
     p.languages = vec!["de-DE".into(), "de".into(), "en-US".into(), "en".into()];
     p.timezone = "Europe/Berlin".into();
@@ -454,8 +456,8 @@ pub fn chrome_148_de() -> StealthProfile {
 }
 
 /// Chrome 148 on Windows — Japanese locale (Tokyo).
-pub fn chrome_148_jp() -> StealthProfile {
-    let mut p = chrome_148_windows();
+pub fn chrome_153_jp() -> StealthProfile {
+    let mut p = chrome_153_windows();
     p.language = "ja-JP".into();
     p.languages = vec!["ja".into(), "en-US".into(), "en".into()];
     p.timezone = "Asia/Tokyo".into();
@@ -741,9 +743,9 @@ pub fn random_desktop() -> StealthProfile {
     use rand::RngExt;
     let mut rng = rand::rng();
     let mut profile = match rng.random_range(0..3) {
-        0 => chrome_148_windows(),
-        1 => chrome_148_macos(),
-        _ => chrome_148_linux(),
+        0 => chrome_153_windows(),
+        1 => chrome_153_macos(),
+        _ => chrome_153_linux(),
     };
     // Randomize seeds
     profile.canvas_seed = rng.random();
@@ -753,7 +755,7 @@ pub fn random_desktop() -> StealthProfile {
 
 /// Apple Silicon Chrome 148 profile sampler.
 ///
-/// Returns one variant of `chrome_148_macos` with screen geometry, core
+/// Returns one variant of `chrome_153_macos` with screen geometry, core
 /// count, RAM, and fingerprint seeds independently sampled from
 /// realistic Apple Silicon distributions. Use this in benchmarking
 /// / sweep / production loops where issuing the SAME profile from the
@@ -788,11 +790,11 @@ pub fn random_desktop() -> StealthProfile {
 /// Profile validation is asserted before return; a panic here means a
 /// new sampled value violated a `validate()` invariant introduced
 /// elsewhere — fail loud.
-pub fn chrome_148_macos_sampled() -> StealthProfile {
-    chrome_148_macos_sampled_with_rng(&mut rand::rng())
+pub fn chrome_153_macos_sampled() -> StealthProfile {
+    chrome_153_macos_sampled_with_rng(&mut rand::rng())
 }
 
-/// As [`chrome_148_macos_sampled`] but takes a caller-supplied RNG so
+/// As [`chrome_153_macos_sampled`] but takes a caller-supplied RNG so
 /// tests can pin determinism.
 ///
 /// **Cross-API consistency.** Sampled values MUST stay self-consistent
@@ -817,8 +819,8 @@ pub fn chrome_148_macos_sampled() -> StealthProfile {
 /// | M3         | 8         | 8/16/24  | 13.6" MBA, 14" MBP base                  |
 /// | M3 Pro     | 11/12     | 18/36    | 14" MBP Pro, 16" MBP Pro                 |
 /// | M3 Max     | 14/16     | 36/48    | 14" MBP Max, 16" MBP Max                 |
-pub fn chrome_148_macos_sampled_with_rng(rng: &mut impl rand::RngExt) -> StealthProfile {
-    let mut p = chrome_148_macos();
+pub fn chrome_153_macos_sampled_with_rng(rng: &mut impl rand::RngExt) -> StealthProfile {
+    let mut p = chrome_153_macos();
 
     // Pick a chip variant first; everything else is constrained by it.
     type ChipConfig = (
@@ -892,7 +894,7 @@ pub fn chrome_148_macos_sampled_with_rng(rng: &mut impl rand::RngExt) -> Stealth
 
     debug_assert!(
         p.validate().is_ok(),
-        "chrome_148_macos_sampled produced an invalid profile: {:?}",
+        "chrome_153_macos_sampled produced an invalid profile: {:?}",
         p.validate()
     );
 
@@ -1113,8 +1115,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chrome_148_windows_validates() {
-        let profile = chrome_148_windows();
+    fn chrome_153_windows_validates() {
+        let profile = chrome_153_windows();
         assert!(profile.validate().is_ok(), "{:?}", profile.validate());
     }
 
@@ -1125,13 +1127,13 @@ mod tests {
         // shipped presets must default allow_http3 to false until we
         // vendor-fork quinn with a Chrome-fixed-order patch.
         for profile in [
-            chrome_148_windows(),
-            chrome_148_macos(),
-            chrome_148_linux(),
-            chrome_148_ru(),
-            chrome_148_cn(),
-            chrome_148_de(),
-            chrome_148_jp(),
+            chrome_153_windows(),
+            chrome_153_macos(),
+            chrome_153_linux(),
+            chrome_153_ru(),
+            chrome_153_cn(),
+            chrome_153_de(),
+            chrome_153_jp(),
             firefox_135_macos(),
             firefox_135_windows(),
             firefox_135_linux(),
@@ -1145,14 +1147,14 @@ mod tests {
     }
 
     #[test]
-    fn chrome_148_macos_validates() {
-        let profile = chrome_148_macos();
+    fn chrome_153_macos_validates() {
+        let profile = chrome_153_macos();
         assert!(profile.validate().is_ok(), "{:?}", profile.validate());
     }
 
     #[test]
-    fn chrome_148_linux_validates() {
-        let profile = chrome_148_linux();
+    fn chrome_153_linux_validates() {
+        let profile = chrome_153_linux();
         assert!(profile.validate().is_ok(), "{:?}", profile.validate());
     }
 
@@ -1209,14 +1211,14 @@ mod tests {
 
     #[test]
     fn invalid_profile_detected() {
-        let mut profile = chrome_148_windows();
+        let mut profile = chrome_153_windows();
         profile.platform = "MacIntel".into(); // Mismatch: Windows + MacIntel
         assert!(profile.validate().is_err());
     }
 
     #[test]
     fn invalid_gpu_os_mismatch() {
-        let mut profile = chrome_148_windows();
+        let mut profile = chrome_153_windows();
         profile.webgl_renderer =
             "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)".into();
         profile.webgl_vendor = "Google Inc. (Apple)".into();
@@ -1226,14 +1228,14 @@ mod tests {
     #[test]
     fn webdriver_not_in_profile() {
         // StealthProfile has no webdriver field — it's undefined by design
-        let profile = chrome_148_windows();
+        let profile = chrome_153_windows();
         // Just verify the profile doesn't accidentally contain "webdriver"
         assert!(!profile.user_agent.contains("webdriver"));
     }
 
     #[test]
     fn ua_contains_version() {
-        let profile = chrome_148_windows();
+        let profile = chrome_153_windows();
         // Chrome UA-reduction freezes minor versions to 0; only major is in the UA string.
         // Full version lives in browser_version for sec-ch-ua-full-version-list.
         assert!(profile.user_agent.contains("153.0.0.0"));
@@ -1242,7 +1244,7 @@ mod tests {
 
     #[test]
     fn serialization_roundtrip() {
-        let profile = chrome_148_windows();
+        let profile = chrome_153_windows();
         let json = serde_json::to_string(&profile).unwrap();
         let deserialized: StealthProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(profile.user_agent, deserialized.user_agent);
@@ -1254,7 +1256,7 @@ mod tests {
         // 200 samples — every one must pass validate() and stay within the
         // declared Apple-Silicon M3-family pools.
         for _ in 0..200 {
-            let p = chrome_148_macos_sampled();
+            let p = chrome_153_macos_sampled();
             p.validate()
                 .unwrap_or_else(|e| panic!("invalid sampled profile: {e:?}"));
 
@@ -1292,7 +1294,7 @@ mod tests {
         let mut tuples = HashSet::new();
         let mut seeds = HashSet::new();
         for _ in 0..30 {
-            let p = chrome_148_macos_sampled();
+            let p = chrome_153_macos_sampled();
             chips.insert(p.cpu_cores);
             tuples.insert((p.screen_width, p.cpu_cores, p.device_memory));
             seeds.insert(p.canvas_seed);
@@ -1323,7 +1325,7 @@ mod tests {
         // independently of GPU regressed a multi-site sweep because the
         // cross-API surfaces no longer agreed.
         for _ in 0..50 {
-            let p = chrome_148_macos_sampled();
+            let p = chrome_153_macos_sampled();
             let r = &p.gpu_profile.unmasked_renderer;
             match p.cpu_cores {
                 8 => {

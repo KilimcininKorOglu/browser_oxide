@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 async fn profile_social_site() {
     let url =
         std::env::var("BROWSER_OXIDE_TARGET").unwrap_or_else(|_| "https://twitter.com/".into());
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let t0 = Instant::now();
     let result =
         tokio::time::timeout(Duration::from_secs(180), Page::navigate(&url, profile, 1)).await;

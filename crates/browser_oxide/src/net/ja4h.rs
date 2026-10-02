@@ -260,8 +260,8 @@ mod tests {
     }
 
     #[test]
-    fn ja4h_chrome_148_windows_format() {
-        let s = nav_ja4h_for(&crate::stealth::presets::chrome_148_windows());
+    fn ja4h_chrome_153_windows_format() {
+        let s = nav_ja4h_for(&crate::stealth::presets::chrome_153_windows());
         // 13 nav headers, en-US locale
         assert!(s.starts_with("ge20nn13enus_"), "got {s}");
         assert!(s.ends_with("_000000000000_000000000000"));
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_ja4h_hdr_hash_reference() {
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         let s = nav_ja4h_for(&profile);
         // Canonical hash for Chrome 133+ navigation header order
         // (sec-ch-ua trio FIRST per reference Chrome captures).
@@ -280,26 +280,26 @@ mod tests {
     }
 
     #[test]
-    fn ja4h_chrome_148_macos_format() {
-        let s = nav_ja4h_for(&crate::stealth::presets::chrome_148_macos());
+    fn ja4h_chrome_153_macos_format() {
+        let s = nav_ja4h_for(&crate::stealth::presets::chrome_153_macos());
         assert!(s.starts_with("ge20nn13enus_"), "got {s}");
     }
 
     #[test]
-    fn ja4h_chrome_148_linux_format() {
-        let s = nav_ja4h_for(&crate::stealth::presets::chrome_148_linux());
+    fn ja4h_chrome_153_linux_format() {
+        let s = nav_ja4h_for(&crate::stealth::presets::chrome_153_linux());
         assert!(s.starts_with("ge20nn13enus_"), "got {s}");
     }
 
     #[test]
-    fn ja4h_chrome_148_ru_uses_ruru_lang() {
-        let s = nav_ja4h_for(&crate::stealth::presets::chrome_148_ru());
+    fn ja4h_chrome_153_ru_uses_ruru_lang() {
+        let s = nav_ja4h_for(&crate::stealth::presets::chrome_153_ru());
         assert!(s.starts_with("ge20nn13ruru_"), "got {s}");
     }
 
     #[test]
-    fn ja4h_chrome_148_cn_uses_zhcn_lang() {
-        let s = nav_ja4h_for(&crate::stealth::presets::chrome_148_cn());
+    fn ja4h_chrome_153_cn_uses_zhcn_lang() {
+        let s = nav_ja4h_for(&crate::stealth::presets::chrome_153_cn());
         assert!(s.starts_with("ge20nn13zhcn_"), "got {s}");
     }
 
@@ -308,11 +308,11 @@ mod tests {
         // chrome_headers() produces the same 13 header names in the same
         // order across all profiles (only the values differ). So the
         // hdr_hash12 segment must match exactly.
-        let win = nav_ja4h_for(&crate::stealth::presets::chrome_148_windows());
-        let mac = nav_ja4h_for(&crate::stealth::presets::chrome_148_macos());
-        let lin = nav_ja4h_for(&crate::stealth::presets::chrome_148_linux());
-        let ru = nav_ja4h_for(&crate::stealth::presets::chrome_148_ru());
-        let cn = nav_ja4h_for(&crate::stealth::presets::chrome_148_cn());
+        let win = nav_ja4h_for(&crate::stealth::presets::chrome_153_windows());
+        let mac = nav_ja4h_for(&crate::stealth::presets::chrome_153_macos());
+        let lin = nav_ja4h_for(&crate::stealth::presets::chrome_153_linux());
+        let ru = nav_ja4h_for(&crate::stealth::presets::chrome_153_ru());
+        let cn = nav_ja4h_for(&crate::stealth::presets::chrome_153_cn());
 
         let hash = |s: &str| s.split('_').nth(1).unwrap().to_string();
         let h_win = hash(&win);
@@ -327,7 +327,7 @@ mod tests {
         // chrome_headers_with_accept_ch() adds high-entropy Client Hints,
         // bringing total navigation headers from 13 to ~19. The hdr count
         // segment must change accordingly.
-        let profile = crate::stealth::presets::chrome_148_windows();
+        let profile = crate::stealth::presets::chrome_153_windows();
         let nav = ja4h("GET", 20, &chrome_headers(&profile));
         let acc = ja4h("GET", 20, &chrome_headers_with_accept_ch(&profile));
         // Both start with "ge20nn"; nav has count=13, acc has count > 13.
@@ -347,7 +347,7 @@ mod tests {
     fn ja4h_navigation_format_is_first_visit_no_cookies() {
         // First-visit navigation requests carry no Cookie header → both
         // cookie-hash segments must be the all-zeros sentinel.
-        let s = nav_ja4h_for(&crate::stealth::presets::chrome_148_windows());
+        let s = nav_ja4h_for(&crate::stealth::presets::chrome_153_windows());
         let parts: Vec<&str> = s.split('_').collect();
         assert_eq!(parts.len(), 4);
         assert_eq!(parts[2], "000000000000");

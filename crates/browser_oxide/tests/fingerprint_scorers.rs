@@ -42,7 +42,7 @@ async fn load_and_wait(
 #[ignore]
 async fn scorer_vastel_fetch_script() {
     // Fetch areuheadless.js directly to see what test it runs
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client
         .get_follow(
@@ -61,7 +61,7 @@ async fn scorer_vastel_fetch_script() {
 #[ignore]
 async fn scorer_vastel_raw_html() {
     // Fetch the raw HTML to understand the default vs JS-updated text.
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let client = browser_oxide::net::HttpClient::new(&profile).unwrap();
     let resp = client
         .get_follow("https://arh.antoinevastel.com/bots/areyouheadless", 5)
@@ -90,7 +90,7 @@ async fn scorer_vastel_raw_html() {
 #[tokio::test]
 #[ignore]
 async fn scorer_vastel_are_you_headless() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait(
         "https://arh.antoinevastel.com/bots/areyouheadless",
         profile,
@@ -162,7 +162,7 @@ async fn scorer_vastel_are_you_headless() {
 #[tokio::test]
 #[ignore]
 async fn scorer_vastel_bot_tests() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://arh.antoinevastel.com/bots", profile, 3000).await;
     let title = page.title();
     let text = page.text_content();
@@ -184,7 +184,7 @@ async fn scorer_bot_incolumitas() {
     // bot.incolumitas is a comprehensive bot detection harness with dozens
     // of individual checks. It renders a score of the form "X / Y" in the
     // page body.
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://bot.incolumitas.com/", profile, 5000).await;
     let title = page.title();
     let text = page.text_content();
@@ -220,7 +220,7 @@ async fn scorer_creepjs() {
     // CreepJS is the most comprehensive fingerprint scorer. It renders
     // a "Trust Score" as a percentage in a prominent div. The site also
     // checks ~200 fingerprint signals and flags "lies" (patched APIs).
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait(
         "https://abrahamjuliot.github.io/creepjs/",
         profile,
@@ -295,7 +295,7 @@ async fn scorer_creepjs() {
 #[tokio::test]
 #[ignore]
 async fn scorer_pixelscan() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://pixelscan.net/", profile, 5000).await;
     let title = page.title();
     println!("\n=== pixelscan.net ===");
@@ -325,7 +325,7 @@ async fn scorer_pixelscan() {
 #[tokio::test]
 #[ignore]
 async fn scorer_amiunique() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://amiunique.org/fingerprint", profile, 6000).await;
     let title = page.title();
     println!("\n=== amiunique.org ===");
@@ -349,7 +349,7 @@ async fn scorer_amiunique() {
 async fn scorer_sannysoft() {
     // bot.sannysoft.com renders a table with 18 rows, each either "pass"
     // (green cell) or "fail" (red cell). Extract the pass/fail counts.
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://bot.sannysoft.com/", profile, 3000).await;
     println!("\n=== bot.sannysoft.com ===");
     let counts = page
@@ -377,7 +377,7 @@ async fn scorer_sannysoft() {
 async fn scorer_browserleaks_canvas() {
     // browserleaks/canvas renders a specific canvas fingerprint hash
     // that we want to check is STABLE across runs (per profile).
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://browserleaks.com/canvas", profile, 4000).await;
     println!("\n=== browserleaks.com/canvas ===");
     let hash = page
@@ -405,7 +405,7 @@ async fn scorer_browserleaks_canvas() {
 #[tokio::test]
 #[ignore]
 async fn scorer_browserleaks_webgl() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = load_and_wait("https://browserleaks.com/webgl", profile, 4000).await;
     println!("\n=== browserleaks.com/webgl ===");
     let report = page
@@ -427,7 +427,7 @@ async fn scorer_browserleaks_webgl() {
 // enabledPlugin linking, iteration, numeric indexing.
 #[tokio::test]
 async fn test_plugins_parity() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let mut page = browser_oxide::Page::with_profile("", "about:blank", profile)
         .await
         .unwrap();
@@ -523,7 +523,7 @@ async fn test_plugins_parity() {
 // claims only 3 plugins / 1 mime type and verify the JS surface slices.
 #[tokio::test]
 async fn test_plugins_count_from_profile() {
-    let mut profile = browser_oxide::stealth::chrome_148_windows();
+    let mut profile = browser_oxide::stealth::chrome_153_windows();
     profile.plugins_count = 3;
     profile.mime_types_count = 1;
     let mut page = browser_oxide::Page::with_profile("", "about:blank", profile)

@@ -43,7 +43,7 @@ async fn chrome_surface_gap_report() {
     let mut page = browser_oxide::Page::from_html_with_url(
         "<html><head></head><body></body></html>",
         "https://odeme.com.tr/",
-        Some(browser_oxide::stealth::presets::chrome_148_macos()),
+        Some(browser_oxide::stealth::presets::chrome_153_macos()),
     )
     .await
     .expect("page");

@@ -248,7 +248,7 @@ fn get_elements_by_tag_name() {
 
 #[test]
 fn stealth_profile_overrides_navigator() {
-    let profile = browser_oxide::stealth::chrome_148_windows();
+    let profile = browser_oxide::stealth::chrome_153_windows();
     let dom = browser_oxide::html_parser::parse_html("<html><head></head><body></body></html>");
     let mut rt = BrowserJsRuntime::with_profile(dom, profile);
 
@@ -270,7 +270,7 @@ fn stealth_profile_overrides_navigator() {
 
 #[test]
 fn stealth_profile_overrides_screen() {
-    let profile = browser_oxide::stealth::chrome_148_macos();
+    let profile = browser_oxide::stealth::chrome_153_macos();
     let dom = browser_oxide::html_parser::parse_html("<html><head></head><body></body></html>");
     let mut rt = BrowserJsRuntime::with_profile(dom, profile);
 
@@ -283,7 +283,7 @@ fn stealth_profile_overrides_screen() {
 
 #[test]
 fn stealth_profile_overrides_window_dims() {
-    let profile = browser_oxide::stealth::chrome_148_linux();
+    let profile = browser_oxide::stealth::chrome_153_linux();
     let dom = browser_oxide::html_parser::parse_html("<html><head></head><body></body></html>");
     let mut rt = BrowserJsRuntime::with_profile(dom, profile);
 

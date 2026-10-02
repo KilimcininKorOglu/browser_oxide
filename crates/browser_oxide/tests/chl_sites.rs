@@ -20,7 +20,7 @@
 use browser_oxide::Page;
 
 async fn fetch_and_classify(url: &str) -> String {
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let mut page = match Page::navigate(url, profile, 3).await {
         Ok(p) => p,
         Err(e) => return format!("ERROR: {e}"),

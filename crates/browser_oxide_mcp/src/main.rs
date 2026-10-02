@@ -140,7 +140,7 @@ fn profile_from_name(name: Option<&str>) -> StealthProfile {
         "firefox" => presets::firefox_135_macos(),
         "iphone" => presets::iphone_15_pro_safari_18(),
         "pixel" => presets::pixel_9_pro_chrome_148(),
-        _ => presets::chrome_148_macos(),
+        _ => presets::chrome_153_macos(),
     }
 }
 

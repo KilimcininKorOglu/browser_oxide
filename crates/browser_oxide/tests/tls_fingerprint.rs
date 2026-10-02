@@ -4,7 +4,7 @@ use browser_oxide::stealth::presets;
 #[tokio::test]
 #[ignore] // Requires internet
 async fn test_tls_fingerprint_peet() {
-    let profile = presets::chrome_148_ru();
+    let profile = presets::chrome_153_ru();
     let client = HttpClient::new(&profile).unwrap();
 
     // tls.peet.ws returns JSON with fingerprint details
@@ -39,7 +39,7 @@ async fn capture_profiles_ja4() {
             presets::iphone_15_pro_safari_18(),
         ),
         ("firefox_135_macos", presets::firefox_135_macos()),
-        ("chrome_148_macos", presets::chrome_148_macos()),
+        ("chrome_153_macos", presets::chrome_153_macos()),
     ];
     for (name, profile) in profiles {
         let client = match HttpClient::new(profile) {

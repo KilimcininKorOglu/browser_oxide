@@ -28,7 +28,7 @@ impl Profile {
     #[staticmethod]
     fn chrome() -> Self {
         Self {
-            inner: presets::chrome_148_macos(),
+            inner: presets::chrome_153_macos(),
         }
     }
     /// Firefox 135 on macOS (real NSS ClientHello).
@@ -82,7 +82,7 @@ impl Browser {
             engine: Arc::new(EngineHandle::spawn()),
             profile: profile
                 .map(|p| p.inner)
-                .unwrap_or_else(presets::chrome_148_macos),
+                .unwrap_or_else(presets::chrome_153_macos),
         }
     }
 

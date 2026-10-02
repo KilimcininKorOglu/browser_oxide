@@ -9,10 +9,10 @@ async fn main() {
     let url = args.next().expect("usage: fetch_probe <url> [profile]");
     let profile_name = args
         .next()
-        .unwrap_or_else(|| "chrome_148_macos".to_string());
+        .unwrap_or_else(|| "chrome_153_macos".to_string());
     let profile = match profile_name.as_str() {
-        "chrome_148_macos" => browser_oxide::stealth::presets::chrome_148_macos(),
-        "chrome_148_windows" => browser_oxide::stealth::presets::chrome_148_windows(),
+        "chrome_153_macos" => browser_oxide::stealth::presets::chrome_153_macos(),
+        "chrome_153_windows" => browser_oxide::stealth::presets::chrome_153_windows(),
         "firefox_135_macos" => browser_oxide::stealth::presets::firefox_135_macos(),
         "iphone_15_pro_safari_18" => browser_oxide::stealth::presets::iphone_15_pro_safari_18(),
         "pixel_9_pro_chrome_148" => browser_oxide::stealth::presets::pixel_9_pro_chrome_148(),

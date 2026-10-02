@@ -1734,15 +1734,16 @@
     }).loadTimes;
     _maskFunction(_chromeLoadTimes, 'loadTimes');
 
-    // Real Chrome 147 on a regular page (no extensions): {app, csi, loadTimes}
+    // Real Chrome 153 on a regular page (measured headed):
+    // Object.keys(chrome) = ['loadTimes','csi','app','dom','enterprise','extension'].
     // chrome.runtime is ONLY present in extension contexts — absent on regular pages.
-    // chrome.webstore was removed in Chrome 126.
-    // Adding either is a classic bot-detection signal.
     // iOS Safari and Firefox MUST NOT have `window.chrome` — a
     // `('chrome' in window)` check against an iOS or Firefox UA would flag
     // it instantly.
     if (!_isMobileIOS() && !_isFirefox()) {
         globalThis.chrome = {
+            loadTimes: _chromeLoadTimes,
+            csi: _chromeCsi,
             app: {
                 isInstalled: false,
                 InstallState: {DISABLED:"disabled",INSTALLED:"installed",NOT_INSTALLED:"not_installed"},
@@ -1753,8 +1754,12 @@
                 installState: function installState(cb) { if (typeof cb === 'function') setTimeout(() => cb('not_installed'), 0); },
                 runningState: function runningState() { return 'cannot_run'; },
             },
-            csi: _chromeCsi,
-            loadTimes: _chromeLoadTimes,
+            // dom/enterprise/extension — present on every regular page in
+            // Chrome 153 (measured headed); empty stubs, masked where the
+            // real ones are functions.
+            dom: {},
+            enterprise: {},
+            extension: {},
         };
     }
 
@@ -1878,19 +1883,21 @@
             return copy;
         };
 
-        // Phase 7 — real Chrome 147 GREASE entry is
-        // `{brand: "Not_A Brand", version: "8"}`, not "24".
-        // Chrome rotates the GREASE version periodically.
-        const _makeLowBrands = () => Object.freeze(_shuffled([
-            Object.freeze({ brand: "Chromium", version: _uaBrowserMajor() }),
+        // Chrome 153 (measured headed, this host): FIXED order with the
+        // GREASE entry second — [Google Chrome, Not_A Brand, Chromium] —
+        // and the grease spelling is "Not_A Brand", not "Not.A/Brand".
+        // (Chrome rotates spelling+position per major: 152 was
+        // "Not?A_Brand"/24 first-position-adjacent; no per-load shuffle.)
+        const _makeLowBrands = () => Object.freeze([
             Object.freeze({ brand: "Google Chrome", version: _uaBrowserMajor() }),
-            Object.freeze({ brand: "Not.A/Brand", version: "8" }),
-        ]).map(Object.freeze));
-        const _makeFullBrands = () => Object.freeze(_shuffled([
-            Object.freeze({ brand: "Chromium", version: _uaBrowserFull() }),
+            Object.freeze({ brand: "Not_A Brand", version: "8" }),
+            Object.freeze({ brand: "Chromium", version: _uaBrowserMajor() }),
+        ]);
+        const _makeFullBrands = () => Object.freeze([
             Object.freeze({ brand: "Google Chrome", version: _uaBrowserFull() }),
-            Object.freeze({ brand: "Not.A/Brand", version: "8.0.0.0" }),
-        ]).map(Object.freeze));
+            Object.freeze({ brand: "Not_A Brand", version: "8.0.0.0" }),
+            Object.freeze({ brand: "Chromium", version: _uaBrowserFull() }),
+        ]);
         // Chrome re-uses the same GREASE ordering across a userAgentData
         // object's lifetime; only randomized once per construction.
         let _lowBrands = null, _fullBrands = null;

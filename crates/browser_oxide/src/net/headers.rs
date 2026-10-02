@@ -535,15 +535,15 @@ fn chrome_platform_version(os_name: &str, os_version: &str) -> String {
 /// **Chrome 147 live capture**: real Chrome 147 only sends this header AFTER an
 /// `Accept-CH` advertisement. When sent, the format is:
 /// ```text
-/// "Google Chrome";v="147.0.7727.117", "Not.A/Brand";v="8.0.0.0", "Chromium";v="147.0.7727.117"
+/// "Google Chrome";v="147.0.7727.117", "Not_A Brand";v="8.0.0.0", "Chromium";v="147.0.7727.117"
 /// ```
-/// Order: `Google Chrome`, `Not.A/Brand` middle, `Chromium`. The "Not"
+/// Order: `Google Chrome`, `Not_A Brand` middle, `Chromium`. The "Not"
 /// brand format and version rotates per Chrome major release — Chrome 147
-/// uses `Not.A/Brand` v="8" (was `Not-A.Brand` v="24" in Chrome 130-146).
+/// uses `Not_A Brand` v="8" (was `Not.A/Brand` v="8" pre-153).
 /// Brand strings here MUST match `build_sec_ch_ua` exactly.
 fn build_sec_ch_ua_full_version_list(profile: &StealthProfile) -> String {
     let v = &profile.browser_version;
-    format!("\"Google Chrome\";v=\"{v}\", \"Not.A/Brand\";v=\"8.0.0.0\", \"Chromium\";v=\"{v}\"")
+    format!("\"Google Chrome\";v=\"{v}\", \"Not_A Brand\";v=\"8.0.0.0\", \"Chromium\";v=\"{v}\"")
 }
 
 /// Build the sec-ch-ua header value from the browser version.
@@ -559,7 +559,7 @@ fn build_sec_ch_ua(profile: &StealthProfile) -> String {
     let major_version = profile.browser_version.split('.').next().unwrap_or("147");
 
     // Real Chrome 147 sec-ch-ua:
-    //   "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"
+    //   "Google Chrome";v="147", "Not_A Brand";v="8", "Chromium";v="147"
     // Brand order is [Google Chrome, Not.A/Brand, Chromium] (NOT
     // alphabetical and NOT what the W3C spec implies). The "Not."-style
     // dummy brand changes per Chrome version — we hardcode the v=8 / dot-slash
@@ -1017,7 +1017,7 @@ mod tests {
             "mobile profile fetch must emit Android platform"
         );
         // Desktop stays ?0.
-        let desk = crate::stealth::presets::chrome_148_macos();
+        let desk = crate::stealth::presets::chrome_153_macos();
         let dfh: std::collections::HashMap<_, _> = chrome_headers_fetch(
             &desk,
             "https://example.com/x.js",
@@ -1077,7 +1077,7 @@ mod tests {
     fn desktop_chrome_emits_desktop_client_hints() {
         // Sanity gate: existing desktop behavior unchanged after Phase 2
         // (zero-behavior-change invariant).
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         assert_eq!(profile.device_class, DeviceClass::Desktop);
         let headers = chrome_headers_with_accept_ch(&profile);
         let h: std::collections::HashMap<_, _> = headers.iter().cloned().collect();
@@ -1151,7 +1151,7 @@ mod tests {
         // Real Chrome 130 first-visit navigation has 13 headers and
         // does NOT include the high-entropy Client Hints. Those only
         // appear on requests that follow an `Accept-CH` advertisement.
-        let profile = crate::stealth::chrome_148_windows();
+        let profile = crate::stealth::chrome_153_windows();
         let headers = chrome_headers(&profile);
         let names: Vec<&str> = headers.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(
@@ -1191,7 +1191,7 @@ mod tests {
         // Chrome upgrades subsequent requests on the same origin with
         // the full high-entropy client-hint set. This is the variant
         // callers reach for when they see `Accept-CH` in a response.
-        let profile = crate::stealth::chrome_148_windows();
+        let profile = crate::stealth::chrome_153_windows();
         let headers = chrome_headers_with_accept_ch(&profile);
         let names: Vec<&str> = headers.iter().map(|(k, _)| k.as_str()).collect();
         for required in &[
@@ -1214,18 +1214,18 @@ mod tests {
 
     #[test]
     fn sec_ch_ua_full_version_list_has_chrome_version() {
-        // Chrome 147+ live capture format:
-        //   "Google Chrome";v="<ver>", "Not.A/Brand";v="8.0.0.0", "Chromium";v="<ver>"
-        // The "Not" brand name rotates across major releases (was `Not-A.Brand`
-        // v="24" in Chrome 130-146; changed to `Not.A/Brand` v="8" in Chrome 147+).
-        let profile = crate::stealth::chrome_148_linux();
+        // Chrome 153 live capture (headed, this host):
+        //   "Google Chrome";v="<ver>", "Not_A Brand";v="8.0.0.0", "Chromium";v="<ver>"
+        // The "Not" brand name+position rotate across major releases (was
+        // `Not-A.Brand` v="24" in Chrome 130-146, `Not.A/Brand` v="8" in 147-152).
+        let profile = crate::stealth::chrome_153_linux();
         let value = build_sec_ch_ua_full_version_list(&profile);
         assert!(value.contains("Google Chrome"));
         assert!(value.contains(&profile.browser_version));
-        assert!(value.contains("Not.A/Brand"));
-        // Brand order: Google Chrome first, Not.A/Brand middle, Chromium last.
+        assert!(value.contains("Not_A Brand"));
+        // Brand order: Google Chrome first, Not_A Brand middle, Chromium last.
         let google_idx = value.find("Google Chrome").unwrap();
-        let not_idx = value.find("Not.A/Brand").unwrap();
+        let not_idx = value.find("Not_A Brand").unwrap();
         let chromium_idx = value.find("Chromium").unwrap();
         assert!(google_idx < not_idx);
         assert!(not_idx < chromium_idx);
@@ -1264,7 +1264,7 @@ mod tests {
 
     #[test]
     fn sec_ch_device_memory_emits_quantized_value() {
-        let mut profile = crate::stealth::chrome_148_macos();
+        let mut profile = crate::stealth::chrome_153_macos();
         profile.device_memory = 16; // common Apple Silicon spec
         let headers = chrome_headers_with_accept_ch(&profile);
         let dm = headers
@@ -1291,7 +1291,7 @@ mod tests {
         // `sec-ch-ua-arch: "arm"`, NOT "x86" — and the JS-side
         // `navigator.userAgentData.architecture` reads profile.cpu_architecture
         // directly. The HTTP header must agree with JS or fingerprinting scripts reject.
-        let mut profile = crate::stealth::chrome_148_macos();
+        let mut profile = crate::stealth::chrome_153_macos();
         profile.cpu_architecture = "arm".into();
         let headers = chrome_headers_with_accept_ch(&profile);
         let arch = headers
@@ -1312,7 +1312,7 @@ mod tests {
 
     #[test]
     fn sec_ch_ua_bitness_reads_profile_cpu_bitness() {
-        let mut profile = crate::stealth::chrome_148_windows();
+        let mut profile = crate::stealth::chrome_153_windows();
         profile.cpu_bitness = "32".into();
         // wow64 only valid when cpu_bitness=32 + os=Windows.
         profile.ua_wow64 = true;
@@ -1413,7 +1413,7 @@ mod tests {
         // must both reference the same major version, otherwise detection scripts
         // that cross-check the two get a free signal. Checked against the
         // Accept-CH variant because that's the one that carries both values.
-        let profile = crate::stealth::chrome_148_windows();
+        let profile = crate::stealth::chrome_153_windows();
         let headers = chrome_headers_with_accept_ch(&profile);
         let sec_ch_ua = headers
             .iter()
@@ -1460,7 +1460,7 @@ mod tests {
 
     #[test]
     fn nav_headers_for_url_overrides_amazon_fr() {
-        let profile = crate::stealth::chrome_148_macos();
+        let profile = crate::stealth::chrome_153_macos();
         let hdrs = nav_headers_for_url(&profile, "https://www.amazon.fr/", false);
         let al = hdrs
             .iter()
@@ -1483,7 +1483,7 @@ mod tests {
 
     #[test]
     fn nav_headers_for_url_no_change_on_amazon_com() {
-        let profile = crate::stealth::chrome_148_macos();
+        let profile = crate::stealth::chrome_153_macos();
         let hdrs = nav_headers_for_url(&profile, "https://www.amazon.com/", false);
         let al = hdrs
             .iter()

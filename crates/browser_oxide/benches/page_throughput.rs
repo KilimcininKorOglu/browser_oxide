@@ -12,7 +12,7 @@
 //!
 //! Run with `cargo bench -p browser_oxide --bench page_throughput`.
 
-use browser_oxide::stealth::presets::chrome_148_windows;
+use browser_oxide::stealth::presets::chrome_153_windows;
 use browser_oxide::Page;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use std::time::Duration;
@@ -59,7 +59,7 @@ fn bench_from_html_cold(c: &mut Criterion) {
             rt,
             |rt| {
                 rt.block_on(async {
-                    Page::from_html(static_html(), Some(chrome_148_windows()))
+                    Page::from_html(static_html(), Some(chrome_153_windows()))
                         .await
                         .unwrap()
                 });
@@ -72,7 +72,7 @@ fn bench_from_html_cold(c: &mut Criterion) {
 fn bench_reload_static(c: &mut Criterion) {
     let rt = rt();
     let mut page = rt.block_on(async {
-        Page::from_html_fast("<html></html>", "about:blank", chrome_148_windows())
+        Page::from_html_fast("<html></html>", "about:blank", chrome_153_windows())
             .await
             .unwrap()
     });
@@ -87,7 +87,7 @@ fn bench_reload_static(c: &mut Criterion) {
 fn bench_reload_js(c: &mut Criterion) {
     let rt = rt();
     let mut page = rt.block_on(async {
-        Page::from_html_fast("<html></html>", "about:blank", chrome_148_windows())
+        Page::from_html_fast("<html></html>", "about:blank", chrome_153_windows())
             .await
             .unwrap()
     });
@@ -102,7 +102,7 @@ fn bench_reload_js(c: &mut Criterion) {
 fn bench_content_roundtrip(c: &mut Criterion) {
     let rt = rt();
     let mut page = rt.block_on(async {
-        Page::from_html(static_html(), Some(chrome_148_windows()))
+        Page::from_html(static_html(), Some(chrome_153_windows()))
             .await
             .unwrap()
     });
@@ -118,7 +118,7 @@ fn bench_content_roundtrip(c: &mut Criterion) {
 fn bench_evaluate_async_idle(c: &mut Criterion) {
     let rt = rt();
     let mut page = rt.block_on(async {
-        Page::from_html(static_html(), Some(chrome_148_windows()))
+        Page::from_html(static_html(), Some(chrome_153_windows()))
             .await
             .unwrap()
     });
@@ -137,7 +137,7 @@ fn bench_evaluate_async_idle(c: &mut Criterion) {
 fn bench_pooled_render_js(c: &mut Criterion) {
     let rt = rt();
     let mut page = rt.block_on(async {
-        Page::from_html_fast("<html></html>", "about:blank", chrome_148_windows())
+        Page::from_html_fast("<html></html>", "about:blank", chrome_153_windows())
             .await
             .unwrap()
     });

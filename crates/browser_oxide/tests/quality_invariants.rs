@@ -5,11 +5,11 @@
 //! depending on a live site. The live pass-rate signal is the separate
 //! `canary` workflow + `BENCHMARK.md`.
 
-use browser_oxide::stealth::presets::chrome_148_macos;
+use browser_oxide::stealth::presets::chrome_153_macos;
 use browser_oxide::{ChallengeVerdict, Page};
 
 async fn page(html: &str) -> Page {
-    Page::from_html(html, Some(chrome_148_macos()))
+    Page::from_html(html, Some(chrome_153_macos()))
         .await
         .expect("from_html")
 }

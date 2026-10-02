@@ -18,7 +18,7 @@ async fn main() {
         .run_until(async move {
             let mut page = browser_oxide::Page::from_html(
                 "<html><head></head><body></body></html>",
-                Some(browser_oxide::stealth::presets::chrome_148_macos()),
+                Some(browser_oxide::stealth::presets::chrome_153_macos()),
             )
             .await
             .expect("page");

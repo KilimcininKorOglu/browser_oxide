@@ -191,7 +191,7 @@ async fn chrome_object_structure() {
 async fn test_user_agent_data_highentropy() {
     // macOS Apple Silicon exercises the arm path — if any hint still
     // hardcodes "x86"/"Windows" we fail here.
-    let profile = browser_oxide::stealth::presets::chrome_148_macos();
+    let profile = browser_oxide::stealth::presets::chrome_153_macos();
     let browser_full = profile.browser_version.clone();
     let browser_major = browser_full
         .split('.')

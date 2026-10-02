@@ -726,8 +726,8 @@ rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
         }
 
         for profile in [
-            crate::stealth::presets::chrome_148_macos(),
-            crate::stealth::presets::chrome_148_windows(),
+            crate::stealth::presets::chrome_153_macos(),
+            crate::stealth::presets::chrome_153_windows(),
         ] {
             assert_eq!(
                 ua_chrome_major(&profile.user_agent),
@@ -837,7 +837,7 @@ rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
             buf
         });
 
-        let profile = crate::stealth::presets::chrome_148_macos();
+        let profile = crate::stealth::presets::chrome_153_macos();
         let connector = chrome_connector(&profile).expect("connector");
         let tcp = TcpStream::connect(addr).await.unwrap();
         let _ = tokio::time::timeout(

@@ -118,7 +118,7 @@ impl CdpServer {
             let local = tokio::task::LocalSet::new();
 
             local.block_on(&rt, async move {
-                let profile = crate::stealth::chrome_148_linux();
+                let profile = crate::stealth::chrome_153_linux();
                 // Test raw HTTP first to diagnose connection issues
                 let client = match crate::net::HttpClient::new(&profile) {
                     Ok(c) => c,
@@ -213,7 +213,7 @@ impl CdpServer {
             let local = tokio::task::LocalSet::new();
 
             local.block_on(&rt, async move {
-                let profile = crate::stealth::chrome_148_linux();
+                let profile = crate::stealth::chrome_153_linux();
                 let client = match crate::net::HttpClient::new(&profile) {
                     Ok(c) => c,
                     Err(e) => {
@@ -610,7 +610,7 @@ mod tests {
                 let page = crate::Page::from_html_fast(
                     html,
                     "https://example.com",
-                    crate::stealth::presets::chrome_148_ru(),
+                    crate::stealth::presets::chrome_153_ru(),
                 )
                 .await
                 .unwrap();
