@@ -960,6 +960,7 @@ impl Page {
                         client,
                         Some(profile),
                         parent_origin.as_deref(),
+                        Some(base_url),
                     )
                     .await
                     {
@@ -1050,7 +1051,8 @@ impl Page {
                     &full_src,
                     client,
                     Some(profile),
-                    None,
+                    iframe::cross_origin_parent(&self.url, &full_src).as_deref(),
+                    Some(&self.url),
                 )
                 .await
                 {
@@ -4332,6 +4334,7 @@ impl Page {
                             client,
                             Some(profile),
                             parent_origin.as_deref(),
+                            Some(url),
                         )
                         .await
                         {

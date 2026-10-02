@@ -219,6 +219,113 @@ pub fn chrome_headers_reload(
     hdrs
 }
 
+/// Browser-aware subframe-navigation header dispatch, with the same
+/// per-region `accept-language` treatment the top-level nav path gets.
+pub fn nav_headers_frame(
+    profile: &StealthProfile,
+    site: &str,
+    referer: Option<&str>,
+    url: &str,
+    accept_ch_upgraded: bool,
+) -> Vec<(String, String)> {
+    let mut hdrs = match profile.browser_name.as_str() {
+        "Firefox" => firefox_headers_reload(profile, referer.unwrap_or_default()),
+        "Safari" => safari_headers_reload(profile, referer.unwrap_or_default()),
+        _ => chrome_headers_frame(profile, site, referer, accept_ch_upgraded),
+    };
+    for (k, v) in hdrs.iter_mut() {
+        if k == "sec-fetch-site" {
+            *v = site.to_string();
+        }
+    }
+    apply_region_accept_language(&mut hdrs, url, &profile.browser_name);
+    hdrs
+}
+
+/// Build headers that match a **subframe navigation** — an `<iframe src>`
+/// the document creates — as opposed to the top-level navigation.
+///
+/// A subframe request differs from `chrome_headers` in four ways, all of them
+/// server-visible, and all of them things a fingerprinting layer reads before
+/// any JavaScript runs:
+///   - `sec-fetch-dest: iframe` (a top-level nav sends `document`)
+///   - `sec-fetch-site` is the parent→child relationship, never `none`
+///   - `Referer` names the parent document, not the frame's own URL
+///   - NO `upgrade-insecure-requests`; that header only rides a top-level nav
+/// `sec-fetch-user` is omitted: a frame created by script is not user
+/// activated, and an invisible widget is never activated at all.
+pub fn chrome_headers_frame(
+    profile: &StealthProfile,
+    site: &str,
+    referer: Option<&str>,
+    accept_ch_upgraded: bool,
+) -> Vec<(String, String)> {
+    let mut hdrs: Vec<(String, String)> = chrome_headers_impl(profile, accept_ch_upgraded)
+        .into_iter()
+        .filter(|(k, _)| k != "sec-fetch-user" && k != "upgrade-insecure-requests")
+        .map(|(k, v)| {
+            if k == "sec-fetch-site" {
+                (k, site.to_string())
+            } else if k == "sec-fetch-dest" {
+                (k, "iframe".to_string())
+            } else {
+                (k, v)
+            }
+        })
+        .collect();
+    if let Some(referer) = referer {
+        hdrs.push(("referer".to_string(), referer.to_string()));
+    }
+    hdrs
+}
+
+/// The `sec-fetch-site` value for a subframe: how the child's origin relates
+/// to the parent's.
+///
+/// `same-origin` comes from an exact origin match. `same-site` needs the
+/// registrable domain, which we approximate with the last two labels — unless
+/// the second-to-last label is one of the second-level names that appear in
+/// public suffixes (`com.tr`, `co.uk`, `co.jp`, …), in which case the last
+/// three are the registrable domain. Getting this backwards is expensive in
+/// both directions, so anything unrecognised stays `cross-site`, which is
+/// what Chrome sends for the cross-site case that matters most.
+pub fn frame_site(parent_url: Option<&str>, child_url: &str) -> &'static str {
+    let Some(parent) = parent_url else {
+        return "cross-site";
+    };
+    let (Ok(p), Ok(c)) = (url::Url::parse(parent), url::Url::parse(child_url)) else {
+        return "cross-site";
+    };
+    if p.origin() == c.origin() {
+        return "same-origin";
+    }
+    let (Some(ph), Some(ch)) = (p.host_str(), c.host_str()) else {
+        return "cross-site";
+    };
+    if registrable_domain(ph) == registrable_domain(ch) {
+        "same-site"
+    } else {
+        "cross-site"
+    }
+}
+
+/// The registrable domain, approximated as described on [`frame_site`].
+fn registrable_domain(host: &str) -> String {
+    const SECOND_LEVEL: &[&str] = &[
+        "co", "com", "net", "org", "gov", "edu", "ac", "ne", "or", "go", "mil",
+    ];
+    let labels: Vec<&str> = host.split('.').collect();
+    let take = if labels.len() >= 3 && SECOND_LEVEL.contains(&labels[labels.len() - 2]) {
+        3
+    } else {
+        2
+    };
+    if labels.len() <= take {
+        return host.to_ascii_lowercase();
+    }
+    labels[labels.len() - take..].join(".")
+}
+
 /// Build headers that match a `window.fetch()` request from JS, NOT a
 /// document navigation. Chrome's fetch API and its nav requests send
 /// completely different header sets; a "fetch" request that arrives
@@ -1040,6 +1147,82 @@ pub fn is_cross_origin_isolated(policy: &DocumentPolicy) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_request_looks_like_a_subframe_not_a_navigation() {
+        // The four things that separate an <iframe src> load from a top-level
+        // navigation, all server-visible before the frame runs any script.
+        let profile = crate::stealth::presets::chrome_153_macos();
+        let hdrs = nav_headers_frame(
+            &profile,
+            "cross-site",
+            Some("https://odeme.com.tr/fatura/gsm/TURKCELL"),
+            "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/x?lang=auto",
+            false,
+        );
+        let get = |name: &str| hdrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        assert_eq!(get("sec-fetch-dest").as_deref(), Some("iframe"));
+        assert_eq!(get("sec-fetch-mode").as_deref(), Some("navigate"));
+        assert_eq!(get("sec-fetch-site").as_deref(), Some("cross-site"));
+        assert_eq!(
+            get("referer").as_deref(),
+            Some("https://odeme.com.tr/fatura/gsm/TURKCELL")
+        );
+        assert_eq!(get("sec-fetch-user"), None, "no user activation");
+        assert_eq!(
+            get("upgrade-insecure-requests"),
+            None,
+            "top-level-nav header only"
+        );
+        // The document Accept header a frame load still carries.
+        assert!(get("accept").unwrap().starts_with("text/html,"));
+        // A same-document frame must not borrow the parent's referer either.
+        let none = nav_headers_frame(
+            &profile,
+            "cross-site",
+            None,
+            "https://challenges.cloudflare.com/x",
+            false,
+        );
+        assert!(none.iter().all(|(k, _)| k != "referer"));
+    }
+
+    #[test]
+    fn frame_site_resolves_the_parent_relationship() {
+        // The production target: unrelated registrable domains.
+        assert_eq!(
+            frame_site(
+                Some("https://odeme.com.tr/fatura/gsm/TURKCELL"),
+                "https://challenges.cloudflare.com/cdn-cgi/x"
+            ),
+            "cross-site"
+        );
+        assert_eq!(
+            frame_site(Some("https://www.example.com/a"), "https://example.com/b"),
+            "same-site"
+        );
+        assert_eq!(
+            frame_site(
+                Some("https://www.example.com/a"),
+                "https://cdn.example.com/b"
+            ),
+            "same-site"
+        );
+        assert_eq!(
+            frame_site(
+                Some("https://www.example.com/a"),
+                "https://www.example.com/b"
+            ),
+            "same-origin"
+        );
+        // Second-level suffixes: com.tr / co.uk need three labels, so two
+        // unrelated .com.tr hosts are not siblings.
+        assert_eq!(
+            frame_site(Some("https://a.com.tr/"), "https://b.com.tr/"),
+            "cross-site"
+        );
+        assert_eq!(frame_site(None, "https://example.com/"), "cross-site");
+    }
 
     #[test]
     fn fetch_headers_send_client_hints_before_user_agent() {

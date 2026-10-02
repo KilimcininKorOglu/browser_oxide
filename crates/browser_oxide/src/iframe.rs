@@ -145,12 +145,17 @@ impl ChildIframe {
     }
 
     /// Create a child iframe by fetching src URL via HTTP client.
+    ///
+    /// `parent_origin` is the creating document's origin (its
+    /// `sec-fetch-site` parent side); `parent_url` is that document's full
+    /// URL, which is what a subframe request names in its `Referer`.
     pub async fn from_url(
         node_id: NodeId,
         url: &str,
         client: &crate::net::HttpClient,
         stealth_profile: Option<&crate::stealth::StealthProfile>,
         parent_origin: Option<&str>,
+        parent_url: Option<&str>,
     ) -> Result<Self, deno_core::error::AnyError> {
         // CSP `frame-src` enforcement (falls back to child-src then
         // default-src). Real Chrome refuses to navigate iframes whose
@@ -175,7 +180,11 @@ impl ChildIframe {
         }
 
         let resp = client
-            .get(url)
+            // A subframe load, not a top-level navigation: the frame's own
+            // document request must carry `sec-fetch-dest: iframe`, the
+            // parent relationship and a Referer. `parent_url` falls back to
+            // the origin when only that is known.
+            .frame_get(url, parent_url.or(parent_origin))
             .await
             .map_err(|e| deno_core::error::AnyError::msg(format!("iframe fetch error: {}", e)))?;
 
@@ -401,7 +410,15 @@ impl ChildIframe {
                 } else {
                     src.clone()
                 };
-                ChildIframe::from_url(info.node_id, &full, client, Some(profile), None).await
+                ChildIframe::from_url(
+                    info.node_id,
+                    &full,
+                    client,
+                    Some(profile),
+                    cross_origin_parent(base_url, &full).as_deref(),
+                    Some(base_url),
+                )
+                .await
             } else {
                 continue;
             };

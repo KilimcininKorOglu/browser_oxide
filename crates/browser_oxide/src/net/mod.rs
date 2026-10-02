@@ -624,6 +624,31 @@ impl HttpClient {
         self.get_with_headers(url, &[]).await
     }
 
+    /// Subframe navigation GET: an `<iframe src>` load, not a top-level
+    /// navigation. `parent_url` is the document that created the frame and
+    /// drives both the `sec-fetch-site` value and the `Referer`.
+    ///
+    /// Real Chrome sends `sec-fetch-dest: iframe`, a Referer naming the
+    /// parent, no `sec-fetch-user` and no `upgrade-insecure-requests` here.
+    /// Using the top-level navigation header set for a frame is visible to the
+    /// server before a line of the frame's own JavaScript runs.
+    pub async fn frame_get(
+        &self,
+        url: &str,
+        parent_url: Option<&str>,
+    ) -> Result<Response, NetError> {
+        let site = headers::frame_site(parent_url, url);
+        let upgraded = match Url::parse(url) {
+            Ok(parsed) => match parsed.host_str() {
+                Some(host) => self.has_accept_ch(host).await,
+                None => false,
+            },
+            Err(_) => false,
+        };
+        let hdrs = headers::nav_headers_frame(&self.profile, site, parent_url, url, upgraded);
+        self.get_with_exact_headers(url, &hdrs).await
+    }
+
     /// Fetch-API-style GET: uses `chrome_headers_fetch` (accept: */*, no
     /// upgrade-insecure-requests, sec-fetch-dest: empty, etc.) as the base
     /// header set, with caller's extras merged in. `origin` is the page's
