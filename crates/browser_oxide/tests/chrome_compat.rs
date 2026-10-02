@@ -268,6 +268,50 @@ async fn no_resource_entry_invents_a_url() {
     );
 }
 #[tokio::test]
+async fn percentage_padding_resolves_against_the_viewport_width() {
+    // `padding: 2%` on a 1920-wide viewport is 38.4px, and the content box
+    // below it moves down by that much. A percentage that resolved to nothing
+    // would leave every following box where it was, so a challenge measuring
+    // a widget's position reads the wrong answer.
+    //
+    // Only the layout is asserted. `getComputedStyle` does not go through the
+    // cascade for padding — it answers `0px` for `padding-top` and
+    // `2em 2em 20vh` for the shorthand — so a computed-style assertion here
+    // would encode the wrong answer as expected.
+    let html = "<!DOCTYPE html><html><head><style>body{margin:0;padding:2%}</style>\
+                </head><body><div id=\"d\">x</div></body></html>";
+    let js = "(() => { const r = document.getElementById('d').getBoundingClientRect(); \
+             return String(Math.round(r.y * 100) / 100); })()";
+    let mut page = Page::from_html_with_url(
+        html,
+        "https://example.com/",
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    let out = page.evaluate(js).unwrap_or_else(|e| format!("ERROR: {e}"));
+    let y: f64 = out
+        .parse()
+        .unwrap_or_else(|_| panic!("not a number: {out}"));
+    // 2% of the 1920-wide default viewport, to within a hundredth of a pixel:
+    // the exact figure moves with the fractional content width.
+    assert!(
+        (y - 38.4).abs() < 0.05,
+        "percentage padding not resolved: {out}"
+    );
+}
+
+#[tokio::test]
+async fn body_width_matches_the_viewport() {
+    // A block-level body is exactly the viewport wide. The layout engine used
+    // to resolve boxes against a hardcoded 1920 default while `innerWidth`
+    // reported the profile's width — one page, two widths.
+    let js = "(() => { document.body.style.margin = '0'; \
+             return document.body.offsetWidth + '/' + innerWidth; })()";
+    assert_eq!(check(js).await, "1920/1920");
+}
+
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }
