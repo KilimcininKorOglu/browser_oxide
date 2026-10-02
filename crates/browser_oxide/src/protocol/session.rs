@@ -476,8 +476,13 @@ impl CdpSession {
                     let dy = y - self.last_mouse_y;
                     let dist = (dx * dx + dy * dy).sqrt();
 
-                    // For 'mouseMoved' with significant distance, generate human trajectory.
-                    if event_type == "mouseMoved" && dist > 10.0 {
+                    // Humanized approach for ANY event arriving far from the
+                    // cursor — Camoufox's humanize mode: a click never jumps,
+                    // the pointer travels a human trajectory first, then the
+                    // button event fires at the destination.
+                    let click_like =
+                        matches!(event_type, "mousePressed" | "mouseReleased");
+                    if dist > 10.0 && (event_type == "mouseMoved" || click_like) {
                         let pts = crate::stealth::behavior::mouse_trajectory(
                             (self.last_mouse_x, self.last_mouse_y),
                             (x, y),
@@ -514,6 +519,38 @@ impl CdpSession {
                             if i < pts.len() - 1 {
                                 tokio::time::sleep(std::time::Duration::from_millis(8)).await;
                             }
+                        }
+
+                        // The button event itself fires at the destination
+                        // through the same trusted dispatcher (single dispatch
+                        // — the approach already moved the pointer).
+                        if click_like {
+                            let pointer_type = if event_type == "mousePressed" {
+                                "pointerdown"
+                            } else {
+                                "pointerup"
+                            };
+                            let script = format!(
+                                "(() => {{ \
+                                  const props = {{ \
+                                    bubbles: true, cancelable: true, composed: true, \
+                                    clientX: {x}, clientY: {y}, screenX: {x}, screenY: {y}, \
+                                    button: {button_n}, buttons: {buttons}, detail: {click_count}, \
+                                    ctrlKey: {ctrl}, shiftKey: {shift}, altKey: {alt}, metaKey: {meta}, \
+                                    pointerId: 1, width: 1, height: 1, pressure: {pressure}, \
+                                    pointerType: 'mouse', isPrimary: true \
+                                  }}; \
+                                  const d = globalThis.__bo_td_9f27c3a1; \
+                                  d({{kind: 'mouse', type: {pointer_type:?}, props}}); \
+                                  d({{kind: 'mouse', type: {js_event:?}, props}}); \
+                                }})()",
+                                pressure = if event_type == "mousePressed" { 0.5 } else { 0.0 },
+                                ctrl = (modifiers & 2) != 0,
+                                shift = (modifiers & 8) != 0,
+                                alt = (modifiers & 1) != 0,
+                                meta = (modifiers & 4) != 0,
+                            );
+                            let _ = page.evaluate(&script);
                         }
                     } else {
                         // Single jump for clicks or small moves
