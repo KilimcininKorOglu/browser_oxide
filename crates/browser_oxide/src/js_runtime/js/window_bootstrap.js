@@ -44,7 +44,7 @@
         if (typeof globalThis.Window === "function") return;
         const _ET = globalThis.EventTarget;
         function Window() {
-            throw new TypeError("Illegal constructor");
+            throw new __oxT.TypeError("Illegal constructor");
         }
         try {
             if (typeof _ET === "function") {
@@ -541,13 +541,13 @@
     });
     _defProtoMethod(Permissions.prototype, 'query', function query(desc) {
         if (desc == null || typeof desc !== 'object') {
-            return Promise.reject(new TypeError(
+            return Promise.reject(new __oxT.TypeError(
                 "Failed to execute 'query' on 'Permissions': parameter 1 is not of type 'PermissionDescriptor'."
             ));
         }
         const name = desc.name;
         if (typeof name !== 'string' || !(name in _PERMISSION_STATE_MAP)) {
-            return Promise.reject(new TypeError(
+            return Promise.reject(new __oxT.TypeError(
                 "Failed to execute 'query' on 'Permissions': The provided value '" +
                 String(name) + "' is not a valid enum value of type PermissionName."
             ));
@@ -588,7 +588,7 @@
     globalThis.AuthenticatorAssertionResponse = AuthenticatorAssertionResponse;
 
     class PublicKeyCredential {
-        constructor() { throw new TypeError("Illegal constructor"); }
+        constructor() { throw new __oxT.TypeError("Illegal constructor"); }
     }
     Object.defineProperty(PublicKeyCredential.prototype, Symbol.toStringTag,
         { value: "PublicKeyCredential", configurable: true });
@@ -627,7 +627,7 @@
     globalThis.PublicKeyCredential = PublicKeyCredential;
 
     class IdentityCredential {
-        constructor() { throw new TypeError("Illegal constructor"); }
+        constructor() { throw new __oxT.TypeError("Illegal constructor"); }
     }
     Object.defineProperty(IdentityCredential.prototype, Symbol.toStringTag,
         { value: "IdentityCredential", configurable: true });
@@ -636,7 +636,7 @@
     class IdentityProvider {}
     IdentityProvider.getUserInfo = ({
         getUserInfo() {
-            return Promise.reject(new DOMException("Not allowed", "NotAllowedError"));
+            return Promise.reject(new __oxT.DOMException("Not allowed", "NotAllowedError"));
         }
     }).getUserInfo;
     _maskFunction(IdentityProvider.getUserInfo, 'getUserInfo');
@@ -646,7 +646,7 @@
         // No real IdP wiring. Reject the way Chrome does after the user dismisses
         // (NotAllowedError) — scripts probing this only assert reject-shape + delay.
         return new Promise((_, rej) => setTimeout(() =>
-            rej(new DOMException("User declined or no eligible accounts.",
+            rej(new __oxT.DOMException("User declined or no eligible accounts.",
                 "NotAllowedError")), 200));
     }
 
@@ -656,13 +656,13 @@
     CredentialsContainer.prototype.create = ({
         create(opts) {
             if (!opts || typeof opts !== "object") {
-                return Promise.reject(new TypeError(
+                return Promise.reject(new __oxT.TypeError(
                     "Failed to execute 'create' on 'CredentialsContainer': 1 argument required."));
             }
             if (opts.publicKey) {
                 // Realistic ~120 ms delay then NotAllowedError — matches Chrome with no UV.
                 return new Promise((_, rej) => setTimeout(() =>
-                    rej(new DOMException(
+                    rej(new __oxT.DOMException(
                         "The operation either timed out or was not allowed; see https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client.",
                         "NotAllowedError")), 120));
             }
@@ -676,7 +676,7 @@
             if (opts && opts.identity) return _fedcmGet(opts.identity);
             if (opts && opts.publicKey) {
                 return new Promise((_, rej) => setTimeout(() =>
-                    rej(new DOMException(
+                    rej(new __oxT.DOMException(
                         "The operation either timed out or was not allowed; see https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client.",
                         "NotAllowedError")), 120));
             }
@@ -703,7 +703,7 @@
     Bluetooth.prototype.getAvailability = ({ getAvailability() { return Promise.resolve(false); } }).getAvailability;
     _maskFunction(Bluetooth.prototype.getAvailability, 'getAvailability');
 
-    Bluetooth.prototype.requestDevice = ({ requestDevice() { return Promise.reject(new DOMException("User denied", "NotFoundError")); } }).requestDevice;
+    Bluetooth.prototype.requestDevice = ({ requestDevice() { return Promise.reject(new __oxT.DOMException("User denied", "NotFoundError")); } }).requestDevice;
     _maskFunction(Bluetooth.prototype.requestDevice, 'requestDevice');
 
     globalThis.Bluetooth = Bluetooth;
@@ -718,7 +718,7 @@
         const u = _UProto ? Object.create(_UProto) : {};
         u.getDevices = ({ getDevices() { return Promise.resolve([]); } }).getDevices;
         _maskFunction(u.getDevices, 'getDevices');
-        u.requestDevice = ({ requestDevice() { return Promise.reject(new DOMException("User denied", "NotFoundError")); } }).requestDevice;
+        u.requestDevice = ({ requestDevice() { return Promise.reject(new __oxT.DOMException("User denied", "NotFoundError")); } }).requestDevice;
         _maskFunction(u.requestDevice, 'requestDevice');
         u.onconnect = null;
         u.ondisconnect = null;
@@ -729,7 +729,7 @@
         const s = _SProto ? Object.create(_SProto) : {};
         s.getPorts = ({ getPorts() { return Promise.resolve([]); } }).getPorts;
         _maskFunction(s.getPorts, 'getPorts');
-        s.requestPort = ({ requestPort() { return Promise.reject(new DOMException("User denied", "NotFoundError")); } }).requestPort;
+        s.requestPort = ({ requestPort() { return Promise.reject(new __oxT.DOMException("User denied", "NotFoundError")); } }).requestPort;
         _maskFunction(s.requestPort, 'requestPort');
         s.onconnect = null;
         s.ondisconnect = null;
@@ -740,7 +740,7 @@
         const h = _HProto ? Object.create(_HProto) : {};
         h.getDevices = ({ getDevices() { return Promise.resolve([]); } }).getDevices;
         _maskFunction(h.getDevices, 'getDevices');
-        h.requestDevice = ({ requestDevice() { return Promise.reject(new DOMException("User denied", "NotFoundError")); } }).requestDevice;
+        h.requestDevice = ({ requestDevice() { return Promise.reject(new __oxT.DOMException("User denied", "NotFoundError")); } }).requestDevice;
         _maskFunction(h.requestDevice, 'requestDevice');
         h.onconnect = null;
         h.ondisconnect = null;
@@ -1243,7 +1243,7 @@
         );
 
         if (!_supported) {
-            return Promise.reject(new DOMException(
+            return Promise.reject(new __oxT.DOMException(
                 "Failed to execute 'requestMediaKeySystemAccess' on 'Navigator': " +
                 "Requested configuration is not supported.",
                 "NotSupportedError"
@@ -1282,7 +1282,7 @@
     });
     _defNavMethod('canShare', function canShare(data) { return false; });
     _defNavMethod('share', function share(data) {
-        return Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
+        return Promise.reject(new __oxT.DOMException("Permission denied", "NotAllowedError"));
     });
     _defNavMethod('clearAppBadge', function clearAppBadge() { return Promise.resolve(); });
     _defNavMethod('setAppBadge', function setAppBadge(count) { return Promise.resolve(); });
@@ -1493,9 +1493,9 @@
                 if (typeof p === 'symbol') return undefined;
                 if (p === 'self' || p === 'window' || p === 'parent' || p === 'top' || p === 'frames') return _frameParent;
                 if (Object.prototype.hasOwnProperty.call(allowed, p)) return allowed[p];
-                throw new DOMException(_xMsg(), 'SecurityError');
+                throw new __oxT.DOMException(_xMsg(), 'SecurityError');
             },
-            set() { throw new DOMException(_xMsg(), 'SecurityError'); },
+            set() { throw new __oxT.DOMException(_xMsg(), 'SecurityError'); },
             has() { return false; },
         });
         _frameBridge.drainToParent = () => JSON.stringify(_toParent.splice(0));
@@ -1922,7 +1922,7 @@
                 getHighEntropyValues(hints) {
                     // Chrome rejects with TypeError on non-array (or missing).
                     if (!Array.isArray(hints)) {
-                        return Promise.reject(new TypeError(
+                        return Promise.reject(new __oxT.TypeError(
                             "Failed to execute 'getHighEntropyValues' on 'NavigatorUAData': " +
                             "The provided value cannot be converted to a sequence."
                         ));
@@ -2014,7 +2014,7 @@
         const _workers = new WeakMap();
         const _workerState = (o) => {
             const s = _workers.get(o);
-            if (!s) throw new TypeError('Illegal invocation');
+            if (!s) throw new __oxT.TypeError('Illegal invocation');
             return s;
         };
 
@@ -2051,10 +2051,10 @@
 
         const Worker = function Worker(scriptURL) {
             if (!new.target) {
-                throw new TypeError("Failed to construct 'Worker': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+                throw new __oxT.TypeError("Failed to construct 'Worker': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
             }
             if (arguments.length < 1) {
-                throw new TypeError("Failed to construct 'Worker': 1 argument required, but only 0 present.");
+                throw new __oxT.TypeError("Failed to construct 'Worker': 1 argument required, but only 0 present.");
             }
             const options = arguments[1] || {};
             const url = String(scriptURL);
@@ -2102,7 +2102,7 @@
                         !(t instanceof ArrayBuffer) &&
                         !(ArrayBuffer.isView && ArrayBuffer.isView(t))
                     ) {
-                        throw new TypeError(
+                        throw new __oxT.TypeError(
                             "postMessage: transferable must be an ArrayBuffer or view"
                         );
                     }
@@ -3102,7 +3102,7 @@
         const _memoryInfoValues = new WeakMap();
         const _memoryInfo = (self) => {
             const values = _memoryInfoValues.get(self);
-            if (!values) throw new TypeError('Illegal invocation');
+            if (!values) throw new __oxT.TypeError('Illegal invocation');
             return values;
         };
         const _MemoryInfoProto = {
@@ -3229,7 +3229,7 @@
         });
         _defProtoMethod(_PerfProto, 'mark', function mark(name, options) {
             if (typeof name !== 'string' || !name) {
-                throw new TypeError("Failed to execute 'mark' on 'Performance': The mark name must be a non-empty string.");
+                throw new __oxT.TypeError("Failed to execute 'mark' on 'Performance': The mark name must be a non-empty string.");
             }
             const start = (options && typeof options.startTime === 'number')
                 ? options.startTime
@@ -3240,14 +3240,14 @@
         });
         _defProtoMethod(_PerfProto, 'measure', function measure(name, startMark, endMark) {
             if (typeof name !== 'string' || !name) {
-                throw new TypeError("Failed to execute 'measure' on 'Performance': The measure name must be a non-empty string.");
+                throw new __oxT.TypeError("Failed to execute 'measure' on 'Performance': The measure name must be a non-empty string.");
             }
             const resolve = (m) => {
                 if (typeof m === 'number') return m;
                 if (m === undefined || m === '') return undefined;
                 const found = _userTiming.filter((e) => e.name === m);
                 if (found.length === 0) {
-                    throw new DOMException(
+                    throw new __oxT.DOMException(
                         `Failed to execute 'measure' on 'Performance': The mark '${m}' does not exist.`,
                         "SyntaxError");
                 }
@@ -3405,7 +3405,7 @@
                 const jwk = keyData;
                 raw = jwk && jwk.k ? b64u(jwk.k) : jwk && jwk.n ? b64u(jwk.n) : new Uint8Array(0);
             } else {
-                return Promise.reject(new DOMException(`unsupported key format ${format}`, "NotSupportedError"));
+                return Promise.reject(new __oxT.DOMException(`unsupported key format ${format}`, "NotSupportedError"));
             }
             const algObj = typeof algorithm === 'string' ? { name: algorithm } : (algorithm || {});
             const algName = String(algObj.name || '').toUpperCase();
@@ -3427,9 +3427,9 @@
     _defProtoMethod(_SubtleProto, 'exportKey', function exportKey(format, key) {
         try {
             const entry = __oxCryptoKeys.get(key && key.__oxHandle);
-            if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
+            if (!entry) return Promise.reject(new __oxT.DOMException("key not found", "InvalidAccessError"));
             if (String(format).toLowerCase() !== 'raw') {
-                return Promise.reject(new DOMException(`unsupported export format ${format}`, "NotSupportedError"));
+                return Promise.reject(new __oxT.DOMException(`unsupported export format ${format}`, "NotSupportedError"));
             }
             return Promise.resolve(entry.raw.slice().buffer);
         } catch (e) { return Promise.reject(e); }
@@ -3440,7 +3440,7 @@
         try {
             const algName = _algoName(algorithm);
             const entry = __oxCryptoKeys.get(key && key.__oxHandle);
-            if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
+            if (!entry) return Promise.reject(new __oxT.DOMException("key not found", "InvalidAccessError"));
             if (algName === 'HMAC') {
                 const hash = entry.hashName
                     ? _hmacHash(entry.hashName)
@@ -3448,7 +3448,7 @@
                 const out = ops.op_crypto_hmac_sign(hash, entry.raw, _toBytes(data));
                 return Promise.resolve(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
             }
-            return Promise.reject(new DOMException(`${algName} not implemented`, "NotSupportedError"));
+            return Promise.reject(new __oxT.DOMException(`${algName} not implemented`, "NotSupportedError"));
         } catch (e) { return Promise.reject(e); }
     });
     _defProtoMethod(_SubtleProto, 'verify', function verify(algorithm, key, signature, data) {
@@ -3465,7 +3465,7 @@
     // Stubs for the asymmetric/derivation paths. Challenge scripts
     // overwhelmingly use digest + HMAC; the rest stay NotSupportedError.
     const _subtleNotImplemented = (name) => function (...args) {
-        return Promise.reject(new DOMException(`${name} not implemented`, "NotSupportedError"));
+        return Promise.reject(new __oxT.DOMException(`${name} not implemented`, "NotSupportedError"));
     };
     for (const m of ['encrypt','decrypt','generateKey','deriveKey','deriveBits','wrapKey','unwrapKey']) {
         _defProtoMethod(_SubtleProto, m, _subtleNotImplemented(m));
@@ -3474,10 +3474,10 @@
     // Crypto.prototype.getRandomValues — backed by the Rust op.
     _defProtoMethod(_CryptoProto, 'getRandomValues', function getRandomValues(arr) {
         if (!ArrayBuffer.isView(arr)) {
-            throw new TypeError("getRandomValues expects an ArrayBufferView");
+            throw new __oxT.TypeError("getRandomValues expects an ArrayBufferView");
         }
         if (arr.byteLength > 65536) {
-            throw new DOMException("QuotaExceededError", "QuotaExceededError");
+            throw new __oxT.DOMException("QuotaExceededError", "QuotaExceededError");
         }
         // We need a Uint8Array view to pass to the op.
         const u8 = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
@@ -3557,7 +3557,7 @@
             }
             encodeInto(source, destination) {
                 if (!(destination instanceof Uint8Array)) {
-                    throw new TypeError("encodeInto destination must be a Uint8Array");
+                    throw new __oxT.TypeError("encodeInto destination must be a Uint8Array");
                 }
                 source = String(source == null ? "" : source);
                 let read = 0;
@@ -3639,7 +3639,7 @@
                     }
                     else {
                         // Invalid byte — fatal throws, otherwise emits replacement char U+FFFD
-                        if (this._fatal) throw new TypeError("The encoded data was not valid.");
+                        if (this._fatal) throw new __oxT.TypeError("The encoded data was not valid.");
                         str += "\uFFFD"; i++;
                     }
                 }
@@ -3666,7 +3666,7 @@
         globalThis.atob = ({
             atob(s) {
                 if (arguments.length === 0) {
-                    throw new TypeError("Failed to execute 'atob' on 'Window': 1 argument required, but only 0 present.");
+                    throw new __oxT.TypeError("Failed to execute 'atob' on 'Window': 1 argument required, but only 0 present.");
                 }
                 const input = String(s).replace(/[\t\n\f\r ]/g, "");
                 if (input.length === 0) return "";
@@ -3690,12 +3690,12 @@
         globalThis.btoa = ({
             btoa(s) {
                 if (arguments.length === 0) {
-                    throw new TypeError("Failed to execute 'btoa' on 'Window': 1 argument required, but only 0 present.");
+                    throw new __oxT.TypeError("Failed to execute 'btoa' on 'Window': 1 argument required, but only 0 present.");
                 }
                 const str = String(s);
                 for (let i = 0; i < str.length; i++) {
                     if (str.charCodeAt(i) > 255) {
-                        throw new DOMException("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", "InvalidCharacterError");
+                        throw new __oxT.DOMException("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", "InvalidCharacterError");
                     }
                 }
             const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -3733,7 +3733,7 @@
         
         const currentSize = getStorageAreaSize(type);
         if (currentSize - oldSize + newSize > LOCAL_STORAGE_QUOTA) {
-            throw new DOMException(
+            throw new __oxT.DOMException(
                 "Failed to execute 'setItem' on 'Storage': Setting the value of '" + key + "' exceeded the quota.",
                 'QuotaExceededError'
             );
@@ -4323,7 +4323,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     // an empty URL in the message (e.g. '/x' in an about:blank document).
     function _historyTargetUrl(method, url) {
         const docUrl = _locationData.href;
-        const refuse = (shown) => new DOMException("Failed to execute '" + method +
+        const refuse = (shown) => new __oxT.DOMException("Failed to execute '" + method +
             "' on 'History': A history state object with URL '" + shown +
             "' cannot be created in a document with origin '" + _locationData.origin +
             "' and URL '" + docUrl + "'.", "SecurityError");
@@ -4349,7 +4349,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         } catch (e) {
             const reason = String((e && e.message) || e)
                 .replace(/^Failed to execute '[^']*' on '[^']*': /, '');
-            throw new DOMException("Failed to execute '" + method +
+            throw new __oxT.DOMException("Failed to execute '" + method +
                 "' on 'History': " + reason, "DataCloneError");
         }
     }
@@ -4688,14 +4688,14 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         static abort(reason) {
             const sig = new AbortSignal();
             sig.aborted = true;
-            sig.reason = reason || new DOMException("The operation was aborted.", "AbortError");
+            sig.reason = reason || new __oxT.DOMException("The operation was aborted.", "AbortError");
             return sig;
         }
         static timeout(ms) {
             const sig = new AbortSignal();
             setTimeout(() => {
                 sig.aborted = true;
-                sig.reason = new DOMException("The operation timed out.", "TimeoutError");
+                sig.reason = new __oxT.DOMException("The operation timed out.", "TimeoutError");
                 for (const cb of sig._listeners) cb();
             }, ms);
             return sig;
@@ -4709,7 +4709,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         abort(reason) {
             if (this.signal.aborted) return;
             this.signal.aborted = true;
-            this.signal.reason = reason || new DOMException("The operation was aborted.", "AbortError");
+            this.signal.reason = reason || new __oxT.DOMException("The operation was aborted.", "AbortError");
             for (const cb of this.signal._listeners) cb();
         }
     }
@@ -5667,7 +5667,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 queueMicrotask(() => {
                     if (missing) {
                         this.status = "error";
-                        this._settle.reject(new DOMException("A network error occurred.", "NetworkError"));
+                        this._settle.reject(new __oxT.DOMException("A network error occurred.", "NetworkError"));
                     } else {
                         this.status = "loaded";
                         this._settle.resolve(this);
@@ -5705,31 +5705,31 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         const _fontSets = new WeakMap();
         const _fontSetFaces = (o) => {
             const faces = _fontSets.get(o);
-            if (!faces) throw new TypeError('Illegal invocation');
+            if (!faces) throw new __oxT.TypeError('Illegal invocation');
             return faces;
         };
         const _fontSetArgs = (method, args, n) => {
             if (args.length < n) {
-                throw new TypeError(`Failed to execute '${method}' on 'FontFaceSet': ${n} argument required, but only ${args.length} present.`);
+                throw new __oxT.TypeError(`Failed to execute '${method}' on 'FontFaceSet': ${n} argument required, but only ${args.length} present.`);
             }
         };
         const _fontSetFace = (method, args) => {
             _fontSetArgs(method, args, 1);
             if (!(args[0] instanceof globalThis.FontFace)) {
-                throw new TypeError(`Failed to execute '${method}' on 'FontFaceSet': parameter 1 is not of type 'FontFace'.`);
+                throw new __oxT.TypeError(`Failed to execute '${method}' on 'FontFaceSet': parameter 1 is not of type 'FontFace'.`);
             }
             return args[0];
         };
         const _fontSetMatches = (faces, families) =>
             faces.filter((f) => families.includes(String(f.family).toLowerCase()));
-        const _unresolvedFont = (font) => new DOMException(`Could not resolve '${font}' as a font.`, 'SyntaxError');
+        const _unresolvedFont = (font) => new __oxT.DOMException(`Could not resolve '${font}' as a font.`, 'SyntaxError');
 
         const _FontSetIteratorProto = Object.create(Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())));
         const _fontSetIterators = new WeakMap();
         Object.defineProperty(_FontSetIteratorProto, 'next', {
             value: _maskFunction({ next() {
                 const it = _fontSetIterators.get(this);
-                if (!it) throw new TypeError('Illegal invocation');
+                if (!it) throw new __oxT.TypeError('Illegal invocation');
                 if (it.i >= it.faces.length) return { value: undefined, done: true };
                 const face = it.faces[it.i++];
                 return { value: it.pairs ? [face, face] : face, done: false };
@@ -5750,7 +5750,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 const faces = _fontSetFaces(this);
                 _fontSetArgs('check', arguments, 1);
                 const families = _fontFamilies(font);
-                if (!families) throw new DOMException(`Failed to execute 'check' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
+                if (!families) throw new __oxT.DOMException(`Failed to execute 'check' on 'FontFaceSet': Could not resolve '${font}' as a font.`, 'SyntaxError');
                 return _fontSetMatches(faces, families).every((f) => f.status === 'loaded');
             },
             clear() { _fontSetFaces(this).length = 0; },
@@ -5765,7 +5765,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             forEach(callback) {
                 const faces = _fontSetFaces(this);
                 _fontSetArgs('forEach', arguments, 1);
-                if (typeof callback !== 'function') throw new TypeError("Failed to execute 'forEach' on 'FontFaceSet': The callback provided as parameter 1 is not a function.");
+                if (typeof callback !== 'function') throw new __oxT.TypeError("Failed to execute 'forEach' on 'FontFaceSet': The callback provided as parameter 1 is not a function.");
                 for (const face of faces.slice()) callback.call(arguments[1], face, face, this);
             },
             has(face) { return _fontSetFaces(this).includes(_fontSetFace('has', arguments)); },
@@ -6038,7 +6038,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             requestWindow(_options) {
                 // We don't actually open a PiP window in headless. Reject
                 // to match Chrome's headless behavior.
-                return Promise.reject(new DOMException(
+                return Promise.reject(new __oxT.DOMException(
                     'Document PiP requires a user gesture',
                     'NotAllowedError'
                 ));
@@ -6210,8 +6210,8 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                     this.sourceBuffers = new SourceBufferList();
                     this.activeSourceBuffers = new SourceBufferList();
                 }
-                addSourceBuffer() { throw new DOMException('InvalidStateError'); }
-                removeSourceBuffer() { throw new DOMException('InvalidStateError'); }
+                addSourceBuffer() { throw new __oxT.DOMException('InvalidStateError'); }
+                removeSourceBuffer() { throw new __oxT.DOMException('InvalidStateError'); }
                 endOfStream() {}
                 setLiveSeekableRange() {}
                 clearLiveSeekableRange() {}
@@ -6448,12 +6448,12 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             constructor() { /* spec: no constructor args */ }
             decodingInfo(configuration) {
                 if (configuration == null || typeof configuration !== "object") {
-                    return Promise.reject(new TypeError(
+                    return Promise.reject(new __oxT.TypeError(
                         "Failed to execute 'decodingInfo' on 'MediaCapabilities': " +
                         "1 argument required, but only 0 present."));
                 }
                 if (!_supportedDecodingTypes.has(configuration.type)) {
-                    return Promise.reject(new TypeError(
+                    return Promise.reject(new __oxT.TypeError(
                         "Failed to execute 'decodingInfo' on 'MediaCapabilities': " +
                         "The provided value '" + configuration.type +
                         "' is not a valid enum value of type MediaDecodingType."));
@@ -6462,12 +6462,12 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             }
             encodingInfo(configuration) {
                 if (configuration == null || typeof configuration !== "object") {
-                    return Promise.reject(new TypeError(
+                    return Promise.reject(new __oxT.TypeError(
                         "Failed to execute 'encodingInfo' on 'MediaCapabilities': " +
                         "1 argument required, but only 0 present."));
                 }
                 if (!_supportedEncodingTypes.has(configuration.type)) {
-                    return Promise.reject(new TypeError(
+                    return Promise.reject(new __oxT.TypeError(
                         "Failed to execute 'encodingInfo' on 'MediaCapabilities': " +
                         "The provided value '" + configuration.type +
                         "' is not a valid enum value of type MediaEncodingType."));
@@ -6507,7 +6507,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         const _pendingRvfc = new Map();
         const _requestVideoFrameCallback = function requestVideoFrameCallback(cb) {
             if (typeof cb !== "function") {
-                throw new TypeError(
+                throw new __oxT.TypeError(
                     "Failed to execute 'requestVideoFrameCallback' on 'HTMLVideoElement': " +
                     "The callback provided as parameter 1 is not a function.");
             }
@@ -6644,7 +6644,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             globalThis.document.hasStorageAccess = function() { return Promise.resolve(false); };
         }
         if (!globalThis.document.requestStorageAccess) {
-            globalThis.document.requestStorageAccess = function() { return Promise.reject(new DOMException("Not allowed", "NotAllowedError")); };
+            globalThis.document.requestStorageAccess = function() { return Promise.reject(new __oxT.DOMException("Not allowed", "NotAllowedError")); };
         }
     }
 
@@ -6724,7 +6724,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     if (!globalThis.Touch) {
         globalThis.Touch = function Touch(init) {
             if (!init || init.identifier === undefined || !init.target) {
-                throw new TypeError("Failed to construct 'Touch': required members identifier and target");
+                throw new __oxT.TypeError("Failed to construct 'Touch': required members identifier and target");
             }
             this.identifier = init.identifier;
             this.target = init.target;
@@ -6810,9 +6810,9 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 return Promise.resolve({
                     match() { return Promise.resolve(undefined); },
                     matchAll() { return Promise.resolve([]); },
-                    add() { return Promise.reject(new TypeError("Cache.add not supported")); },
-                    addAll() { return Promise.reject(new TypeError("Cache.addAll not supported")); },
-                    put() { return Promise.reject(new TypeError("Cache.put not supported")); },
+                    add() { return Promise.reject(new __oxT.TypeError("Cache.add not supported")); },
+                    addAll() { return Promise.reject(new __oxT.TypeError("Cache.addAll not supported")); },
+                    put() { return Promise.reject(new __oxT.TypeError("Cache.put not supported")); },
                     delete() { return Promise.resolve(false); },
                     keys() { return Promise.resolve([]); },
                 });
@@ -6848,7 +6848,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             constructor(token) {
                 super();
                 if (token !== _internalBuild) {
-                    throw new TypeError(
+                    throw new __oxT.TypeError(
                         "Failed to construct 'CookieStore': Illegal constructor"
                     );
                 }
@@ -6937,7 +6937,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             constructor(title, options) {
                 super();
                 if (arguments.length === 0) {
-                    throw new TypeError("Failed to construct 'Notification': 1 argument required, but only 0 present.");
+                    throw new __oxT.TypeError("Failed to construct 'Notification': 1 argument required, but only 0 present.");
                 }
                 this.title = String(title);
                 this.dir = (options && options.dir) || "auto";
@@ -6995,7 +6995,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     // (5) ApplePaySession — macOS/iOS only surface.
     (() => {
         const ApplePaySession = ({
-            ApplePaySession() { throw new TypeError("Illegal constructor"); }
+            ApplePaySession() { throw new __oxT.TypeError("Illegal constructor"); }
         }).ApplePaySession;
         ApplePaySession.canMakePayments = ({ canMakePayments() { return true; } }).canMakePayments;
         ApplePaySession.canMakePaymentsWithActiveCard = ({ canMakePaymentsWithActiveCard() { return Promise.resolve(true); } }).canMakePaymentsWithActiveCard;
@@ -7023,7 +7023,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
                 this.screenState = null;
                 this.onchange = null;
             }
-            start(_options) { return Promise.reject(new DOMException("Not allowed", "NotAllowedError")); }
+            start(_options) { return Promise.reject(new __oxT.DOMException("Not allowed", "NotAllowedError")); }
             abort() {}
         }
         Object.defineProperty(IdleDetector.prototype, Symbol.toStringTag, {
@@ -7045,7 +7045,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         class EyeDropper {
             constructor() {}
             open(_options) {
-                return Promise.reject(new DOMException("The user canceled the selection", "AbortError"));
+                return Promise.reject(new __oxT.DOMException("The user canceled the selection", "AbortError"));
             }
         }
         Object.defineProperty(EyeDropper.prototype, Symbol.toStringTag, {
@@ -7179,7 +7179,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     if (globalThis.Document && typeof globalThis.Document.prototype.hasStorageAccess === "undefined") {
         const _hasStorageAccess = function hasStorageAccess() { return Promise.resolve(false); };
         const _requestStorageAccess = function requestStorageAccess() { 
-            return Promise.reject(new DOMException("The request was denied.", "NotAllowedError")); 
+            return Promise.reject(new __oxT.DOMException("The request was denied.", "NotAllowedError")); 
         };
         if (typeof _maskFunction === "function") {
             _maskFunction(_hasStorageAccess, "hasStorageAccess");
@@ -7197,10 +7197,10 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     // Chrome 130+ ad-fraud prevention APIs. Absence differs from real Chrome.
     if (globalThis.Document && typeof globalThis.Document.prototype.hasPrivateToken === "undefined") {
         const _hasPrivateToken = function hasPrivateToken() { 
-            return Promise.reject(new DOMException("The Trust Token API is not supported.", "NotSupportedError"));
+            return Promise.reject(new __oxT.DOMException("The Trust Token API is not supported.", "NotSupportedError"));
         };
         const _hasRedemptionRecord = function hasRedemptionRecord() {
-            return Promise.reject(new DOMException("The Trust Token API is not supported.", "NotSupportedError"));
+            return Promise.reject(new __oxT.DOMException("The Trust Token API is not supported.", "NotSupportedError"));
         };
         if (typeof _maskFunction === "function") {
             _maskFunction(_hasPrivateToken, "hasPrivateToken");
@@ -7238,10 +7238,10 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
             constructor(methodData, details, options = {}) {
                 super();
                 if (!Array.isArray(methodData) || methodData.length === 0) {
-                    throw new TypeError("Failed to construct 'PaymentRequest': At least one payment method is required");
+                    throw new __oxT.TypeError("Failed to construct 'PaymentRequest': At least one payment method is required");
                 }
                 if (!details || !details.total) {
-                    throw new TypeError("Failed to construct 'PaymentRequest': required member total is undefined.");
+                    throw new __oxT.TypeError("Failed to construct 'PaymentRequest': required member total is undefined.");
                 }
                 this.#methods = methodData;
                 const _id = (details && details.id)
@@ -7299,7 +7299,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
         class PaymentResponse extends EventTarget {
             constructor() {
                 super();
-                throw new TypeError("Illegal constructor");
+                throw new __oxT.TypeError("Illegal constructor");
             }
         }
         Object.defineProperty(PaymentResponse.prototype, Symbol.toStringTag, {
@@ -7499,7 +7499,7 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     // [SecureContext] APIs that need user activation or permission —
     // present as functions, rejecting exactly like an activation-less call.
     const _rejectNotAllowed = (name) => function () {
-        return Promise.reject(new DOMException(
+        return Promise.reject(new __oxT.DOMException(
             name + " requires a user gesture", "NotAllowedError"));
     };
     globalThis.getScreenDetails = _rejectNotAllowed("getScreenDetails");
@@ -7516,10 +7516,10 @@ globalThis[Symbol.for("__ox_css_props")] = CHROME_COMPUTED_STYLE_PROPS;
     };
 
     globalThis.webkitRequestFileSystem = function webkitRequestFileSystem(/* type, size, sc, ec */) {
-        if (typeof arguments[3] === "function") arguments[3](new DOMException("NotSupportedError", "NotSupportedError"));
+        if (typeof arguments[3] === "function") arguments[3](new __oxT.DOMException("NotSupportedError", "NotSupportedError"));
     };
     globalThis.webkitResolveLocalFileSystemURL = function webkitResolveLocalFileSystemURL(/* url, sc, ec */) {
-        if (typeof arguments[2] === "function") arguments[2](new DOMException("NotSupportedError", "NotSupportedError"));
+        if (typeof arguments[2] === "function") arguments[2](new __oxT.DOMException("NotSupportedError", "NotSupportedError"));
     };
 
     // WebKit-alias speech interfaces: constructible, Chrome-shaped shells.

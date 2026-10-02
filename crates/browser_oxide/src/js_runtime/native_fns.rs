@@ -355,7 +355,34 @@ fn page_frames<'s>(
             frames.push(site);
         }
     }
+    // V8 applies `Error.stackTraceLimit` when it CAPTURES the stack, before
+    // this callback runs, so the limit the page sees is already spent on the
+    // frames we are about to drop. Engine errors are built with a reserve
+    // (see `__oxT` in console_bootstrap.js) to make up for it, which means
+    // the capture can now be LONGER than the page asked for. Trim back to
+    // the page's own limit here, so the number of frames a script reads is
+    // the number it would read in Chrome.
+    let limit = page_stack_trace_limit(scope);
+    if let Some(limit) = limit {
+        let limit = limit.min(frames.len());
+        frames.truncate(limit);
+    }
     frames
+}
+
+/// The current `Error.stackTraceLimit`, or `None` when it is not a usable
+/// finite number (a non-numeric value leaves the list as captured).
+fn page_stack_trace_limit(scope: &mut v8::PinScope<'_, '_>) -> Option<usize> {
+    let global = scope.get_current_context().global(scope);
+    let error_key = v8::String::new(scope, "Error")?;
+    let error_ctor = global.get(scope, error_key.into())?.to_object(scope)?;
+    let key = v8::String::new(scope, "stackTraceLimit")?;
+    let value = error_ctor.get(scope, key.into())?;
+    let n = value.number_value(scope)?;
+    if !n.is_finite() || n < 0.0 {
+        return None;
+    }
+    Some(n.floor() as usize)
 }
 
 /// `ErrorUtils::ToString`: the `name: message` line V8 heads a stack with.

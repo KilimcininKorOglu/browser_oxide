@@ -123,7 +123,7 @@
             get platform() { return _osName; }
             getHighEntropyValues(hints) {
                 if (!Array.isArray(hints)) {
-                    return Promise.reject(new TypeError(
+                    return Promise.reject(new __oxT.TypeError(
                         "Failed to execute 'getHighEntropyValues' on 'NavigatorUAData': The provided value cannot be converted to a sequence."
                     ));
                 }
@@ -222,7 +222,7 @@
                 !(t instanceof ArrayBuffer) &&
                 !(ArrayBuffer.isView && ArrayBuffer.isView(t))
             ) {
-                throw new TypeError(
+                throw new __oxT.TypeError(
                     "postMessage: transferable must be an ArrayBuffer or view"
                 );
             }

@@ -38,7 +38,7 @@
     _nativeTS.scriptFor = (value, method) => {
         if (!_nativeTS.enforced()) return _String(value);
         if (_tsValues.has(value)) return _tsValues.get(value);
-        const refuse = (why) => new TypeError(`Failed to execute '${method}' on 'Window': This document requires 'TrustedScript' assignment${why}.`);
+        const refuse = (why) => new __oxT.TypeError(`Failed to execute '${method}' on 'Window': This document requires 'TrustedScript' assignment${why}.`);
         if (!_hasDefaultPolicy) throw refuse('');
         if (typeof _defaultCreateScript !== 'function') throw refuse(" and no 'default' policy for 'TrustedScript' has been defined");
         const result = _call(_defaultCreateScript, undefined, _String(value), 'TrustedScript', 'Window ' + method);

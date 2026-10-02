@@ -53,7 +53,7 @@
     // ================================================================
     if (!globalThis.atob) {
         globalThis.atob = function atob(s) {
-            if (arguments.length === 0) throw new TypeError("Failed to execute 'atob' on 'Window': 1 argument required, but only 0 present.");
+            if (arguments.length === 0) throw new __oxT.TypeError("Failed to execute 'atob' on 'Window': 1 argument required, but only 0 present.");
             const input = String(s).replace(/[\t\n\f\r ]/g, "");
             if (input.length === 0) return "";
             const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -71,10 +71,10 @@
     }
     if (!globalThis.btoa) {
         globalThis.btoa = function btoa(s) {
-            if (arguments.length === 0) throw new TypeError("Failed to execute 'btoa' on 'Window': 1 argument required, but only 0 present.");
+            if (arguments.length === 0) throw new __oxT.TypeError("Failed to execute 'btoa' on 'Window': 1 argument required, but only 0 present.");
             const str = String(s);
             for (let i = 0; i < str.length; i++) {
-                if (str.charCodeAt(i) > 255) throw new DOMException("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", "InvalidCharacterError");
+                if (str.charCodeAt(i) > 255) throw new __oxT.DOMException("Failed to execute 'btoa' on 'Window': The string to be encoded contains characters outside of the Latin1 range.", "InvalidCharacterError");
             }
             const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
             let out = "";
@@ -161,7 +161,7 @@
                 const jwk = keyData;
                 raw = jwk && jwk.k ? b64u(jwk.k) : jwk && jwk.n ? b64u(jwk.n) : new Uint8Array(0);
             } else {
-                return Promise.reject(new DOMException(`unsupported key format ${format}`, "NotSupportedError"));
+                return Promise.reject(new __oxT.DOMException(`unsupported key format ${format}`, "NotSupportedError"));
             }
             const algObj = typeof algorithm === 'string' ? { name: algorithm } : (algorithm || {});
             const algName = String(algObj.name || '').toUpperCase();
@@ -183,9 +183,9 @@
     _defProtoMethod(_SubtleProto, 'exportKey', function exportKey(format, key) {
         try {
             const entry = __oxCryptoKeys.get(key && key.__oxHandle);
-            if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
+            if (!entry) return Promise.reject(new __oxT.DOMException("key not found", "InvalidAccessError"));
             if (String(format).toLowerCase() !== 'raw') {
-                return Promise.reject(new DOMException(`unsupported export format ${format}`, "NotSupportedError"));
+                return Promise.reject(new __oxT.DOMException(`unsupported export format ${format}`, "NotSupportedError"));
             }
             return Promise.resolve(entry.raw.slice().buffer);
         } catch (e) { return Promise.reject(e); }
@@ -196,7 +196,7 @@
         try {
             const algName = _algoName(algorithm);
             const entry = __oxCryptoKeys.get(key && key.__oxHandle);
-            if (!entry) return Promise.reject(new DOMException("key not found", "InvalidAccessError"));
+            if (!entry) return Promise.reject(new __oxT.DOMException("key not found", "InvalidAccessError"));
             if (algName === 'HMAC') {
                 const hash = entry.hashName
                     ? _hmacHash(entry.hashName)
@@ -204,7 +204,7 @@
                 const out = ops.op_crypto_hmac_sign(hash, entry.raw, _toBytes(data));
                 return Promise.resolve(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength));
             }
-            return Promise.reject(new DOMException(`${algName} not implemented`, "NotSupportedError"));
+            return Promise.reject(new __oxT.DOMException(`${algName} not implemented`, "NotSupportedError"));
         } catch (e) { return Promise.reject(e); }
     });
     _defProtoMethod(_SubtleProto, 'verify', function verify(algorithm, key, signature, data) {
@@ -219,15 +219,15 @@
         } catch (e) { return Promise.reject(e); }
     });
     const _subtleNotImplemented = (name) => function (...args) {
-        return Promise.reject(new DOMException(`${name} not implemented`, "NotSupportedError"));
+        return Promise.reject(new __oxT.DOMException(`${name} not implemented`, "NotSupportedError"));
     };
     for (const m of ['encrypt','decrypt','generateKey','deriveKey','deriveBits','wrapKey','unwrapKey']) {
         _defProtoMethod(_SubtleProto, m, _subtleNotImplemented(m));
     }
 
     _defProtoMethod(_CryptoProto, 'getRandomValues', function getRandomValues(arr) {
-        if (!ArrayBuffer.isView(arr)) throw new TypeError("getRandomValues expects an ArrayBufferView");
-        if (arr.byteLength > 65536) throw new DOMException("QuotaExceededError", "QuotaExceededError");
+        if (!ArrayBuffer.isView(arr)) throw new __oxT.TypeError("getRandomValues expects an ArrayBufferView");
+        if (arr.byteLength > 65536) throw new __oxT.DOMException("QuotaExceededError", "QuotaExceededError");
         const u8 = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
         ops.op_crypto_random_fill(u8);
         return arr;
@@ -270,7 +270,7 @@
                 return new Uint8Array(buf);
             }
             encodeInto(source, destination) {
-                if (!(destination instanceof Uint8Array)) throw new TypeError("encodeInto destination must be a Uint8Array");
+                if (!(destination instanceof Uint8Array)) throw new __oxT.TypeError("encodeInto destination must be a Uint8Array");
                 source = String(source == null ? "" : source);
                 let read = 0, written = 0;
                 for (let i = 0; i < source.length; i++) {
@@ -317,7 +317,7 @@
                         let cp = ((b0 & 0x07) << 18) | ((bytes[i+1] & 0x3f) << 12) | ((bytes[i+2] & 0x3f) << 6) | (bytes[i+3] & 0x3f);
                         cp -= 0x10000; str += String.fromCharCode(0xD800 + (cp >> 10), 0xDC00 + (cp & 0x3ff)); i += 4;
                     }
-                    else { if (this._fatal) throw new TypeError("The encoded data was not valid."); str += "\uFFFD"; i++; }
+                    else { if (this._fatal) throw new __oxT.TypeError("The encoded data was not valid."); str += "\uFFFD"; i++; }
                 }
                 return str;
             }
@@ -358,13 +358,13 @@
         };
         const _need = (args, count, cls, method) => {
             if (args.length < count) {
-                throw new TypeError(`Failed to execute '${method}' on '${cls}': ${count} argument${count > 1 ? 's' : ''} required, but only ${args.length} present.`);
+                throw new __oxT.TypeError(`Failed to execute '${method}' on '${cls}': ${count} argument${count > 1 ? 's' : ''} required, but only ${args.length} present.`);
             }
         };
         const _pairFrom = (item) => {
             const pair = [...item];
             if (pair.length !== 2) {
-                throw new TypeError("Failed to construct 'URLSearchParams': Each query pair must be an iterable [name, value] tuple");
+                throw new __oxT.TypeError("Failed to construct 'URLSearchParams': Each query pair must be an iterable [name, value] tuple");
             }
             return [String(pair[0]), String(pair[1])];
         };
@@ -380,7 +380,7 @@
         const _uspState = new WeakMap();
         const _uspOf = (self) => {
             const st = _uspState.get(self);
-            if (!st) throw new TypeError('Illegal invocation');
+            if (!st) throw new __oxT.TypeError('Illegal invocation');
             return st;
         };
         const _uspSerialize = (list) => list.map(([k, v]) => _formEncode(k) + '=' + _formEncode(v)).join('&');
@@ -449,7 +449,7 @@
             forEach(callback, thisArg = undefined) {
                 _need(arguments, 1, 'URLSearchParams', 'forEach');
                 if (typeof callback !== 'function') {
-                    throw new TypeError("Failed to execute 'forEach' on 'URLSearchParams': parameter 1 is not of type 'Function'.");
+                    throw new __oxT.TypeError("Failed to execute 'forEach' on 'URLSearchParams': parameter 1 is not of type 'Function'.");
                 }
                 const st = _uspOf(this);
                 for (let i = 0; i < st.list.length; i++) callback.call(thisArg, st.list[i][1], st.list[i][0], this);
@@ -486,7 +486,7 @@
         const _urlState = new WeakMap();
         const _urlOf = (self) => {
             const st = _urlState.get(self);
-            if (!st) throw new TypeError('Illegal invocation');
+            if (!st) throw new __oxT.TypeError('Illegal invocation');
             return st;
         };
         const _parseUrl = (input, base) => (base === undefined
@@ -507,21 +507,21 @@
         globalThis.URL = class URL {
             constructor(url, base = undefined) {
                 if (arguments.length === 0) {
-                    throw new TypeError("Failed to construct 'URL': 1 argument required, but only 0 present.");
+                    throw new __oxT.TypeError("Failed to construct 'URL': 1 argument required, but only 0 present.");
                 }
                 const parts = _parseUrl(String(url), base === undefined ? undefined : String(base));
-                if (!parts) throw new TypeError("Failed to construct 'URL': Invalid URL");
+                if (!parts) throw new __oxT.TypeError("Failed to construct 'URL': Invalid URL");
                 _urlState.set(this, { parts, params: null });
             }
             static canParse(url, base = undefined) {
                 if (arguments.length === 0) {
-                    throw new TypeError("Failed to execute 'canParse' on 'URL': 1 argument required, but only 0 present.");
+                    throw new __oxT.TypeError("Failed to execute 'canParse' on 'URL': 1 argument required, but only 0 present.");
                 }
                 return _parseUrl(String(url), base === undefined ? undefined : String(base)) !== null;
             }
             static parse(url, base = undefined) {
                 if (arguments.length === 0) {
-                    throw new TypeError("Failed to execute 'parse' on 'URL': 1 argument required, but only 0 present.");
+                    throw new __oxT.TypeError("Failed to execute 'parse' on 'URL': 1 argument required, but only 0 present.");
                 }
                 const parts = _parseUrl(String(url), base === undefined ? undefined : String(base));
                 if (!parts) return null;
@@ -533,7 +533,7 @@
             set href(value) {
                 const st = _urlOf(this);
                 const parts = _parseUrl(String(value), undefined);
-                if (!parts) throw new TypeError("Failed to set the 'href' property on 'URL': Invalid URL");
+                if (!parts) throw new __oxT.TypeError("Failed to set the 'href' property on 'URL': Invalid URL");
                 st.parts = parts;
                 _resetParams(st);
             }
@@ -664,11 +664,11 @@
             addEventListener(type, cb) { if (type === "abort") this._listeners.push(cb); }
             removeEventListener(type, cb) { if (type === "abort") this._listeners = this._listeners.filter(l => l !== cb); }
             throwIfAborted() { if (this.aborted) throw this.reason; }
-            static abort(reason) { const sig = new AbortSignal(); sig.aborted = true; sig.reason = reason || new DOMException("The operation was aborted.", "AbortError"); return sig; }
+            static abort(reason) { const sig = new AbortSignal(); sig.aborted = true; sig.reason = reason || new __oxT.DOMException("The operation was aborted.", "AbortError"); return sig; }
             static timeout(ms) {
                 const sig = new AbortSignal();
                 setTimeout(() => {
-                    sig.aborted = true; sig.reason = new DOMException("The operation timed out.", "TimeoutError");
+                    sig.aborted = true; sig.reason = new __oxT.DOMException("The operation timed out.", "TimeoutError");
                     for (const cb of sig._listeners) cb();
                 }, ms);
                 return sig;
@@ -679,7 +679,7 @@
             abort(reason) {
                 if (this.signal.aborted) return;
                 this.signal.aborted = true;
-                this.signal.reason = reason || new DOMException("The operation was aborted.", "AbortError");
+                this.signal.reason = reason || new __oxT.DOMException("The operation was aborted.", "AbortError");
                 for (const cb of this.signal._listeners) cb();
             }
         }

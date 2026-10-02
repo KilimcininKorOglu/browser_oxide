@@ -184,7 +184,7 @@
     // it exists; but during bootstrap execution order it may not.
     function _dataCloneError(msg) {
         try {
-            return new DOMException(msg, "DataCloneError");
+            return new __oxT.DOMException(msg, "DataCloneError");
         } catch (_e) {
             const err = new Error(msg);
             err.name = "DataCloneError";
@@ -353,7 +353,7 @@
         // Worker.postMessage path already does, so no regression.
         // TODO(A6 / B2): neuter transferred buffers after clone.
         if (!Array.isArray(_transfer)) {
-            throw new TypeError("structuredClone: transfer must be an array");
+            throw new __oxT.TypeError("structuredClone: transfer must be an array");
         }
         return clone(value, new WeakMap());
     };

@@ -41,7 +41,7 @@
 
     function _stub(name, base = Object) {
         const C = function() {
-            throw new TypeError("Failed to construct '" + name + "': Illegal constructor");
+            throw new __oxT.TypeError("Failed to construct '" + name + "': Illegal constructor");
         };
         if (base !== Object) {
             C.prototype = Object.create(base.prototype);

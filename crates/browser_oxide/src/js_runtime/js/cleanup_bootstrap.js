@@ -246,7 +246,7 @@
                         const safariQuery = function query(desc) {
                             const name = desc && typeof desc === 'object' ? desc.name : undefined;
                             if (typeof name !== 'string' || !_safariAllowed.has(name)) {
-                                return Promise.reject(new TypeError(
+                                return Promise.reject(new __oxT.TypeError(
                                     "Failed to execute 'query' on 'Permissions': "
                                     + (typeof name === 'string'
                                         ? "The provided value '" + name + "' is not a valid enum value of type PermissionName."

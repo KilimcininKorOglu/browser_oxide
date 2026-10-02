@@ -1,6 +1,63 @@
 ((globalThis) => {
     const core = Deno.core;
 
+    // Error constructors the engine uses to raise its own errors, wrapped so
+    // the capture happens with a reserve.
+    //
+    // V8 stops collecting frames at `Error.stackTraceLimit`, and it does so
+    // BEFORE the stack formatter runs. Chrome's engine-thrown errors come from
+    // C++ and occupy no frame at all, so a script that shrinks the limit —
+    // which is exactly what a challenge does, to hide its own frames — still
+    // reads a full complement of ITS frames back. Ours are built in JS and sit
+    // between the script and the throw site, so the same limit left a script
+    // with nothing at all: measured, limit 3 gave 3 frames in Chrome and 0
+    // here. Building with the limit raised, and trimming back afterwards in
+    // the stack formatter (native_fns::page_frames), makes the count a script
+    // reads the one it would read in Chrome.
+    //
+    // `new X(...)` still works through these, so the call sites read the same
+    // and the result is a real instance of the real constructor.
+    {
+        const _wrapErrorCtor = (C) => {
+            const W = function (...args) {
+                let lim;
+                try { lim = Error.stackTraceLimit; } catch (_) {}
+                const bump = typeof lim === 'number' && lim >= 0 && lim < Infinity;
+                if (bump) { try { Error.stackTraceLimit = lim + 16; } catch (_) {} }
+                try {
+                    return Reflect.construct(C, args);
+                } finally {
+                    if (bump) { try { Error.stackTraceLimit = lim; } catch (_) {} }
+                }
+            };
+            Object.defineProperty(W, 'name', { value: C.name, configurable: true });
+            Object.defineProperty(W, 'length', { value: C.length, configurable: true });
+            return W;
+        };
+        // Resolved on first use: DOMException does not exist yet at this
+        // point in the bootstrap, and nothing raises an error before every
+        // file has run anyway.
+        const _oxT = {};
+        for (const _name of ['TypeError', 'RangeError', 'ReferenceError', 'EvalError',
+            'SyntaxError', 'URIError', 'AggregateError', 'DOMException']) {
+            Object.defineProperty(_oxT, _name, {
+                configurable: true,
+                get() {
+                    const C = globalThis[_name];
+                    if (typeof C !== 'function') return C;
+                    const W = _wrapErrorCtor(C);
+                    Object.defineProperty(_oxT, _name, {
+                        value: W, writable: true, enumerable: true, configurable: true,
+                    });
+                    return W;
+                },
+            });
+        }
+        Object.defineProperty(globalThis, '__oxT', {
+            value: _oxT, writable: true, enumerable: false, configurable: true,
+        });
+    }
+
     // Read a property WITHOUT invoking a page-defined accessor. Real
     // V8 `Error.stack`/`message` are own *data* properties and
     // `name`/`constructor` are data properties on the prototype chain;

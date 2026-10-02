@@ -430,7 +430,7 @@
 
     const _dispatchEvent = function dispatchEvent(event) {
         if (!(event instanceof Event)) {
-            throw new TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
+            throw new __oxT.TypeError("Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.");
         }
         event.target = this;
         const nodeId = _getNodeIdOrMinusOne(this);

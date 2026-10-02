@@ -1785,7 +1785,7 @@
                 (self.tagName === "CANVAS" ||
                     self instanceof globalThis.HTMLCanvasElement);
             if (!ok) {
-                throw new TypeError(
+                throw new __oxT.TypeError(
                     "Failed to execute '" +
                         methodName +
                         "' on 'HTMLCanvasElement': Illegal invocation"
@@ -1874,7 +1874,7 @@
             value: function toBlob(cb, type) {
                 _requireCanvas(this, "toBlob");
                 if (typeof cb !== "function") {
-                    throw new TypeError(
+                    throw new __oxT.TypeError(
                         "Failed to execute 'toBlob' on 'HTMLCanvasElement': callback is not a function"
                     );
                 }
@@ -1961,7 +1961,7 @@
         }
         transferToImageBitmap() {
             if (!this._context && !this._glctx1 && !this._glctx2) {
-                throw new DOMException("Failed to execute 'transferToImageBitmap' on 'OffscreenCanvas': Cannot transfer an ImageBitmap from an OffscreenCanvas with no context", "InvalidStateError");
+                throw new __oxT.DOMException("Failed to execute 'transferToImageBitmap' on 'OffscreenCanvas': Cannot transfer an ImageBitmap from an OffscreenCanvas with no context", "InvalidStateError");
             }
             const bitmap = new globalThis.ImageBitmap();
             Object.defineProperty(bitmap, "width", { value: this.width, configurable: true });
@@ -2014,11 +2014,11 @@
                 const ok = this && (this.tagName === "CANVAS" ||
                     this instanceof globalThis.HTMLCanvasElement);
                 if (!ok) {
-                    throw new TypeError(
+                    throw new __oxT.TypeError(
                         "Failed to execute 'transferControlToOffscreen' on 'HTMLCanvasElement': Illegal invocation");
                 }
                 if (this._offscreenTransferred) {
-                    throw new DOMException(
+                    throw new __oxT.DOMException(
                         "Cannot transfer control from a canvas for more than one time.",
                         "InvalidStateError");
                 }

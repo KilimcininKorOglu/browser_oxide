@@ -69,7 +69,7 @@
         if (value !== null && typeof value === "object" && _nodeIds.has(value)) {
             return value;
         }
-        throw new TypeError(
+        throw new __oxT.TypeError(
             "Failed to execute '" + method + "' on '" + owner + "': " +
             "parameter " + index + " is not of type 'Node'."
         );
@@ -521,10 +521,10 @@
     function _checkToken(method, token) {
         const t = String(token);
         if (t === "") {
-            throw new DOMException("Failed to execute '" + method + "' on 'DOMTokenList': The token provided must not be empty.", "SyntaxError");
+            throw new __oxT.DOMException("Failed to execute '" + method + "' on 'DOMTokenList': The token provided must not be empty.", "SyntaxError");
         }
         if (/[\t\n\f\r ]/.test(t)) {
-            throw new DOMException("Failed to execute '" + method + "' on 'DOMTokenList': The token provided ('" + t + "') contains HTML space characters, which are not valid in tokens.", "InvalidCharacterError");
+            throw new __oxT.DOMException("Failed to execute '" + method + "' on 'DOMTokenList': The token provided ('" + t + "') contains HTML space characters, which are not valid in tokens.", "InvalidCharacterError");
         }
         return t;
     }
@@ -555,7 +555,7 @@
     const _isIndex = (p) => typeof p === "string" && /^(0|[1-9]\d*)$/.test(p);
 
     class DOMTokenList {
-        constructor() { throw new TypeError("Failed to construct 'DOMTokenList': Illegal constructor"); }
+        constructor() { throw new __oxT.TypeError("Failed to construct 'DOMTokenList': Illegal constructor"); }
         add(...tokens) {
             const set = _tokensOf(this);
             for (const t of tokens.map((x) => _checkToken("add", x))) if (!set.includes(t)) set.push(t);
@@ -584,7 +584,7 @@
             return true;
         }
         supports() {
-            throw new TypeError("Failed to execute 'supports' on 'DOMTokenList': DOMTokenList has no supported tokens.");
+            throw new __oxT.TypeError("Failed to execute 'supports' on 'DOMTokenList': DOMTokenList has no supported tokens.");
         }
         contains(token) { return _tokensOf(this).includes(String(token)); }
         get value() { return _tokenListOwner.get(this).getAttribute("class") ?? ""; }
@@ -1513,14 +1513,14 @@
     });
     HTMLImageElement.prototype.decode = function() {
         const src = this.getAttribute("src");
-        if (!src) return Promise.reject(new DOMException("no src", "EncodingError"));
+        if (!src) return Promise.reject(new __oxT.DOMException("no src", "EncodingError"));
         const st = _imgStates.get(this);
         if (st && st.done) {
-            return st.status >= 200 && st.status < 300 ? Promise.resolve() : Promise.reject(new DOMException("broken", "EncodingError"));
+            return st.status >= 200 && st.status < 300 ? Promise.resolve() : Promise.reject(new __oxT.DOMException("broken", "EncodingError"));
         }
         return new Promise((resolve, reject) => {
             this.addEventListener("load", () => resolve(), { once: true });
-            this.addEventListener("error", () => reject(new DOMException("broken", "EncodingError")), { once: true });
+            this.addEventListener("error", () => reject(new __oxT.DOMException("broken", "EncodingError")), { once: true });
         });
     };
     class HTMLInputElement extends HTMLElement {}
@@ -2200,7 +2200,7 @@
             },
             function (v) {
                 const n = Number(v) | 0;
-                if (n < 0) throw new DOMException("Failed to set the '" + name + "' property on '" + this.constructor.name + "': The value provided (" + n + ") is negative.", "IndexSizeError");
+                if (n < 0) throw new __oxT.DOMException("Failed to set the '" + name + "' property on '" + this.constructor.name + "': The value provided (" + n + ") is negative.", "IndexSizeError");
                 this.setAttribute(name.toLowerCase(), String(n));
             });
         const H = HTMLElement.prototype;
@@ -2252,7 +2252,7 @@
     //   The tag name provided ('span"') is not a valid name.
     function _requireValidDOMName(method, owner, name) {
         if (_DOM_NAME_RE.test(name)) return name;
-        throw new DOMException(
+        throw new __oxT.DOMException(
             "Failed to execute '" + method + "' on '" + owner + "': " +
             "The tag name provided ('" + name + "') is not a valid name.",
             "InvalidCharacterError"
@@ -2261,9 +2261,9 @@
 
     // WebIDL arity: a missing required argument is a TypeError before the
     // operation looks at anything else. Chrome reports the call's own name.
-    function _requireArgs(method, owner, args, needed) {
+    function _requireDOMArgs(method, owner, args, needed) {
         if (args.length >= needed) return;
-        throw new TypeError(
+        throw new __oxT.TypeError(
             "Failed to execute '" + method + "' on '" + owner + "': " +
             needed + " argument" + (needed === 1 ? "" : "s") +
             " required, but only " + args.length + " present."
@@ -2310,7 +2310,7 @@
     // CharacterData (DOM Standard §4.10): the shared base of Text and Comment.
     // Offsets and counts are UTF-16 code units, which is what JS strings index.
     function _charDataRangeError(node, method, offset, length) {
-        return new DOMException("Failed to execute '" + method + "' on '" + node.constructor.name +
+        return new __oxT.DOMException("Failed to execute '" + method + "' on '" + node.constructor.name +
             "': The offset " + offset + " is greater than the node's length (" + length + ").", "IndexSizeError");
     }
 
@@ -2450,6 +2450,7 @@
             return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
         }
         getElementById(id) {
+            _requireDOMArgs("getElementById", "Document", arguments, 1);
             return this.querySelector('[id="' + CSS.escape(String(id)) + '"]');
         }
         get children() { return _parentNodeElementChildren(this); }
@@ -2544,7 +2545,7 @@
             if (el) { el.textContent = val; }
         }
         getElementById(id) {
-            _requireArgs("getElementById", "Document", arguments, 1);
+            _requireDOMArgs("getElementById", "Document", arguments, 1);
             if (this !== _document) {
                 return this.querySelector('[id="' + String(id).replace(/["\\]/g, "\\$&") + '"]');
             }
@@ -2552,24 +2553,24 @@
             return nodeId !== null ? _wrapNode(nodeId) : null;
         }
         getElementsByTagName(tag) {
-            _requireArgs("getElementsByTagName", "Document", arguments, 1);
+            _requireDOMArgs("getElementsByTagName", "Document", arguments, 1);
             return new HTMLCollection(ops.op_dom_get_elements_by_tag_name(_getNodeId(this), tag));
         }
         getElementsByClassName(cls) {
-            _requireArgs("getElementsByClassName", "Document", arguments, 1);
+            _requireDOMArgs("getElementsByClassName", "Document", arguments, 1);
             return new HTMLCollection(ops.op_dom_get_elements_by_class_name(_getNodeId(this), cls));
         }
         querySelector(sel) {
-            _requireArgs("querySelector", "Document", arguments, 1);
+            _requireDOMArgs("querySelector", "Document", arguments, 1);
             const id = ops.op_dom_query_selector(_getNodeId(this), sel);
             return id !== null ? _wrapNode(id) : null;
         }
         querySelectorAll(sel) {
-            _requireArgs("querySelectorAll", "Document", arguments, 1);
+            _requireDOMArgs("querySelectorAll", "Document", arguments, 1);
             return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
         }
         createElement(tag) {
-            _requireArgs("createElement", "Document", arguments, 1);
+            _requireDOMArgs("createElement", "Document", arguments, 1);
             const name = _requireValidDOMName(
                 "createElement", "Document", String(tag)
             );
@@ -2599,7 +2600,7 @@
             return el;
         }
         createElementNS(ns, tag) {
-            _requireArgs("createElementNS", "Document", arguments, 2);
+            _requireDOMArgs("createElementNS", "Document", arguments, 2);
             const name = _requireValidDOMName(
                 "createElementNS", "Document", String(tag)
             );
@@ -2807,14 +2808,14 @@
     function _sheetState(sheet, method) {
         const st = _sheetStates.get(sheet);
         if (!st) {
-            throw new TypeError(method ? "Failed to execute '" + method + "' on 'CSSStyleSheet': Illegal invocation" : "Illegal invocation");
+            throw new __oxT.TypeError(method ? "Failed to execute '" + method + "' on 'CSSStyleSheet': Illegal invocation" : "Illegal invocation");
         }
         return st;
     }
 
     function _illegalConstructor(key, name) {
         if (key !== _cssomKey) {
-            throw new TypeError("Failed to construct '" + name + "': Illegal constructor");
+            throw new __oxT.TypeError("Failed to construct '" + name + "': Illegal constructor");
         }
     }
 
@@ -2839,12 +2840,12 @@
     }
 
     function _sheetError(method, message, name) {
-        return new DOMException("Failed to execute '" + method + "' on 'CSSStyleSheet': " + message, name);
+        return new __oxT.DOMException("Failed to execute '" + method + "' on 'CSSStyleSheet': " + message, name);
     }
 
-    function _requireArgs(method, count, given) {
+    function _requireCountArgs(method, count, given) {
         if (given < count) {
-            throw new TypeError("Failed to execute '" + method + "' on 'CSSStyleSheet': " + count + " argument" + (count > 1 ? "s" : "") + " required, but only " + given + " present.");
+            throw new __oxT.TypeError("Failed to execute '" + method + "' on 'CSSStyleSheet': " + count + " argument" + (count > 1 ? "s" : "") + " required, but only " + given + " present.");
         }
     }
 
@@ -2903,12 +2904,12 @@
         get rules() { return this.cssRules; }
         insertRule(rule, index) {
             const st = _sheetState(this, "insertRule");
-            _requireArgs("insertRule", 1, arguments.length);
+            _requireCountArgs("insertRule", 1, arguments.length);
             return _insertRule(st, String(rule), index === undefined ? 0 : index >>> 0);
         }
         deleteRule(index) {
             const st = _sheetState(this, "deleteRule");
-            _requireArgs("deleteRule", 1, arguments.length);
+            _requireCountArgs("deleteRule", 1, arguments.length);
             _deleteRule(st, index >>> 0);
         }
         addRule(selector, style, index) {
@@ -2922,7 +2923,7 @@
         }
         replaceSync(text) {
             const st = _sheetState(this, "replaceSync");
-            _requireArgs("replaceSync", 1, arguments.length);
+            _requireCountArgs("replaceSync", 1, arguments.length);
             if (st.owner || st.external >= 0) {
                 throw _sheetError("replaceSync", "Can't call replaceSync on non-constructed CSSStyleSheets.", "NotAllowedError");
             }
@@ -2967,7 +2968,7 @@
 
     function _ruleState(rule) {
         const st = _ruleStates.get(rule);
-        if (!st || !st.d) throw new TypeError("Illegal invocation");
+        if (!st || !st.d) throw new __oxT.TypeError("Illegal invocation");
         return st;
     }
 
@@ -3213,14 +3214,14 @@
     // SVGPoint is its own interface in Chrome, not a DOMPoint.
     const _svgPointData = new WeakMap();
     class SVGPoint {
-        constructor() { throw new TypeError("Failed to construct 'SVGPoint': Illegal constructor"); }
+        constructor() { throw new __oxT.TypeError("Failed to construct 'SVGPoint': Illegal constructor"); }
         get x() { return _svgPointData.get(this).x; }
         set x(v) { _svgPointData.get(this).x = Number(v); }
         get y() { return _svgPointData.get(this).y; }
         set y(v) { _svgPointData.get(this).y = Number(v); }
         // The engine has no SVGMatrix, so no argument can be one.
         matrixTransform(matrix) {
-            throw new TypeError("Failed to execute 'matrixTransform' on 'SVGPoint': parameter 1 is not of type 'SVGMatrix'.");
+            throw new __oxT.TypeError("Failed to execute 'matrixTransform' on 'SVGPoint': parameter 1 is not of type 'SVGMatrix'.");
         }
     }
     const _svgPoint = (x, y) => {
@@ -3239,7 +3240,7 @@
         const c = charnum >>> 0;
         if (c < n) return c;
         const bound = c > n ? "is greater than" : "is greater than or equal to";
-        throw new DOMException("Failed to execute '" + method + "' on 'SVGTextContentElement': The charnum provided (" + c + ") " + bound + " the maximum bound (" + n + ").", "IndexSizeError");
+        throw new __oxT.DOMException("Failed to execute '" + method + "' on 'SVGTextContentElement': The charnum provided (" + c + ") " + bound + " the maximum bound (" + n + ").", "IndexSizeError");
     }
 
     class SVGTextContentElement extends SVGGraphicsElement {
@@ -3517,7 +3518,7 @@
         parseFromString(str, type) {
             const kind = String(type);
             if (!_DOMPARSER_TYPES.includes(kind)) {
-                throw new TypeError("Failed to execute 'parseFromString' on 'DOMParser': The provided value '" + kind +
+                throw new __oxT.TypeError("Failed to execute 'parseFromString' on 'DOMParser': The provided value '" + kind +
                     "' is not a valid enum value of type DOMParserSupportedType.");
             }
             const html = kind === "text/html";
@@ -3874,7 +3875,7 @@
         const isIllegal = _ILLEGAL_CONSTRUCTORS.has(name);
         const fresh = isIllegal
             ? function() {
-                throw new TypeError("Failed to construct '" + name + "': Illegal constructor");
+                throw new __oxT.TypeError("Failed to construct '" + name + "': Illegal constructor");
             }
             : function(...args) {
                 try {
@@ -4123,9 +4124,9 @@
                 if (p === 'self' || p === 'window' || p === 'frames') return proxy;
                 if (p === 'parent' || p === 'top') return globalThis;
                 if (Object.prototype.hasOwnProperty.call(allowed, p)) return allowed[p];
-                throw new DOMException(msg, 'SecurityError');
+                throw new __oxT.DOMException(msg, 'SecurityError');
             },
-            set() { throw new DOMException(msg, 'SecurityError'); },
+            set() { throw new __oxT.DOMException(msg, 'SecurityError'); },
             has() { return false; },
         });
         return proxy;
@@ -4671,11 +4672,11 @@
                     '"video/webm;codecs=\\"vp9\\""]);\n' +
                     'var _its=function isTypeSupported(t){if(typeof t!=="string")return false;var b=t.split(";")[0].trim();return __kms.has(t)||__kms.has(b);};\n' +
                     'if(typeof MediaSource==="undefined"||MediaSource===undefined){\n' +
-                    'globalThis.MediaSource=function MediaSource(){throw new TypeError("Failed to construct \'MediaSource\': Illegal constructor");};\n' +
+                    'globalThis.MediaSource=function MediaSource(){throw new __oxT.TypeError("Failed to construct \'MediaSource\': Illegal constructor");};\n' +
                     '}\n' +
                     'if(typeof MediaSource.isTypeSupported!=="function") MediaSource.isTypeSupported=_its;\n' +
                     'if(typeof MediaRecorder==="undefined"||MediaRecorder===undefined){\n' +
-                    'globalThis.MediaRecorder=function MediaRecorder(){throw new TypeError("Failed to construct \'MediaRecorder\': Illegal constructor");};\n' +
+                    'globalThis.MediaRecorder=function MediaRecorder(){throw new __oxT.TypeError("Failed to construct \'MediaRecorder\': Illegal constructor");};\n' +
                     '}\n' +
                     'if(typeof MediaRecorder.isTypeSupported!=="function") MediaRecorder.isTypeSupported=_its;\n' +
                     '})();\n'

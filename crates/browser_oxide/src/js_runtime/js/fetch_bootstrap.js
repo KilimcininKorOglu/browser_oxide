@@ -212,7 +212,7 @@
             !url.startsWith("data:") &&
             !url.startsWith("blob:")
         ) {
-            throw new TypeError("Failed to fetch");
+            throw new __oxT.TypeError("Failed to fetch");
         }
 
         // blob: URLs short-circuit the HTTP client: look up the bytes
@@ -226,11 +226,11 @@
             try {
                 resp = ops.op_blob_fetch_bytes(url);
             } catch (e) {
-                throw new TypeError("Failed to fetch");
+                throw new __oxT.TypeError("Failed to fetch");
             }
             if (!resp || !resp.found) {
                 // Unknown blob URL — the spec says a network error.
-                throw new TypeError("Failed to fetch");
+                throw new __oxT.TypeError("Failed to fetch");
             }
             // `resp.bytes` comes back from serde as an array of numbers;
             // coerce to Uint8Array so Response.arrayBuffer/blob hand
@@ -390,7 +390,7 @@
             }
             // The cause stays in the audit log above; the page sees Chrome's
             // fixed message.
-            throw new TypeError("Failed to fetch");
+            throw new __oxT.TypeError("Failed to fetch");
         }
     };
 

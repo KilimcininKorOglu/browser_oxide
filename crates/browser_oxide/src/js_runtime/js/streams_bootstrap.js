@@ -38,7 +38,7 @@
         }
         enqueue(chunk) {
             if (this._stream._state !== "readable") {
-                throw new TypeError(
+                throw new __oxT.TypeError(
                     "ReadableStreamDefaultController.enqueue called on " +
                         this._stream._state +
                         " stream"
@@ -63,7 +63,7 @@
     class ReadableStreamDefaultReader {
         constructor(stream) {
             if (stream._locked) {
-                throw new TypeError(
+                throw new __oxT.TypeError(
                     "ReadableStream is locked to another reader"
                 );
             }
@@ -89,7 +89,7 @@
         read() {
             if (!this._stream) {
                 return Promise.reject(
-                    new TypeError("reader released")
+                    new __oxT.TypeError("reader released")
                 );
             }
             const stream = this._stream;
@@ -262,7 +262,7 @@
         pipeTo(destination, _options) {
             if (!(destination instanceof WritableStream)) {
                 return Promise.reject(
-                    new TypeError("pipeTo requires a WritableStream")
+                    new __oxT.TypeError("pipeTo requires a WritableStream")
                 );
             }
             const reader = this.getReader();
@@ -290,7 +290,7 @@
         }
         pipeThrough(transform, options) {
             if (!transform || !transform.readable || !transform.writable) {
-                throw new TypeError("pipeThrough requires a TransformStream");
+                throw new __oxT.TypeError("pipeThrough requires a TransformStream");
             }
             // Fire and forget — the caller consumes `transform.readable`.
             this.pipeTo(transform.writable, options).catch(() => {});
@@ -396,7 +396,7 @@
     class WritableStreamDefaultWriter {
         constructor(stream) {
             if (stream._locked) {
-                throw new TypeError(
+                throw new __oxT.TypeError(
                     "WritableStream is locked to another writer"
                 );
             }
@@ -412,10 +412,10 @@
             return 1;
         }
         write(chunk) {
-            if (!this._stream) return Promise.reject(new TypeError("released"));
+            if (!this._stream) return Promise.reject(new __oxT.TypeError("released"));
             if (this._stream._state !== "writable") {
                 return Promise.reject(
-                    new TypeError(
+                    new __oxT.TypeError(
                         "write on " + this._stream._state + " stream"
                     )
                 );
@@ -432,11 +432,11 @@
             return Promise.resolve();
         }
         close() {
-            if (!this._stream) return Promise.reject(new TypeError("released"));
+            if (!this._stream) return Promise.reject(new __oxT.TypeError("released"));
             const stream = this._stream;
             if (stream._state !== "writable") {
                 return Promise.reject(
-                    new TypeError("close on " + stream._state + " stream")
+                    new __oxT.TypeError("close on " + stream._state + " stream")
                 );
             }
             stream._state = "closed";

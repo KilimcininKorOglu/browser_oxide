@@ -162,6 +162,63 @@ async fn timer_ids_start_small_like_chrome() {
     );
 }
 #[tokio::test]
+async fn error_stack_frames_survive_a_shrunk_stack_trace_limit() {
+    // A challenge lowers `Error.stackTraceLimit` to hide its own frames and
+    // then reads the stack of an error the ENGINE raised. Chrome's engine
+    // errors come from C++ and cost no frame, so the script still gets a full
+    // complement of its own; measured on real Chrome, limit 3 yields exactly
+    // 3 page frames for `appendChild(42)`. Ours are built in JS and used to
+    // eat the whole budget, leaving the script with nothing.
+    let js = r#"(() => {
+        const E = Error;
+        const count = (fn) => {
+            try { fn(); return 'no-throw'; }
+            catch (e) { return String(e.stack || '').split('\n').length - 1; }
+        };
+        const div = document.createElement('div');
+        document.body.appendChild(div);
+        const saved = E.stackTraceLimit;
+        E.stackTraceLimit = 3;
+        const engine = count(() => document.body.appendChild(42));
+        const native = count(() => { null.someProperty; });
+        E.stackTraceLimit = saved;
+        return engine + '/' + native;
+    })()"#;
+    assert_eq!(check(js).await, "3/3");
+}
+#[tokio::test]
+async fn dom_rejects_an_invalid_tag_name_like_chrome() {
+    // Chrome raises InvalidCharacterError; an engine that answers with an
+    // element whose tagName is '#1' has produced something no browser can.
+    let js = r#"(() => {
+        try { const el = document.createElement('#1'); return 'returned ' + el.tagName; }
+        catch (e) { return e.name; }
+    })()"#;
+    assert_eq!(check(js).await, "InvalidCharacterError");
+}
+#[tokio::test]
+async fn append_child_rejects_a_non_node() {
+    assert_eq!(
+        check(
+            "(() => { try { document.body.appendChild(42); return 'no-throw'; } \
+             catch (e) { return e.name; } })()"
+        )
+        .await,
+        "TypeError"
+    );
+}
+#[tokio::test]
+async fn missing_required_argument_is_a_type_error() {
+    assert_eq!(
+        check(
+            "(() => { try { document.getElementById(); return 'no-throw'; } \
+             catch (e) { return e.name; } })()"
+        )
+        .await,
+        "TypeError"
+    );
+}
+#[tokio::test]
 async fn fn_request_animation_frame() {
     assert_eq!(check("typeof requestAnimationFrame").await, "function");
 }
