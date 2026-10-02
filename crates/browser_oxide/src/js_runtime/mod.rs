@@ -321,9 +321,20 @@ impl BrowserJsRuntime {
     /// Used for CDP Page.navigate to avoid recreating the V8 isolate.
     pub fn replace_dom(&mut self, dom: Dom, external_stylesheets: Vec<String>) {
         let state = self.inner.op_state();
+        let previous_profile = {
+            let borrowed = state.borrow();
+            let dom_state = borrowed.borrow::<DomState>();
+            dom_state.stealth_profile.clone()
+        };
         let mut state = state.borrow_mut();
         // Replace DomState — ops will pick up the new DOM on next call
         let mut dom_state = DomState::new(dom);
+        // A fresh DomState knows nothing, so the profile has to be carried
+        // across the navigation or layout falls back to its 1920x1080
+        // default while `innerWidth` keeps reporting the real one.
+        if let Some(profile) = previous_profile {
+            dom_state.set_stealth_profile(profile);
+        }
         dom_state.external_stylesheets = external_stylesheets;
         dom_state.refresh_styles();
         state.put(dom_state);

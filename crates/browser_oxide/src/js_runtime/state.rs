@@ -99,6 +99,38 @@ impl DomState {
         }
     }
 
+    /// Attach a profile and resolve layout against ITS viewport.
+    ///
+    /// The layout engine defaults to 1920x1080, which is not any profile's
+    /// window: a block-level `<body>` then reports a width the viewport does
+    /// not have, and so does every `getBoundingClientRect`, `offsetWidth` and
+    /// percentage-sized box derived from it. `innerWidth`/`screen.width`
+    /// came from the profile all along, so the two halves of the page
+    /// disagreed. Measured against real Chrome at the same window: Chrome
+    /// reports `body.offsetWidth` 1512, this reported 1920.
+    pub fn set_stealth_profile(&mut self, profile: crate::stealth::StealthProfile) {
+        // The profile has to be in place BEFORE the sync reads it.
+        self.stealth_profile = Some(profile);
+        self.sync_viewport_to_profile();
+    }
+
+    /// Push the profile's viewport into the layout engine.
+    pub fn sync_viewport_to_profile(&mut self) {
+        let Some(p) = self.stealth_profile.as_ref() else {
+            return;
+        };
+        let width = p.inner_width as f32;
+        let height = p.inner_height as f32;
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+        self.layout_engine.set_viewport(Viewport::with_dpr(
+            width,
+            height,
+            p.device_pixel_ratio as f32,
+        ));
+    }
+
     /// Record a DOM change: the sheets and the layout are rebuilt on the
     /// next read.
     pub fn invalidate_styles(&mut self) {
@@ -169,5 +201,35 @@ impl DomState {
     pub fn with_base_url(mut self, url: url::Url) -> Self {
         self.base_url = Some(url);
         self
+    }
+}
+
+#[cfg(test)]
+mod viewport_tests {
+    use super::*;
+
+    /// A block-level `<body>` must resolve to the profile's viewport, not the
+    /// layout engine's 1920x1080 default. Measured against real Chrome at
+    /// 1512 wide: chrome reports `body.offsetWidth` 1512.
+    #[test]
+    fn layout_resolves_against_the_profile_viewport() {
+        let mut state = DomState::new(crate::dom::Dom::new());
+        let mut profile = crate::stealth::presets::chrome_153_macos();
+        profile.inner_width = 1512;
+        profile.inner_height = 871;
+        profile.device_pixel_ratio = 2.0;
+        state.set_stealth_profile(profile);
+        let vp = state.layout_engine.viewport();
+        assert_eq!(vp.width, 1512.0, "layout must use the profile width");
+        assert_eq!(vp.height, 871.0);
+        assert_eq!(vp.device_pixel_ratio, 2.0);
+    }
+
+    /// The default stays put when no profile is attached: a worker or a bare
+    /// runtime has nothing better to go on.
+    #[test]
+    fn no_profile_keeps_the_default_viewport() {
+        let state = DomState::new(crate::dom::Dom::new());
+        assert_eq!(state.layout_engine.viewport().width, 1920.0);
     }
 }

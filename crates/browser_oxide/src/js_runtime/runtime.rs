@@ -186,6 +186,10 @@ pub fn create_runtime_with_signals(
     options: BrowserRuntimeOptions,
 ) -> (JsRuntime, NavSignal) {
     let mut state = DomState::new(dom);
+    // Bind layout to the profile's viewport before anything is measured.
+    if let Some(profile) = options.stealth_profile.clone() {
+        state.set_stealth_profile(profile);
+    }
     state.external_stylesheets = options.external_stylesheets;
     if let Some(storage) = options.storage {
         state.storage = storage;
@@ -519,7 +523,9 @@ pub fn create_worker_runtime(
     // Inject DomState even in workers (stubbed) to hold the stealth profile
     // so op_has_stealth_profile() works in the worker isolate.
     let mut dom_state = DomState::new(crate::dom::Dom::new());
-    dom_state.stealth_profile = profile.clone();
+    if let Some(p) = profile.clone() {
+        dom_state.set_stealth_profile(p);
+    }
     runtime.op_state().borrow_mut().put(dom_state);
 
     // StealthState must also carry the profile so op_get_profile_value

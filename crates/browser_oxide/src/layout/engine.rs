@@ -63,6 +63,25 @@ impl LayoutEngine {
         self.dirty = true;
     }
 
+    /// The viewport every box is resolved against.
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
+    }
+
+    /// Resolve boxes against a new viewport. Cached boxes were laid out
+    /// against the previous one, so the tree is rebuilt rather than patched —
+    /// a percentage width, a `max-width` and a centered block all change size.
+    pub fn set_viewport(&mut self, viewport: Viewport) {
+        if self.viewport.width == viewport.width
+            && self.viewport.height == viewport.height
+            && self.viewport.device_pixel_ratio == viewport.device_pixel_ratio
+        {
+            return;
+        }
+        self.viewport = viewport;
+        self.mark_dirty();
+    }
+
     /// Replace the author sheets whose rules the layout applies.
     pub fn set_stylesheets(&mut self, sheets: &[String]) {
         self.rules = sheets

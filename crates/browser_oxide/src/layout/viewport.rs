@@ -24,4 +24,13 @@ impl Viewport {
             device_pixel_ratio: 1.0,
         }
     }
+
+    /// A viewport carrying a device pixel ratio.
+    pub fn with_dpr(width: f32, height: f32, device_pixel_ratio: f32) -> Self {
+        Self {
+            width,
+            height,
+            device_pixel_ratio,
+        }
+    }
 }
