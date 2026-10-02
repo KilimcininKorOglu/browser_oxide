@@ -6,54 +6,41 @@
 //! the correct JA3/JA4 fingerprint.
 
 use crate::stealth::{DeviceClass, StealthProfile};
-use boring2::ssl::{
-    CertCompressionAlgorithm, ConnectConfiguration, SslConnector, SslCurve, SslMethod, SslOptions,
-    SslVersion,
+use btls::ssl::{
+    CertificateCompressionAlgorithm, CertificateCompressor, ConnectConfiguration, ExtensionType,
+    KeyShare, SslConnector, SslMethod, SslOptions, SslVersion,
 };
-use boring2::x509::store::X509StoreBuilder;
-use boring2::x509::X509;
+use btls::x509::store::X509StoreBuilder;
+use btls::x509::X509;
 use foreign_types::ForeignTypeRef;
 use tokio::net::TcpStream;
-use tokio_boring2::SslStream;
+use tokio_btls::SslStream;
 
 use crate::net::error::NetError;
 
 /// The Chrome major version whose **verified-real** ClientHello / H2
-/// fingerprint these constants reproduce, byte-exact.
+/// fingerprint these constants reproduce.
 ///
-/// **Why this is 147 while every desktop preset's UA advertises Chrome
-/// 148 — and why that is NOT an incoherent skew:**
+/// Bumped 147 → 153: live measurement against real Chrome 153
+/// (tls.peet.ws JA3/JA4, same machine) showed Chrome 153 always sends the
+/// `trust_anchors` extension (51764, empty anchor list when the server
+/// advertises no `tls-trust-anchors` parameter), which the older BoringSSL
+/// could not emit at all. With btls 0.5.6 the hello is 153-class:
+/// 17 extensions + 2 GREASE, MLKEM768 key shares, current ALPS payload.
 ///
-/// 1. Chrome's TLS ClientHello is **version-stable across majors**. It
-///    only changes on a deliberate TLS-stack change; the last such change
-///    was the MLKEM768 post-quantum rollout at Chrome 131. There was no
-///    TLS-stack change between 147 and 148 (consecutive majors, ~1 month
-///    apart, May 2026), so the bytes real Chrome 148 puts on the wire are
-///    identical to this verified-real 147 capture: the byte-exact Chrome
-///    147 and 148 values are the same values.
-/// 2. **JA4 does not encode the Chrome version.** JA4 = TLS-version +
-///    sorted cipher/extension counts + ALPN + sorted sigalgs. None of
-///    those differ 147↔148. A "JA4-vs-UA cross-check" verifies
-///    the JA4 corresponds to *a Chrome* consistent with the UA *family*
-///    — it cannot, even in principle, detect a 147-vs-148 minor/major
-///    label difference.
-/// 3. UA=148 is a **deliberate, A/B-tested** decision: real Chrome
-///    stable IS 148 (chromiumdash; shipped early May 2026), and the
-///    147→148 UA bump *recovered* several previously-blocked sites in
-///    our measurement. Rolling the UA back to 147 would re-introduce
-///    those regressions and advertise an outdated browser (its own
-///    soft-deny signal). So the coherent state is UA=148 + these
-///    (wire-identical) 147-reference bytes.
+/// Two older claims this supersedes (kept here so nobody reverts):
+/// 1. Chrome's ClientHello was treated as version-stable across majors —
+///    trust_anchors proves the stack DOES rev between majors.
+/// 2. JA4 still does not encode the Chrome version (counts + sorted
+///    hashes only), so a JA4-vs-UA cross-check verifies the *family*.
 ///
 /// This constant exists so the coherence is **machine-checked** (see the
 /// `tls_fingerprint_vectors_no_silent_drift` test) and the rationale is
-/// one `grep` away — the silent-drift hazard the plan flags is removed
-/// without changing a single wire byte or UA.
-pub const TLS_CHROME_MAJOR: u32 = 147;
+/// one `grep` away.
+pub const TLS_CHROME_MAJOR: u32 = 153;
 
 /// The Chrome major every desktop Chrome preset's `user_agent`
-/// advertises. Intentionally != [`TLS_CHROME_MAJOR`]; see that
-/// constant's docs for why this is wire-coherent, not a skew.
+/// advertises. Equals [`TLS_CHROME_MAJOR`]: UA and TLS agree.
 pub const UA_CHROME_MAJOR: u32 = 153;
 
 /// Chrome 147 cipher suite list (order is critical for JA3 fingerprint).
@@ -75,9 +62,18 @@ const CIPHER_LIST: &str = concat!(
     ":TLS_RSA_WITH_AES_256_CBC_SHA",
 );
 
-/// Chrome 147 signature algorithms (order matters).
+/// Chrome 153 signature algorithms, in Chrome's order: the three
+/// post-quantum ones first, then the usual eight. Measured live against real
+/// Chrome 153 on this machine — the ClientHello carried
+/// `0x904, 0x905, 0x906` ahead of `ecdsa_secp256r1_sha256`.
+///
+/// The `mldsa*` names are the ones the vendored BoringSSL knows
+/// (`vendor/btls-sys/PATCHES.md`); stock btls-sys refuses them and the
+/// extension is then short by three codepoints, which is what the third part
+/// of JA4 hashes.
 const SIGALGS_LIST: &str = concat!(
-    "ecdsa_secp256r1_sha256",
+    "mldsa44:mldsa65:mldsa87",
+    ":ecdsa_secp256r1_sha256",
     ":rsa_pss_rsae_sha256",
     ":rsa_pkcs1_sha256",
     ":ecdsa_secp384r1_sha384",
@@ -87,13 +83,69 @@ const SIGALGS_LIST: &str = concat!(
     ":rsa_pkcs1_sha512",
 );
 
+/// Brotli certificate compressor (IANA algo 2) for the
+/// `compress_certificate` extension. btls 0.5.6 takes user
+/// implementations via the `CertificateCompressor` trait instead of
+/// shipping built-ins.
+struct BrotliCertCompressor;
+
+impl CertificateCompressor for BrotliCertCompressor {
+    const ALGORITHM: CertificateCompressionAlgorithm = CertificateCompressionAlgorithm::BROTLI;
+    const CAN_COMPRESS: bool = true;
+    const CAN_DECOMPRESS: bool = true;
+
+    fn compress<W>(&self, input: &[u8], output: &mut W) -> std::io::Result<()>
+    where
+        W: std::io::Write,
+    {
+        use std::io::Write as _;
+        let mut writer = brotli::CompressorWriter::new(output, 4096, 11, 22);
+        writer.write_all(input)?;
+        writer.flush()
+    }
+
+    fn decompress<W>(&self, input: &[u8], output: &mut W) -> std::io::Result<()>
+    where
+        W: std::io::Write,
+    {
+        let mut reader = brotli::Decompressor::new(input, 4096);
+        std::io::copy(&mut reader, output)?;
+        Ok(())
+    }
+}
+
+/// Zlib certificate compressor (IANA algo 1): Safari and Firefox arms.
+struct ZlibCertCompressor;
+
+impl CertificateCompressor for ZlibCertCompressor {
+    const ALGORITHM: CertificateCompressionAlgorithm = CertificateCompressionAlgorithm::ZLIB;
+    const CAN_COMPRESS: bool = true;
+    const CAN_DECOMPRESS: bool = true;
+
+    fn compress<W>(&self, input: &[u8], output: &mut W) -> std::io::Result<()>
+    where
+        W: std::io::Write,
+    {
+        use std::io::Write as _;
+        let mut encoder = flate2::write::ZlibEncoder::new(output, flate2::Compression::default());
+        encoder.write_all(input)?;
+        encoder.finish()?;
+        Ok(())
+    }
+
+    fn decompress<W>(&self, input: &[u8], output: &mut W) -> std::io::Result<()>
+    where
+        W: std::io::Write,
+    {
+        let mut decoder = flate2::read::ZlibDecoder::new(input);
+        std::io::copy(&mut decoder, output)?;
+        Ok(())
+    }
+}
+
 /// Chrome desktop elliptic curves (Chrome 131+ uses MLKEM768).
-const CURVES_DESKTOP: &[SslCurve] = &[
-    SslCurve::X25519_MLKEM768,
-    SslCurve::X25519,
-    SslCurve::SECP256R1,
-    SslCurve::SECP384R1,
-];
+/// String form for `SSL_CTX_set1_curves_list`.
+const CURVES_DESKTOP: &str = "X25519MLKEM768:X25519:P-256:P-384";
 
 /// Chrome Android elliptic curves. Kyber768Draft00 (deprecated) was the
 /// canonical Chrome 124-130 PQ curve; Chrome 131+ desktop replaced it with
@@ -101,7 +153,7 @@ const CURVES_DESKTOP: &[SslCurve] = &[
 /// shows no PQ at all (just 29/23/24), but Chrome Android shares the
 /// desktop codebase and by Chrome 147+ should have rolled MLKEM — verify
 /// against a fresh Pixel capture if regressions appear.
-const CURVES_ANDROID: &[SslCurve] = CURVES_DESKTOP;
+const CURVES_ANDROID: &str = CURVES_DESKTOP;
 
 /// iOS Safari 18 cipher suite list (20 ciphers, Apple's order). Per a
 /// reference Safari iOS 18 TLS capture.
@@ -148,44 +200,31 @@ const SIGALGS_LIST_SAFARI_IOS: &str = concat!(
 );
 
 /// iOS Safari 18 elliptic curves. No PQ (MLKEM lands in iOS 26 per Apple's
-/// PQC support page). Adds P-521 vs Chrome desktop. Order per safari_18.0_iOS.yaml.
-const CURVES_SAFARI_IOS: &[SslCurve] = &[
-    SslCurve::X25519,
-    SslCurve::SECP256R1,
-    SslCurve::SECP384R1,
-    SslCurve::SECP521R1,
-];
+/// PQC support page). Adds P-521 vs Chrome desktop.
+const CURVES_SAFARI_IOS: &str = "X25519:P-256:P-384:P-521";
 
-/// iOS Safari 18 extension permutation. Indices into BoringSSL's internal
-/// `BORING_SSLEXTENSION_PERMUTATION` table — see boring2 ssl/mod.rs for the
-/// canonical ordering. Per reference Safari iOS 18 TLS captures, real
-/// Safari emits its extensions in a FIXED order (no Fisher-Yates shuffle),
-/// roughly: server_name, extended_master_secret, renegotiate, supported_groups,
-/// ec_point_formats, ALPN, status_request, signature_algorithms,
-/// signed_certificate_timestamp, key_share, psk_key_exchange_modes,
-/// supported_versions, cert_compression. (GREASE and PADDING are auto-emitted
-/// by BoringSSL outside the permutation table; PADDING positional ordering
-/// requires raw extension injection — deferred.)
-const SAFARI_IOS_EXTENSION_PERMUTATION: &[u8] = &[
-    0,  // server_name
-    2,  // extended_master_secret
-    3,  // renegotiate
-    4,  // supported_groups
-    5,  // ec_point_formats
-    7,  // application_layer_protocol_negotiation (ALPN)
-    8,  // status_request
-    9,  // signature_algorithms
-    11, // certificate_timestamp
-    14, // key_share
-    15, // psk_key_exchange_modes
-    17, // supported_versions
-    21, // cert_compression (compress_certificate, type 27). boring2 kExtensions
-        // index is 21 (proven by CHROME_EXTENSION_PERMUTATION, which emits 0x1b);
-        // the previous `22` is the PADDING slot — a live TLS-fingerprint capture
-        // showed this index emitting ext 0x15 (padding) instead of 0x1b
-        // here, giving JA4 t13d2013h2 vs real iOS-18 Safari's t13d2014h2. With
-        // 21, compress_certificate is emitted and BoringSSL auto-appends padding
-        // last by ClientHello length → the 14-extension Safari JA4.
+/// iOS Safari 18 extension order, as TLS wire IDs. Real Safari emits a
+/// FIXED order (no shuffle): server_name, extended_master_secret,
+/// renegotiate, supported_groups, ec_point_formats, ALPN, status_request,
+/// signature_algorithms, signed_certificate_timestamp, key_share,
+/// psk_key_exchange_modes, supported_versions, cert_compression.
+/// (GREASE and PADDING are auto-emitted by BoringSSL outside the order
+/// table; PADDING positional ordering requires raw extension injection —
+/// deferred.)
+const SAFARI_IOS_EXTENSION_ORDER: &[u16] = &[
+    0,     // server_name
+    23,    // extended_master_secret
+    65281, // renegotiate
+    10,    // supported_groups
+    11,    // ec_point_formats
+    16,    // application_layer_protocol_negotiation (ALPN)
+    5,     // status_request
+    13,    // signature_algorithms
+    18,    // certificate_timestamp
+    51,    // key_share
+    45,    // psk_key_exchange_modes
+    43,    // supported_versions
+    27,    // cert_compression (compress_certificate)
 ];
 
 /// Firefox 135 (NSS) cipher suite list — 17 ciphers, NSS order. Distinct
@@ -236,15 +275,7 @@ const SIGALGS_LIST_FIREFOX: &str = concat!(
 /// (ffdhe2048, ffdhe3072) after the EC curves — a hard Firefox signature no
 /// Chrome build sends. X25519MLKEM768 leads (Firefox shipped PQ key-share by
 /// default in 132+). P-521 present (Chrome desktop omits it).
-const CURVES_FIREFOX: &[SslCurve] = &[
-    SslCurve::X25519_MLKEM768,
-    SslCurve::X25519,
-    SslCurve::SECP256R1,
-    SslCurve::SECP384R1,
-    SslCurve::SECP521R1,
-    SslCurve::FFDHE2048,
-    SslCurve::FFDHE3072,
-];
+const CURVES_FIREFOX: &str = "X25519MLKEM768:X25519:P-256:P-384:P-521:ffdhe2048:ffdhe3072";
 
 /// Firefox 135 delegated_credentials (ext 0x22) sigalg list — Firefox-only.
 /// The four ECDSA sigalgs NSS advertises in the delegated-credential ext.
@@ -258,32 +289,29 @@ const FIREFOX_DELEGATED_CREDENTIALS: &str = concat!(
 /// Firefox 135 record_size_limit (ext 0x1c) value: 0x4001 (16385).
 const FIREFOX_RECORD_SIZE_LIMIT: u16 = 0x4001;
 
-/// Firefox 135 extension order (indices into BoringSSL's
-/// `BORING_SSLEXTENSION_PERMUTATION` table — same index space the Chrome and
-/// Safari permutations use). FIXED order every handshake (NSS does not
-/// Fisher-Yates shuffle). 15 extensions → the Firefox `t13d1715h2` JA4 count.
-/// Index map (proven from CHROME_/SAFARI_ permutations + boring2 ext table):
-/// 0=SNI, 1=ECH, 2=ext_master_secret, 3=renegotiate, 4=supported_groups,
-/// 5=ec_point_formats, 6=session_ticket, 7=ALPN, 8=status_request,
-/// 9=signature_algorithms, 14=key_share, 15=psk_kex_modes, 17=supported_versions,
-/// 22=delegated_credentials, 26=record_size_limit. Order verified against a
-/// reference Firefox 135 TLS capture — iterate if the JA4 ext-hash diverges.
-const FIREFOX_EXTENSION_PERMUTATION: &[u8] = &[
-    0,  // server_name
-    2,  // extended_master_secret
-    3,  // renegotiation_info
-    4,  // supported_groups
-    5,  // ec_point_formats
-    6,  // session_ticket
-    7,  // ALPN
-    8,  // status_request
-    22, // delegated_credentials (0x22) — Firefox-only
-    14, // key_share
-    17, // supported_versions
-    9,  // signature_algorithms
-    15, // psk_key_exchange_modes
-    25, // record_size_limit (0x1c) — Firefox-only (boring2 perm-table index 25)
-    1,  // encrypted_client_hello (ECH grease)
+/// Firefox 135 extension order, as TLS wire IDs (FIXED order every
+/// handshake — NSS does not shuffle). 15 extensions → the Firefox
+/// `t13d1715h2` JA4 count.
+/// Delegated_credentials (34) and record_size_limit (28) are hard
+/// Firefox/NSS signatures absent from every Chrome build. Order verified
+/// against a reference Firefox 135 TLS capture — iterate if the JA4
+/// ext-hash diverges.
+const FIREFOX_EXTENSION_ORDER: &[u16] = &[
+    0,     // server_name
+    23,    // extended_master_secret
+    65281, // renegotiation_info
+    10,    // supported_groups
+    11,    // ec_point_formats
+    35,    // session_ticket
+    16,    // ALPN
+    5,     // status_request
+    34,    // delegated_credentials (0x22) — Firefox-only
+    51,    // key_share
+    43,    // supported_versions
+    13,    // signature_algorithms
+    45,    // psk_key_exchange_modes
+    28,    // record_size_limit (0x1c) — Firefox-only
+    65037, // encrypted_client_hello (ECH grease)
 ];
 
 /// ALPN protocols: h2 + http/1.1
@@ -291,8 +319,10 @@ const ALPN_PROTOS: &[u8] = b"\x02h2\x08http/1.1";
 
 use rand::prelude::SliceRandom;
 
-/// Chrome 147 extension permutation (indices into BoringSSL kExtensions table).
-/// 16 extensions matching a verified Chrome 147 macOS arm64 reference capture.
+/// Chrome extension order, as TLS wire IDs. 17 extensions: the 16 of the
+/// verified Chrome 147 reference capture plus trust_anchors (51764),
+/// which real Chrome 153 always sends (measured live against
+/// tls.peet.ws: 19 extensions each handshake = 17 + 2 GREASE).
 ///
 /// **Real Chrome shuffling behavior** (per Fastly TLS Fingerprinting blog
 /// + Chromestatus 5124606246518784 + BoringSSL `ssl_setup_extension_permutation`
@@ -303,31 +333,44 @@ use rand::prelude::SliceRandom;
 /// public RE work; it reduced shuffle entropy by ~720,000× and put
 /// signature_algorithms always at position 16 — a deterministic positional
 /// pattern that per-handshake classifiers can detect as anomalous.
-const CHROME_EXTENSION_PERMUTATION: &[u8] = &[
-    14, // key_share (51)
-    1,  // encrypted_client_hello (65037)
-    4,  // supported_groups (10)
-    11, // certificate_timestamp (18)
-    15, // psk_key_exchange_modes (45)
-    2,  // extended_master_secret (23)
-    24, // application_settings_new (17613)
-    21, // cert_compression (27)
-    17, // supported_versions (43)
-    0,  // server_name (0)
-    3,  // renegotiate (65281)
-    5,  // ec_point_formats (11)
-    8,  // status_request (5)
-    7,  // application_layer_protocol_negotiation (16)
-    6,  // session_ticket (35)
-    9,  // signature_algorithms (13)
+const CHROME_EXTENSION_ORDER: &[u16] = &[
+    51,                // key_share
+    65037,             // encrypted_client_hello
+    10,                // supported_groups
+    18,                // certificate_timestamp
+    45,                // psk_key_exchange_modes
+    23,                // extended_master_secret
+    17613,             // application_settings_new (ALPS)
+    27,                // cert_compression
+    43,                // supported_versions
+    0,                 // server_name
+    65281,             // renegotiate
+    11,                // ec_point_formats
+    5,                 // status_request
+    16,                // application_layer_protocol_negotiation (ALPN)
+    35,                // session_ticket
+    13,                // signature_algorithms
+    EXT_TRUST_ANCHORS, // trust_anchors (0xCA34) — always sent by real Chrome 153
 ];
 
-/// Generate a fresh Fisher-Yates shuffle over all 16 Chrome 147 extensions.
-fn shuffled_chrome_extension_permutation() -> Vec<u8> {
+/// Trust Anchors extension wire ID (TLSEXT_TYPE_trust_anchors).
+/// Real Chrome 153 sends it with an EMPTY anchor list when the server's
+/// HTTPS record advertises no `tls-trust-anchors` parameter (the
+/// anonymity-set guidance: no per-machine fingerprintable content).
+/// Presence alone signals a current Chrome network stack.
+const EXT_TRUST_ANCHORS: u16 = 51764;
+
+/// Generate a fresh Fisher-Yates shuffle over the Chrome extension order.
+fn shuffled_chrome_extension_order() -> Vec<ExtensionType> {
     let mut rng = rand::rng();
-    let mut permutation = CHROME_EXTENSION_PERMUTATION.to_vec();
-    permutation.shuffle(&mut rng);
-    permutation
+    let mut order: Vec<u16> = CHROME_EXTENSION_ORDER.to_vec();
+    order.shuffle(&mut rng);
+    order.into_iter().map(ExtensionType::from).collect()
+}
+
+/// Fixed wire order as `ExtensionType`s (Safari/Firefox arms).
+fn fixed_extension_order(base: &[u16]) -> Vec<ExtensionType> {
+    base.iter().copied().map(ExtensionType::from).collect()
 }
 
 /// Build an `SslConnector` configured with the TLS fingerprint matching
@@ -349,7 +392,7 @@ pub fn chrome_connector(profile: &StealthProfile) -> Result<SslConnector, NetErr
     // Chrome JA4 under a Firefox UA — an incoherent identity that any JA4↔UA
     // cross-check would flag.
     let is_firefox = profile.browser_name == "Firefox";
-    let curves: &[SslCurve] = if is_firefox {
+    let curves: &str = if is_firefox {
         CURVES_FIREFOX
     } else {
         match profile.device_class {
@@ -382,7 +425,7 @@ pub fn chrome_connector(profile: &StealthProfile) -> Result<SslConnector, NetErr
 
     // Elliptic curves (per device_class)
     builder
-        .set_curves(curves)
+        .set_curves_list(curves)
         .map_err(|e| NetError::Tls(e.to_string()))?;
 
     // Signature algorithms (per device_class)
@@ -422,13 +465,13 @@ pub fn chrome_connector(profile: &StealthProfile) -> Result<SslConnector, NetErr
     builder.enable_ocsp_stapling();
     builder.enable_signed_cert_timestamps();
 
-    // Chrome 131+ and Firefox 132+ both send two key shares
-    // (X25519MLKEM768 + X25519).
-    builder.set_key_shares_limit(2);
+    // Two key shares (X25519MLKEM768 + X25519) are set per-connection in
+    // `configure_connection` (btls exposes this on the connection, not
+    // the context).
 
     // Firefox-only extensions: delegated_credentials (0x22) and
     // record_size_limit (0x1c). Both are hard Firefox/NSS signatures absent
-    // from every Chrome build. boring2 4.15 exposes them as builder methods.
+    // from every Chrome build. btls exposes them as builder methods.
     if is_firefox {
         builder
             .set_delegated_credentials(FIREFOX_DELEGATED_CREDENTIALS)
@@ -441,20 +484,22 @@ pub fn chrome_connector(profile: &StealthProfile) -> Result<SslConnector, NetErr
     // its compress_certificate ext (NSS order).
     if is_firefox {
         builder
-            .add_cert_compression_alg(CertCompressionAlgorithm::Zlib)
+            .add_certificate_compression_algorithm(ZlibCertCompressor)
             .map_err(|e| NetError::Tls(e.to_string()))?;
         builder
-            .add_cert_compression_alg(CertCompressionAlgorithm::Brotli)
+            .add_certificate_compression_algorithm(BrotliCertCompressor)
             .map_err(|e| NetError::Tls(e.to_string()))?;
     } else {
-        let cert_compress_alg = if is_safari_ios {
-            CertCompressionAlgorithm::Zlib
+        let is_zlib = is_safari_ios;
+        if is_zlib {
+            builder
+                .add_certificate_compression_algorithm(ZlibCertCompressor)
+                .map_err(|e| NetError::Tls(e.to_string()))?;
         } else {
-            CertCompressionAlgorithm::Brotli
-        };
-        builder
-            .add_cert_compression_alg(cert_compress_alg)
-            .map_err(|e| NetError::Tls(e.to_string()))?;
+            builder
+                .add_certificate_compression_algorithm(BrotliCertCompressor)
+                .map_err(|e| NetError::Tls(e.to_string()))?;
+        }
     }
 
     // iOS Safari does not send the session_ticket extension at all.
@@ -474,40 +519,60 @@ pub fn chrome_connector(profile: &StealthProfile) -> Result<SslConnector, NetErr
     add_env_root_certs(&mut cert_store)?;
     builder.set_cert_store(cert_store.build());
 
-    let connector = builder.build();
-
-    // Extension order:
-    //  - Chrome: per-handshake Fisher-Yates shuffle of all 16 desktop extensions
-    //  - Safari iOS: FIXED order (same every handshake) — Phase D
-    //    upgrade. Set Safari's specific 13-extension order via the same
-    //    permutation API. PADDING positional ordering still requires raw
-    //    extension injection (deferred); BoringSSL auto-emits PADDING when
-    //    ClientHello length crosses ~512 bytes, which our Safari profile
-    //    typically does.
-    let permutation = if is_safari_ios {
-        SAFARI_IOS_EXTENSION_PERMUTATION.to_vec()
+    // Extension order (a context knob — applied pre-build like the rest):
+    //  - Chrome: per-handshake Fisher-Yates shuffle of all 17 desktop extensions
+    //  - Safari iOS: FIXED order (same every handshake)
+    //  - Firefox: FIXED NSS order (same every handshake)
+    // PADDING positional ordering still requires raw extension injection
+    // (deferred); BoringSSL auto-emits PADDING when ClientHello length
+    // crosses ~512 bytes.
+    let order = if is_safari_ios {
+        fixed_extension_order(SAFARI_IOS_EXTENSION_ORDER)
     } else if is_firefox {
         // Firefox/NSS emits a FIXED extension order every handshake (no
-        // Fisher-Yates), like Safari — use the Firefox order verbatim.
-        FIREFOX_EXTENSION_PERMUTATION.to_vec()
+        // Fisher-Yates) — use the Firefox order verbatim.
+        fixed_extension_order(FIREFOX_EXTENSION_ORDER)
     } else {
-        shuffled_chrome_extension_permutation()
+        shuffled_chrome_extension_order()
     };
-    // SAFETY: BoringSSL's `SSL_CTX_set_extension_permutation` reads
-    // `len` consecutive `uint8_t` from `ptr` and copies them into the
-    // SSL_CTX. `permutation` is a contiguous `Vec<u8>` that lives
-    // for the duration of this call; `permutation.as_ptr()` and
-    // `permutation.len()` are an exact, in-bounds, non-null
-    // pair. `connector.context()` is a live `SslContext` we just
-    // built — its `as_ptr()` returns a non-null pointer valid for
-    // the call. No aliasing concern: BoringSSL only reads the
-    // permutation buffer.
-    unsafe {
-        boring_sys2::SSL_CTX_set_extension_permutation(
-            connector.context().as_ptr(),
-            permutation.as_ptr(),
-            permutation.len(),
-        );
+    builder
+        .set_extension_permutation(&order)
+        .map_err(|e| NetError::Tls(e.to_string()))?;
+
+    let connector = builder.build();
+
+    // Trust Anchors (51764) — Chrome arms send the extension with an EMPTY
+    // anchor list (the server advertised no `tls-trust-anchors` parameter,
+    // so per the anonymity-set guidance there is nothing fingerprintable
+    // to send; presence alone signals a current Chrome network stack).
+    // Safari/Firefox arms omit it — no evidence they send it.
+    //
+    // Declared manually: btls-sys binds the symbol from its vendored
+    // BoringSSL, but exposes no safe wrapper, so declare the C ABI
+    // directly — it links against the same static BoringSSL.
+    // Signature: int SSL_CTX_set1_requested_trust_anchors(SSL_CTX *ctx,
+    // const uint8_t *ids, size_t ids_len); returns 1 on success.
+    extern "C" {
+        fn SSL_CTX_set1_requested_trust_anchors(
+            ctx: *mut btls_sys::SSL_CTX,
+            ids: *const u8,
+            ids_len: usize,
+        ) -> std::os::raw::c_int;
+    }
+    if !is_safari_ios && !is_firefox {
+        // SAFETY: the function copies `len` bytes from `ids` into the
+        // SSL_CTX. An empty list passes a null pointer with length 0, which
+        // BoringSSL accepts (Chromium itself passes an empty vector for
+        // exactly this case). `connector.context()` is a live context we
+        // just built. Return value 1 = success.
+        let rc = unsafe {
+            SSL_CTX_set1_requested_trust_anchors(connector.context().as_ptr(), std::ptr::null(), 0)
+        };
+        if rc != 1 {
+            return Err(NetError::Tls(
+                "failed to set requested trust anchors".into(),
+            ));
+        }
     }
 
     Ok(connector)
@@ -560,7 +625,7 @@ pub fn configure_connection(
         // these buffers; it copies the data into the SSL_CTX, no
         // ownership transfer.
         unsafe {
-            if boring_sys2::SSL_add_application_settings(
+            if btls_sys::SSL_add_application_settings(
                 config.as_ptr(),
                 b"h2".as_ptr(),
                 2,
@@ -573,6 +638,20 @@ pub fn configure_connection(
         }
         config.set_alps_use_new_codepoint(true);
     }
+
+    // Two key shares — Chrome 131+ and Firefox 132+ send X25519MLKEM768 +
+    // X25519; Safari (no PQ groups configured) sends X25519 + P-256, the
+    // first two of its supported groups (this mirrors the old
+    // set_key_shares_limit(2) behavior; a share for an unconfigured group
+    // fails setup and no ClientHello goes out at all).
+    let shares: &[KeyShare] = if is_safari_ios {
+        &[KeyShare::X25519, KeyShare::P256]
+    } else {
+        &[KeyShare::X25519_MLKEM768, KeyShare::X25519]
+    };
+    config
+        .set_client_key_shares(shares)
+        .map_err(|e| NetError::Tls(e.to_string()))?;
 
     // SNI is the same for all profiles.
     let sni_domain = domain.trim_start_matches('[').trim_end_matches(']');
@@ -596,10 +675,16 @@ pub async fn connect_tls(
 ) -> Result<SslStream<TcpStream>, NetError> {
     let config = configure_connection(connector, profile, domain)?;
     let sni_domain = domain.trim_start_matches('[').trim_end_matches(']');
-
-    tokio_boring2::connect(config, sni_domain, stream)
+    let ssl = config
+        .into_ssl(sni_domain)
+        .map_err(|e| NetError::Tls(format!("TLS config failed: {e}")))?;
+    let mut stream = SslStream::new(ssl, stream)
+        .map_err(|e| NetError::Tls(format!("TLS stream failed: {e}")))?;
+    std::pin::Pin::new(&mut stream)
+        .connect()
         .await
-        .map_err(|e| NetError::Tls(format!("TLS handshake failed: {e}")))
+        .map_err(|e| NetError::Tls(format!("TLS handshake failed: {e}")))?;
+    Ok(stream)
 }
 
 /// Adds the PEM roots named by `SSL_CERT_FILE` to `store`, the same variable
@@ -683,7 +768,10 @@ TLS_RSA_WITH_AES_256_CBC_SHA";
         );
 
         // --- JA4 input 2: signature algorithms (order is JA4-significant) ---
-        const EXPECT_SIGALGS: &str = "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:\
+        // Chrome 153 advertises ML-DSA-44/65/87 first (measured live), so the
+        // eight classical algorithms alone are NOT the Chrome list.
+        const EXPECT_SIGALGS: &str = "mldsa44:mldsa65:mldsa87:\
+ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:\
 rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:\
 rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
         assert_eq!(
@@ -693,32 +781,25 @@ rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
 
         // --- JA4 input 3: supported groups / curves order ---
         assert_eq!(
-            CURVES_DESKTOP,
-            &[
-                SslCurve::X25519_MLKEM768,
-                SslCurve::X25519,
-                SslCurve::SECP256R1,
-                SslCurve::SECP384R1,
-            ],
+            CURVES_DESKTOP, "X25519MLKEM768:X25519:P-256:P-384",
             "Chrome desktop curve order drifted (post-quantum MLKEM768 \
              must lead) — JA4 supported_groups would change"
         );
 
-        // --- JA4 input 4: extension count (16 — JA4 `c` digit) ---
+        // --- JA4 input 4: extension count (17 — JA4 `c` digit) ---
         assert_eq!(
-            CHROME_EXTENSION_PERMUTATION.len(),
-            16,
+            CHROME_EXTENSION_ORDER.len(),
+            17,
             "Chrome extension count drifted — JA4 extension-count digit \
              would change"
         );
 
-        // --- UA / TLS coherence (the deliberate, wire-equivalent split) ---
-        assert_eq!(TLS_CHROME_MAJOR, 147);
+        // --- UA / TLS coherence: both advertise the same major ---
+        assert_eq!(TLS_CHROME_MAJOR, 153);
         assert_eq!(UA_CHROME_MAJOR, 153);
-        // The split is intentional and wire-coherent: Chrome's
-        // ClientHello did not rev 147→148, JA4 cannot encode the Chrome
-        // version, and UA=148 is the A/B-tested current-Chrome value.
-        // (Rationale in TLS_CHROME_MAJOR docs.)
+        // The hello is 153-class (trust_anchors present); see
+        // TLS_CHROME_MAJOR docs. JA4 cannot encode the Chrome version,
+        // so a JA4-vs-UA cross-check verifies the family only.
 
         fn ua_chrome_major(ua: &str) -> Option<u32> {
             let i = ua.find("Chrome/")? + "Chrome/".len();
@@ -860,17 +941,20 @@ rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
 
     #[test]
     fn test_shuffle_is_full_fisher_yates() {
-        // Real Chrome shuffles all 16 extensions uniformly (no buckets).
+        // Real Chrome shuffles all 17 extensions uniformly (no buckets).
         // Verify the shuffle preserves the full set + is non-deterministic.
-        let p1 = shuffled_chrome_extension_permutation();
-        let p2 = shuffled_chrome_extension_permutation();
+        let p1 = shuffled_chrome_extension_order();
+        let p2 = shuffled_chrome_extension_order();
 
-        assert_eq!(p1.len(), 16);
-        assert_eq!(p2.len(), 16);
+        assert_eq!(p1.len(), 17);
+        assert_eq!(p2.len(), 17);
 
-        let mut sorted = p1.clone();
+        let mut sorted: Vec<String> = p1.iter().map(|e| format!("{e:?}")).collect();
         sorted.sort();
-        let mut expected = CHROME_EXTENSION_PERMUTATION.to_vec();
+        let mut expected: Vec<String> = CHROME_EXTENSION_ORDER
+            .iter()
+            .map(|id| format!("{:?}", ExtensionType::from(*id)))
+            .collect();
         expected.sort();
         assert_eq!(sorted, expected, "shuffle must preserve the set");
 

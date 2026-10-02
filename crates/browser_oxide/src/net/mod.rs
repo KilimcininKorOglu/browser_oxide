@@ -26,7 +26,7 @@ pub mod tls;
 
 use crate::stealth::StealthProfile;
 use alt_svc::AltSvcCache;
-use boring2::ssl::SslConnector;
+use btls::ssl::SslConnector;
 use bytes::Bytes;
 use cookies::CookieJar;
 use error::NetError;

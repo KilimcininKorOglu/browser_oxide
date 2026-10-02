@@ -46,12 +46,9 @@ url = "2"
 percent-encoding = "2"
 httparse = "1"
 # --- HTTP / TLS / net ---
-boring2 = { version = "4.15", features = [
-  "pq-experimental",
-  "cert-compression",
-] }
-boring-sys2 = "4.15"
-tokio-boring2 = "4.15"
+btls = { version = "0.5.6" }
+btls-sys = "0.5.6"
+tokio-btls = "0.5.6"
 webpki-root-certs = "1.0"
 webpki-roots = "1"
 http = "1"

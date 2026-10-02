@@ -48,6 +48,16 @@ serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 
+# Our own BoringSSL: it declares the post-quantum signatures Chrome 151+
+# advertises (ML-DSA-44/65/87, codepoints 0904/0905/0906). Stock btls-sys
+# rejects a codepoint with no entry in its signature table, so without this
+# the third part of JA4 (extensions + signature algorithms) matches no real
+# browser. The patch is narrow — three names plus a skip in the preference
+# check; signing or verifying with such a signature still cannot work, which
+# is also true of Chrome. See vendor/btls-sys/PATCHES.md.
+[patch.crates-io]
+btls-sys = { path = "vendor/btls-sys" }
+
 [profile.release]
 opt-level = 3
 lto = "thin"
