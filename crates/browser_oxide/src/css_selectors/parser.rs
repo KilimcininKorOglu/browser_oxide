@@ -224,9 +224,16 @@ impl<'a> SelectorParser<'a> {
                     self.advance();
                 }
                 TokenKind::Hash { value, .. } => {
-                    let value = resolve_escapes(value).to_string();
-                    components.push(Component::Simple(SimpleSelector::Id(value)));
-                    self.advance();
+                    // An unrestricted hash token is not a valid selector: `#1`
+                    // is only "unrestricted" because it cannot begin an
+                    // identifier, and CSS refuses it there. Chrome answers
+                    // `#1` with a SyntaxError; accepting it as an id made a
+                    // probe for exactly this case read "matched nothing"
+                    // instead.
+                    return Err(SelectorParseError::UnexpectedToken {
+                        loc: self.current_token().map(|t| t.loc).unwrap_or_default(),
+                        message: format!("'{}' is not a valid selector", resolve_escapes(value)),
+                    });
                 }
                 TokenKind::OpenSquare => {
                     components.push(Component::Simple(self.parse_attribute_selector()?));

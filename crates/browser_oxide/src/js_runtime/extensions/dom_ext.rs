@@ -307,6 +307,11 @@ pub fn op_dom_query_selector(
 ) -> i32 {
     let state = state.borrow::<DomState>();
     let id = NodeId::from_raw(node_id as u32);
+    // Validate BEFORE the receiver is looked at: a document is not an element,
+    // and the non-element path below has no way to report a bad selector.
+    if crate::css_selectors::parse_selector_list(selector).is_err() {
+        return selector_rejection(selector);
+    }
     let Some(element) = DomElement::new(&state.dom, id) else {
         return query_non_element_root(&state.dom, id, selector, true)
             .first()
@@ -315,9 +320,29 @@ pub fn op_dom_query_selector(
     };
     match crate::css_selectors::query_selector(&element, selector) {
         Ok(Some(found)) => found.node_id().to_raw() as i32,
-        _ => -1,
+        Ok(None) => -1,
+        Err(_) => selector_rejection(selector),
     }
 }
+
+/// How a rejected selector comes back to JS. Chrome answers a malformed
+/// selector with a SyntaxError naming the call, and swallowing the parse
+/// error into "no match" is both a wrong answer and a tell: `#1`, `a > > b`
+/// and `:bogus` all have to raise, and an empty selector has its own text.
+fn selector_rejection(selector: &str) -> i32 {
+    if selector.trim().is_empty() {
+        EMPTY_SELECTOR
+    } else {
+        INVALID_SELECTOR
+    }
+}
+
+/// Sentinel: the selector parsed but nothing matched.
+pub const NO_MATCH: i32 = -1;
+/// Sentinel: the selector is empty, which Chrome words separately.
+pub const EMPTY_SELECTOR: i32 = -2;
+/// Sentinel: the selector is malformed.
+pub const INVALID_SELECTOR: i32 = -3;
 
 #[op2]
 #[serde]
@@ -328,14 +353,19 @@ pub fn op_dom_query_selector_all(
 ) -> Vec<i32> {
     let state = state.borrow::<DomState>();
     let id = NodeId::from_raw(node_id as u32);
+    if crate::css_selectors::parse_selector_list(&selector).is_err() {
+        return vec![selector_rejection(&selector)];
+    }
     let Some(root_el) = DomElement::new(&state.dom, id) else {
         return query_non_element_root(&state.dom, id, &selector, false);
     };
     crate::css_selectors::query_selector_all(&root_el, &selector)
-        .unwrap_or_default()
-        .iter()
-        .map(|e| e.node_id().to_raw() as i32)
-        .collect()
+        .map(|els| {
+            els.iter()
+                .map(|e| e.node_id().to_raw() as i32)
+                .collect::<Vec<i32>>()
+        })
+        .unwrap_or_else(|_| vec![selector_rejection(&selector)])
 }
 
 #[op2(fast)]

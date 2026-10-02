@@ -954,10 +954,13 @@
         hasAttribute(name) { return ops.op_dom_has_attribute(_getNodeId(this), name); }
         querySelector(sel) {
             const id = ops.op_dom_query_selector(_getNodeId(this), sel);
+            _rejectSelector("querySelector", _selectorOwner(this), sel, id);
             return id !== null ? _wrapNode(id) : null;
         }
         querySelectorAll(sel) {
-            return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
+            const ids = ops.op_dom_query_selector_all(_getNodeId(this), sel);
+            _rejectSelector("querySelectorAll", _selectorOwner(this), sel, ids[0]);
+            return new NodeList(ids);
         }
         matches(sel) {
             const all = ops.op_dom_query_selector_all(
@@ -2259,6 +2262,42 @@
         );
     }
 
+    // A malformed selector is a SyntaxError in chrome, not an empty result:
+    //   Failed to execute 'querySelector' on 'Document':
+    //   '#1' is not a valid selector.
+    //   Failed to execute 'querySelectorAll' on 'Document':
+    //   The provided selector is empty.
+    // Answering "no match" for both is a classic way for a page to learn it
+    // is not talking to a browser, and it is what `#1`, `a > > b`, `:bogus`
+    // and the empty string used to do here.
+    function _rejectSelector(method, owner, sel, code) {
+        if (code === -2) {
+            throw new __oxT.DOMException(
+                "Failed to execute '" + method + "' on '" + owner + "': " +
+                "The provided selector is empty.",
+                "SyntaxError"
+            );
+        }
+        if (code === -3) {
+            throw new __oxT.DOMException(
+                "Failed to execute '" + method + "' on '" + owner + "': '" +
+                sel + "' is not a valid selector.",
+                "SyntaxError"
+            );
+        }
+    }
+
+    // The interface a selector call is reported against: chrome names the
+    // receiver's interface, so a document answers 'Document' and an element
+    // 'Element'.
+    function _selectorOwner(node) {
+        try {
+            return node === globalThis.document ? 'Document' : 'Element';
+        } catch (_) {
+            return 'Element';
+        }
+    }
+
     // WebIDL arity: a missing required argument is a TypeError before the
     // operation looks at anything else. Chrome reports the call's own name.
     function _requireDOMArgs(method, owner, args, needed) {
@@ -2563,11 +2602,14 @@
         querySelector(sel) {
             _requireDOMArgs("querySelector", "Document", arguments, 1);
             const id = ops.op_dom_query_selector(_getNodeId(this), sel);
+            _rejectSelector("querySelector", "Document", sel, id);
             return id !== null ? _wrapNode(id) : null;
         }
         querySelectorAll(sel) {
             _requireDOMArgs("querySelectorAll", "Document", arguments, 1);
-            return new NodeList(ops.op_dom_query_selector_all(_getNodeId(this), sel));
+            const ids = ops.op_dom_query_selector_all(_getNodeId(this), sel);
+            _rejectSelector("querySelectorAll", "Document", sel, ids[0]);
+            return new NodeList(ids);
         }
         createElement(tag) {
             _requireDOMArgs("createElement", "Document", arguments, 1);
