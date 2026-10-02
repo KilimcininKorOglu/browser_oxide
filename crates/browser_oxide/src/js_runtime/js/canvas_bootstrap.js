@@ -64,24 +64,8 @@
         return _canvasSeedCache;
     };
     const _GENERIC_FAMILIES = new Set(["sans-serif","serif","monospace","cursive","fantasy","system-ui","ui-sans-serif","ui-serif","ui-monospace"]);
-    const _primaryFontFamily = (fontStr) => {
-        if (!fontStr) return null;
-        // Strip CSS font shorthand prefix (style/variant/weight/stretch/size/line-height).
-        // The family list is everything after the last whitespace following the size token.
-        const sizeMatch = fontStr.match(/(\d+(?:\.\d+)?)(px|pt|em|rem|%|vh|vw)\s+(.+)$/);
-        const familyList = sizeMatch ? sizeMatch[3] : fontStr;
-        const first = familyList.split(",")[0] || "";
-        return first.replace(/["']/g, "").trim().toLowerCase();
-    };
     // 0.0 .. ~3.5 px deterministic delta. Sub-character-width so layout
     // stays stable, large enough to clear 1e-3 fingerprint comparisons.
-    const _fontFamilyWidthDelta = (family) => {
-        if (!family) return 0;
-        if (_GENERIC_FAMILIES.has(family)) return 0; // generics are baselines
-        if (!_resolveInstalledFonts().has(family)) return 0; // not installed on this OS
-        const h = _fontProbeFnvHash(family);
-        return (h % 7000) / 2000; // 0.0 .. 3.5 px
-    };
 
     // Parse CSS color to [r, g, b, a]
     function _parseColor(str) {
@@ -228,21 +212,17 @@
         fillText(text, x, y) { ops.op_canvas_fill_text(this.#id, text, x, y); }
         strokeText(text, x, y) { ops.op_canvas_stroke_text(this.#id, text, x, y); }
         measureText(text) {
-            // Full 13-field TextMetrics shaped in Rust (T1.2 font stack).
-            // actualBoundingBox* come from the real glyph run, not a
-            // derived ratio — this is what fingerprint sites probe.
+            // Full 13-field TextMetrics shaped in Rust. NO synthetic
+            // per-family delta: the resolved faces already differentiate
+            // (real system fonts on macOS, metric-compatible Liberation on
+            // Linux), and real Chrome adds nothing here — the old
+            // _fontFamilyWidthDelta hack shifted every width by up to
+            // +0.87px per char against the real browser's values.
             const m = ops.op_canvas_measure_text_full(this.#id, text);
-            // Per-family micro-delta so canvas-based font detection works.
-            // See `_fontFamilyWidthDelta` for rationale.
-            const fam = _primaryFontFamily(this._font);
-            const deltaPerChar = _fontFamilyWidthDelta(fam);
-            // An empty string measures 0 wide in every font.
-            const len = (typeof text === "string") ? text.length : 0;
-            const widthDelta = deltaPerChar * len * 0.25;
             return _makeTextMetrics({
-                width: m.width + widthDelta,
+                width: m.width,
                 actualBoundingBoxLeft: m.actual_bounding_box_left,
-                actualBoundingBoxRight: m.actual_bounding_box_right + widthDelta,
+                actualBoundingBoxRight: m.actual_bounding_box_right,
                 actualBoundingBoxAscent: m.actual_bounding_box_ascent,
                 actualBoundingBoxDescent: m.actual_bounding_box_descent,
                 fontBoundingBoxAscent: m.font_bounding_box_ascent,
