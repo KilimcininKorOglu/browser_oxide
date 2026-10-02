@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mut args = std::env::args().skip(1);
-    let url = args.next().expect("usage: botcheck_probe <url> [wait_secs]");
+    let url = args
+        .next()
+        .expect("usage: botcheck_probe <url> [wait_secs]");
     let wait: u64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(25);
 
     let local = tokio::task::LocalSet::new();
@@ -25,7 +27,10 @@ async fn main() {
             };
             let t0 = Instant::now();
             loop {
-                let _ = page.event_loop().run_until_idle(Duration::from_millis(250)).await;
+                let _ = page
+                    .event_loop()
+                    .run_until_idle(Duration::from_millis(250))
+                    .await;
                 if t0.elapsed() > Duration::from_secs(wait) {
                     break;
                 }

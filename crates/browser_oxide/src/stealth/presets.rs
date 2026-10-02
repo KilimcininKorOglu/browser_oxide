@@ -181,7 +181,7 @@ pub fn chrome_153_windows() -> StealthProfile {
 /// version in the UA string is a divergence from real Chrome behavior — confirmed by
 /// comparing real-browser header captures against our pipeline.
 pub fn chrome_153_macos() -> StealthProfile {
-    StealthProfile {
+    let mut p = StealthProfile {
         enforce_csp: true,
         user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36".into(),
         browser_name: "Chrome".into(),
@@ -268,7 +268,14 @@ pub fn chrome_153_macos() -> StealthProfile {
         proxy: None,
         media_devices: default_media_devices("macos"),
         gpu_profile: crate::stealth::gpu::apple_m3_macos(),
-    }
+    };
+    // Host-aware GPU string: the ANGLE Metal driver stack is shared across
+    // Apple Silicon, only the chip name differs. Mirror the host-derived
+    // webgl_renderer onto the gpu_profile so UNMASKED_RENDERER_WEBGL and
+    // the legacy webgl_renderer path agree (engine_audit showed M3 fallback
+    // on an M1 Max host).
+    p.gpu_profile.unmasked_renderer = p.webgl_renderer.clone();
+    p
 }
 
 /// Chrome 148 on Linux.

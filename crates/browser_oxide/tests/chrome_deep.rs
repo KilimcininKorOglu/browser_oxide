@@ -265,7 +265,7 @@ async fn test_user_agent_data_highentropy() {
             .collect();
         // Chrome's third GREASE brand is randomized per release ("Not.A/Brand",
         // "Not-A.Brand", "Not_A Brand", "Not(A:Brand", ...); current engine
-        // ships "Not.A/Brand" matching Chrome 147. Match either common form
+        // ships "Not_A Brand" matching headed Chrome 153. Match either common form
         // — the test point is that exactly one non-Chromium/non-Google brand
         // is present.
         assert_eq!(sorted.len(), 3);

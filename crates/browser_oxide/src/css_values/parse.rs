@@ -734,7 +734,6 @@ fn parse_content_visibility(value: &[ComponentValue<'_>]) -> Result<CssValue, Va
 
 // --- Shorthand parsers ---
 
-
 /// Expand the CSS `font` shorthand (`font: italic 700 15px "Times New Roman", serif`)
 /// into its longhands via the same parser the canvas ctx.font uses. Without
 /// this, `font:24px monospace` in an inline style left the element at the

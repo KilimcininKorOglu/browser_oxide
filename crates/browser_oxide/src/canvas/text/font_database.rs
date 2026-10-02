@@ -147,7 +147,6 @@ impl FontDatabase {
         }
     }
 
-
     /// True when a BY-NAME lookup must miss: the requested family is one
     /// of our bundled Linux faces and the persona is not Linux. The emoji
     /// face is exempt — it is the internal rendering fallback.
@@ -198,7 +197,7 @@ impl FontDatabase {
         let target = family.to_ascii_lowercase();
         let refused = |fam: &str| {
             os_name != "Linux"
-                && fam.to_ascii_lowercase() != "noto emoji"
+                && !fam.eq_ignore_ascii_case("noto emoji")
                 && self.bundled_families.contains(&fam.to_ascii_lowercase())
         };
         if let Some(f) = self.inner.faces().find(|f| {

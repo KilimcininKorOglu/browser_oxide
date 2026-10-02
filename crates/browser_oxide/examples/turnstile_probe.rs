@@ -257,22 +257,6 @@ async fn main() {
                     page.consume_and_print_logs();
                     std::process::exit(2);
                 }
-                Some(tok) => {
-                    println!("MINTED {} at {:.1}s", tok, t0.elapsed().as_secs_f32());
-                    println!("OK");
-                }
-                None => {
-                    println!("NO-TOKEN after {:.1}s", t0.elapsed().as_secs_f32());
-                    println!("iframes={}", page.child_iframe_count());
-                    if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__evts || {})") {
-                        eprintln!("[EVENTS] {}", v);
-                    }
-                    if let Ok(v) = page.evaluate("JSON.stringify(globalThis.__entryVals || {})") {
-                        eprintln!("[ENTRY-VALS] {}", v);
-                    }
-                    page.consume_and_print_logs();
-                    std::process::exit(2);
-                }
             }
         })
         .await;

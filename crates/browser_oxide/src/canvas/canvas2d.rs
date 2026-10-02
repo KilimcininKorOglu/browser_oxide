@@ -1108,8 +1108,8 @@ impl Canvas2D {
     /// jpeg/webp MIME (the old behaviour) is trivially detectable — the
     /// bytes do not even carry the format's magic.
     pub fn to_data_url_type(&self, mime: &str, quality: Option<f64>) -> Option<String> {
+        use base64::Engine;
         use std::io::Cursor;
-use base64::Engine;
         let unpremultiplied = self.get_image_data(0, 0, self.width, self.height);
         let (mime, bytes) = match mime {
             "image/jpeg" => {
@@ -1124,17 +1124,24 @@ use base64::Engine;
                 let mut buf = Vec::new();
                 let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
                     &mut buf,
-                    quality.map(|q| (q.clamp(0.0, 1.0) * 100.0).round() as u8).unwrap_or(92),
+                    quality
+                        .map(|q| (q.clamp(0.0, 1.0) * 100.0).round() as u8)
+                        .unwrap_or(92),
                 );
                 encoder
-                    .encode(&rgb, self.width, self.height, image::ExtendedColorType::Rgb8)
+                    .encode(
+                        &rgb,
+                        self.width,
+                        self.height,
+                        image::ExtendedColorType::Rgb8,
+                    )
                     .ok()?;
                 ("image/jpeg", buf)
             }
             "image/webp" => {
                 let mut buf = Vec::new();
                 let mut cursor = Cursor::new(&mut buf);
-                let mut encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut cursor);
+                let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut cursor);
                 encoder
                     .encode(
                         &unpremultiplied,

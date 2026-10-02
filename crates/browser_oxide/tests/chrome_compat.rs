@@ -1569,8 +1569,10 @@ async fn webgl_unmasked_vendor_matches_windows_profile() {
 
 #[tokio::test]
 async fn webgl_unmasked_renderer_matches_macos_profile() {
-    // macOS profile reports Apple M3 (Phase 7 — was M2 Pro).
+    // macOS profile is host-aware: UNMASKED_RENDERER must equal the profile's
+    // own webgl_renderer (M1 Max on this host, M3 fallback elsewhere).
     let profile = browser_oxide::stealth::chrome_153_macos();
+    let expected = profile.webgl_renderer.clone();
     let r = webgl_eval(
         profile,
         r#"(() => {
@@ -1580,8 +1582,12 @@ async fn webgl_unmasked_renderer_matches_macos_profile() {
     )
     .await;
     assert!(
-        r.contains("Apple M3"),
-        "macOS profile should report Apple M3, got: {r}"
+        r.contains("Apple"),
+        "macOS profile should report Apple, got: {r}"
+    );
+    assert_eq!(
+        r, expected,
+        "UNMASKED_RENDERER must mirror profile webgl_renderer"
     );
 }
 

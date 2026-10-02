@@ -273,14 +273,14 @@ impl LayoutEngine {
                         CssLP::Calc(_) => {}
                     }
                 }
-                if let Some(CssValue::FontFamily(families)) = computed.get(&PropertyId::FontFamily) {
+                if let Some(CssValue::FontFamily(families)) = computed.get(&PropertyId::FontFamily)
+                {
                     ctx.font_families = families.clone();
                 }
             }
         }
         ctx
     }
-
 
     /// True when every ELEMENT child of `node_id` is inline-level
     /// (inline, inline-block, ruby). Text children always participate in
@@ -374,10 +374,9 @@ impl LayoutEngine {
                 // Flex-row reproduces the line box: items flow left to
                 // right, the row height is the tallest item, and inline
                 // blocks keep their intrinsic size.
-                if matches!(
-                    display,
-                    Some(CssValue::Display(Display::Block))
-                ) && self.children_are_all_inline(dom, node_id) {
+                if matches!(display, Some(CssValue::Display(Display::Block)))
+                    && self.children_are_all_inline(dom, node_id)
+                {
                     taffy_style.display = taffy::Display::Flex;
                     taffy_style.flex_direction = taffy::FlexDirection::Row;
                     taffy_style.align_items = Some(taffy::AlignItems::BASELINE);

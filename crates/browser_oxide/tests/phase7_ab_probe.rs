@@ -263,7 +263,7 @@ async fn phase7_d4_screen_webgl_tostringtag() {
         assert_eq!(got.trim_matches('"'), v, "{k} mismatch");
     }
 
-    // WebGL renderer says Apple M3, extension count is 39
+    // WebGL renderer is host-aware (M1 Max here, M3 fallback); extension count is 39
     let renderer = p
         .evaluate(
             r#"(() => {
@@ -274,9 +274,18 @@ async fn phase7_d4_screen_webgl_tostringtag() {
             })()"#,
         )
         .unwrap();
+    let host_chip = std::process::Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "Apple M3".to_string());
     assert!(
-        renderer.contains("Apple M3"),
-        "renderer should say Apple M3, got {renderer}"
+        renderer.contains("Apple"),
+        "renderer should say Apple, got {renderer}"
+    );
+    assert!(
+        renderer.contains(&host_chip),
+        "renderer should mirror host chip {host_chip}, got {renderer}"
     );
     let ext_count = p
         .evaluate(
@@ -362,17 +371,17 @@ async fn phase7_d3_scroll_eventcounts_grease() {
         "pointerdown,touchend,input,keydown,mouseleave,mouseenter,drop,beforeinput,pointerenter,dragend"
     );
 
-    // 3c) GREASE "8" not "24"
+    // 3c) GREASE "8" not "24" — Chrome 153 spells it "Not_A Brand"
     let brands = p
         .evaluate("navigator.userAgentData.brands.map(b=>b.brand+':'+b.version).join(',')")
         .unwrap();
     let s = brands.trim_matches('"');
     assert!(
-        s.contains("Not.A/Brand:8"),
-        "Not.A/Brand version should be '8', got: {s}"
+        s.contains("Not_A Brand:8"),
+        "Not_A Brand version should be '8', got: {s}"
     );
     assert!(
-        !s.contains("Not.A/Brand:24"),
+        !s.contains("Not_A Brand:24"),
         "stale GREASE version 24 leaked into brands: {s}"
     );
 }

@@ -1357,7 +1357,11 @@ fn expand_shorthand(name: &str, value: &str) -> Vec<(String, String)> {
             let parsed = crate::canvas::text::ParsedFont::parse(v);
             match parsed {
                 Some(f) => {
-                    let style = if f.italic { "italic".to_string() } else { "normal".to_string() };
+                    let style = if f.italic {
+                        "italic".to_string()
+                    } else {
+                        "normal".to_string()
+                    };
                     let families = f
                         .families
                         .iter()

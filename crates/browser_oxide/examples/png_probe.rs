@@ -16,7 +16,13 @@ fn deflate_with(
         let mut strm: z_stream = std::mem::zeroed();
         let version = CString::new("1.2.11").unwrap();
         let rc = deflateInit2_(
-            &mut strm, level, 8, 15, mem_level, strategy, version.as_ptr(),
+            &mut strm,
+            level,
+            8,
+            15,
+            mem_level,
+            strategy,
+            version.as_ptr(),
             std::mem::size_of::<z_stream>() as i32,
         );
         if rc != 0 {
@@ -67,7 +73,11 @@ fn deflate_with(
             feed(raw, true)
         };
         deflateEnd(&mut strm);
-        if ok { Some(stream) } else { None }
+        if ok {
+            Some(stream)
+        } else {
+            None
+        }
     }
 }
 
@@ -88,7 +98,13 @@ fn main() {
     let row_len = 1 + 60 * 4;
 
     println!("chrome idat: {} bytes", idat.len());
-    let strategies = [("default", 0i32), ("filtered", 1), ("huffman", 2), ("rle", 3), ("fixed", 4)];
+    let strategies = [
+        ("default", 0i32),
+        ("filtered", 1),
+        ("huffman", 2),
+        ("rle", 3),
+        ("fixed", 4),
+    ];
     for level in [1, 2, 3, 4, 5, 6] {
         for (sname, sid) in strategies {
             for mem in [8, 9, 7] {

@@ -96,13 +96,6 @@ fn cmap_glyph(code: u32, cmap: &ttf_parser::cmap::Table<'_>) -> bool {
     false
 }
 
-/// The bundled emoji face for codepoint fallback.
-fn resolve_emoji_face() -> Option<(&'static [u8], u32)> {
-    let db = FontDatabase::get();
-    let id = db.query_strict_public("Noto Emoji")?;
-    db.face_data(id)
-}
-
 /// Measure text using the parsed font. Returns zero metrics for empty
 /// text or unresolvable fonts — matching Canvas 2D's tolerant behaviour.
 pub fn measure_text_metrics(text: &str, font: &ParsedFont, os_name: &str) -> TextMetrics {
@@ -228,7 +221,11 @@ pub fn shape_run(
     // (CJK, emoji, symbols) are reshaped with a fallback face. The old
     // behaviour handed the WHOLE string to the emoji face whenever one
     // codepoint was uncovered, which made every family measure alike.
-    Some((data, idx, shape_with_fallback(text, data, idx, font, os_name)))
+    Some((
+        data,
+        idx,
+        shape_with_fallback(text, data, idx, font, os_name),
+    ))
 }
 
 /// Shape `text` with the primary face, reshaping uncovered segments with
@@ -308,19 +305,13 @@ fn shape_with_fallback(
 
 /// Split `text` into maximal runs covered (true) and not covered (false)
 /// by the given face.
-fn uncovered_segments(
-    text: &str,
-    data: &[u8],
-    idx: u32,
-) -> Vec<(String, bool)> {
+fn uncovered_segments(text: &str, data: &[u8], idx: u32) -> Vec<(String, bool)> {
     let mut segments: Vec<(String, bool)> = Vec::new();
     for ch in text.chars() {
         let mut buf = [0u8; 4];
-        let s: &'static str;
         // A one-char string; leak is bounded by the text length and these
         // live only for the duration of the call.
-        let leaked: &'static str = Box::leak(ch.encode_utf8(&mut buf).to_string().into_boxed_str());
-        s = leaked;
+        let s: &'static str = Box::leak(ch.encode_utf8(&mut buf).to_string().into_boxed_str());
         let covered = {
             let one = [ch];
             face_covers(data, idx, &one.iter().collect::<String>())
@@ -342,14 +333,10 @@ fn resolve_fallback_face(
     os_name: &str,
 ) -> Option<(&'static [u8], u32)> {
     let db = FontDatabase::get();
-    let is_symbol = segment
-        .chars()
-        .any(|c| {
-            let u = c as u32;
-            (0x1F000..=0x1FAFF).contains(&u)
-                || (0x2600..=0x27BF).contains(&u)
-                || u == 0xFE0F
-        });
+    let is_symbol = segment.chars().any(|c| {
+        let u = c as u32;
+        (0x1F000..=0x1FAFF).contains(&u) || (0x2600..=0x27BF).contains(&u) || u == 0xFE0F
+    });
     // CSS per-glyph fallback walks the AUTHOR's family list first — a face
     // named in the request that misses the glyph hands off to the next
     // requested family, not to a system default. Measured tell: probing
@@ -365,7 +352,14 @@ fn resolve_fallback_face(
         chain.push(fam.as_str());
     }
     if os_name == "macOS" {
-        chain.extend(["PingFang SC", "Hiragino Sans", "Arial Unicode MS", "Apple Symbols", "STHeiti", "Heiti SC"]);
+        chain.extend([
+            "PingFang SC",
+            "Hiragino Sans",
+            "Arial Unicode MS",
+            "Apple Symbols",
+            "STHeiti",
+            "Heiti SC",
+        ]);
     } else if os_name == "Windows" {
         chain.extend(["Microsoft YaHei", "SimSun", "Segoe UI Symbol"]);
     } else {
@@ -658,59 +652,6 @@ pub fn rasterize_text_size_only(
     rasterize_text(text, x, y, &font, r, g, b, alpha, os_name)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn measure_hello_world_at_16px_arial() {
-        let font = ParsedFont::parse("16px Arial").unwrap();
-        let metrics = measure_text_metrics("Hello, World!", &font, "Linux");
-        assert!(metrics.width > 30.0 && metrics.width < 200.0);
-        assert!(metrics.font_bounding_box_ascent > 10.0);
-    }
-
-    #[test]
-    fn different_sizes_different_widths() {
-        let small = ParsedFont::parse("10px Arial").unwrap();
-        let big = ParsedFont::parse("40px Arial").unwrap();
-        let w1 = measure_text_width("Hello", &small, "Linux");
-        let w2 = measure_text_width("Hello", &big, "Linux");
-        assert!(w2 > w1 * 3.0);
-    }
-
-    #[test]
-    fn mono_wider_than_sans_for_narrow_text() {
-        // For the narrow character "i" repeated, a proportional sans
-        // font measures much less than a fixed-width monospace font.
-        let sans = ParsedFont::parse("14px Arial").unwrap();
-        let mono = ParsedFont::parse("14px monospace").unwrap();
-        let sans_w = measure_text_width("iiiiii", &sans, "Linux");
-        let mono_w = measure_text_width("iiiiii", &mono, "Linux");
-        assert!(
-            mono_w > sans_w * 1.3,
-            "mono should be much wider for narrow chars: sans={sans_w} mono={mono_w}"
-        );
-    }
-
-    #[test]
-    fn rasterize_produces_glyphs() {
-        let font = ParsedFont::parse("24px Arial").unwrap();
-        let glyphs = rasterize_text("A", 0.0, 20.0, &font, 0, 0, 0, 1.0, "Linux");
-        assert!(!glyphs.is_empty());
-        let g = &glyphs[0];
-        assert!(g.width > 0 && g.height > 0);
-        assert!(g.coverage.iter().any(|&c| c > 0));
-    }
-
-    #[test]
-    fn rasterize_empty_returns_empty() {
-        let font = ParsedFont::parse("16px Arial").unwrap();
-        let glyphs = rasterize_text("", 0.0, 0.0, &font, 0, 0, 0, 1.0, "Linux");
-        assert!(glyphs.is_empty());
-    }
-}
-
 /// Measure a text run the way the layout engine needs it: width plus the
 /// line box height of the face actually used (ascent + descent), because a
 /// fallback glyph (CJK, emoji) rides a taller font than the primary face.
@@ -765,4 +706,56 @@ pub fn measure_for_layout(
         m.width as f64,
         (run.ascent + run.descent + run.line_gap) as f64,
     ))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn measure_hello_world_at_16px_arial() {
+        let font = ParsedFont::parse("16px Arial").unwrap();
+        let metrics = measure_text_metrics("Hello, World!", &font, "Linux");
+        assert!(metrics.width > 30.0 && metrics.width < 200.0);
+        assert!(metrics.font_bounding_box_ascent > 10.0);
+    }
+
+    #[test]
+    fn different_sizes_different_widths() {
+        let small = ParsedFont::parse("10px Arial").unwrap();
+        let big = ParsedFont::parse("40px Arial").unwrap();
+        let w1 = measure_text_width("Hello", &small, "Linux");
+        let w2 = measure_text_width("Hello", &big, "Linux");
+        assert!(w2 > w1 * 3.0);
+    }
+
+    #[test]
+    fn mono_wider_than_sans_for_narrow_text() {
+        // For the narrow character "i" repeated, a proportional sans
+        // font measures much less than a fixed-width monospace font.
+        let sans = ParsedFont::parse("14px Arial").unwrap();
+        let mono = ParsedFont::parse("14px monospace").unwrap();
+        let sans_w = measure_text_width("iiiiii", &sans, "Linux");
+        let mono_w = measure_text_width("iiiiii", &mono, "Linux");
+        assert!(
+            mono_w > sans_w * 1.3,
+            "mono should be much wider for narrow chars: sans={sans_w} mono={mono_w}"
+        );
+    }
+
+    #[test]
+    fn rasterize_produces_glyphs() {
+        let font = ParsedFont::parse("24px Arial").unwrap();
+        let glyphs = rasterize_text("A", 0.0, 20.0, &font, 0, 0, 0, 1.0, "Linux");
+        assert!(!glyphs.is_empty());
+        let g = &glyphs[0];
+        assert!(g.width > 0 && g.height > 0);
+        assert!(g.coverage.iter().any(|&c| c > 0));
+    }
+
+    #[test]
+    fn rasterize_empty_returns_empty() {
+        let font = ParsedFont::parse("16px Arial").unwrap();
+        let glyphs = rasterize_text("", 0.0, 0.0, &font, 0, 0, 0, 1.0, "Linux");
+        assert!(glyphs.is_empty());
+    }
 }

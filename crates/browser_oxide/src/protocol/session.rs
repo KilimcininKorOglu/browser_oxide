@@ -443,9 +443,21 @@ impl CdpSession {
                     // Trusted wheel: Chrome fires one 'wheel' event with
                     // delta*; the legacy wheelDelta* fields come from the
                     // WheelEvent constructor.
-                    let dx = req.params.get("deltaX").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let dy = req.params.get("deltaY").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let dz = req.params.get("deltaZ").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let dx = req
+                        .params
+                        .get("deltaX")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    let dy = req
+                        .params
+                        .get("deltaY")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    let dz = req
+                        .params
+                        .get("deltaZ")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
                     let script = format!(
                         "(() => {{ \
                           const d = globalThis.__bo_td_9f27c3a1; \
@@ -480,8 +492,7 @@ impl CdpSession {
                     // cursor — Camoufox's humanize mode: a click never jumps,
                     // the pointer travels a human trajectory first, then the
                     // button event fires at the destination.
-                    let click_like =
-                        matches!(event_type, "mousePressed" | "mouseReleased");
+                    let click_like = matches!(event_type, "mousePressed" | "mouseReleased");
                     if dist > 10.0 && (event_type == "mouseMoved" || click_like) {
                         let pts = crate::stealth::behavior::mouse_trajectory(
                             (self.last_mouse_x, self.last_mouse_y),

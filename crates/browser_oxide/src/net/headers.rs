@@ -558,16 +558,17 @@ fn build_sec_ch_ua_full_version_list(profile: &StealthProfile) -> String {
 fn build_sec_ch_ua(profile: &StealthProfile) -> String {
     let major_version = profile.browser_version.split('.').next().unwrap_or("147");
 
-    // Real Chrome 147 sec-ch-ua:
-    //   "Google Chrome";v="147", "Not_A Brand";v="8", "Chromium";v="147"
-    // Brand order is [Google Chrome, Not.A/Brand, Chromium] (NOT
-    // alphabetical and NOT what the W3C spec implies). The "Not."-style
-    // dummy brand changes per Chrome version — we hardcode the v=8 / dot-slash
-    // form that matches Chrome 147+. Earlier Chrome (130 era) used
+    // Real Chrome 153 sec-ch-ua:
+    //   "Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"
+    // Brand order is [Google Chrome, Not_A Brand, Chromium] (NOT
+    // alphabetical and NOT what the W3C spec implies). The "Not"-style
+    // dummy brand changes per Chrome version — Chrome 153 uses the
+    // underscore form that matches headed-Chrome measurement.
+    // Earlier Chrome (130 era) used
     // "Not-A.Brand";v="24" with brands ordered [Chromium, Not-A.Brand, Google Chrome]
     // — that's what we used to emit, but it diverges from modern Chrome.
     format!(
-        "\"Google Chrome\";v=\"{v}\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"{v}\"",
+        "\"Google Chrome\";v=\"{v}\", \"Not_A Brand\";v=\"8\", \"Chromium\";v=\"{v}\"",
         v = major_version
     )
 }

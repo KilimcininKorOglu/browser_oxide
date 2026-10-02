@@ -47,7 +47,10 @@ async fn main() {
 
             let t0 = Instant::now();
             loop {
-                let _ = page.event_loop().run_until_idle(Duration::from_millis(200)).await;
+                let _ = page
+                    .event_loop()
+                    .run_until_idle(Duration::from_millis(200))
+                    .await;
                 if let Ok(s) = page.evaluate("globalThis.__probe_result") {
                     if s != "undefined" && !s.is_empty() {
                         println!("{}", s.trim_matches('"'));

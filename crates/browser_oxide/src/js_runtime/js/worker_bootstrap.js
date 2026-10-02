@@ -109,12 +109,12 @@
         const _browserFull = _p("browser_version", "147.0.7727.117");
         const _brands = [
             { brand: "Google Chrome", version: _browserMajor },
-            { brand: "Not.A/Brand", version: "8" },
+            { brand: "Not_A Brand", version: "8" },
             { brand: "Chromium", version: _browserMajor },
         ];
         const _fullVersionList = [
             { brand: "Google Chrome", version: _browserFull },
-            { brand: "Not.A/Brand", version: "8.0.0.0" },
+            { brand: "Not_A Brand", version: "8.0.0.0" },
             { brand: "Chromium", version: _browserFull },
         ];
         class WorkerNavigatorUAData {
