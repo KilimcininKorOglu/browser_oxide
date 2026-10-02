@@ -793,6 +793,42 @@ pub fn op_net_xhr_sync(
                     );
                     let mut merged = hdrs;
                     for h in &extra_headers { merged.push(h.clone()); }
+                    // Accept-CH persistence applies to sync XHR too: the
+                    // Turnstile challenge POST goes to an origin whose
+                    // iframe GET already carried high-entropy hints.
+                    if let Ok(parsed) = url::Url::parse(&url_clone) {
+                        if let Some(host) = parsed.host_str() {
+                            if client.has_accept_ch(host).await {
+                                crate::net::headers::splice_high_entropy_fetch(
+                                    &mut merged,
+                                    client.profile(),
+                                );
+                            }
+                        }
+                    }
+                    // XHR spec: a string body without an explicit
+                    // Content-Type is sent as text/plain;charset=UTF-8.
+                    // Binary (b:) bodies and empty bodies send none.
+                    let is_bytes_body = body.starts_with("b:");
+                    if !body_bytes.is_empty()
+                        && !is_bytes_body
+                        && !merged
+                            .iter()
+                            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                    {
+                        let pos = merged
+                            .iter()
+                            .position(|(k, _)| k == "accept")
+                            .map(|i| i + 1)
+                            .unwrap_or(merged.len());
+                        merged.insert(
+                            pos,
+                            (
+                                "content-type".to_string(),
+                                "text/plain;charset=UTF-8".to_string(),
+                            ),
+                        );
+                    }
                     client.post_bytes_with_exact_headers(&url_clone, &body_bytes, &merged).await
                 }
             };

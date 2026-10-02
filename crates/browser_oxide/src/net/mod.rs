@@ -633,6 +633,16 @@ impl HttpClient {
     ) -> Result<Response, NetError> {
         let mut hdrs = headers::nav_headers_fetch(&self.profile, url, origin);
         merge_headers(&mut hdrs, extra_headers);
+        // Same-origin Accept-CH persistence applies to fetch too: real
+        // Chrome attaches the high-entropy hints on subresource requests
+        // once the origin advertised Accept-CH (the nav path already does).
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                if self.has_accept_ch(host).await {
+                    headers::splice_high_entropy_fetch(&mut hdrs, &self.profile);
+                }
+            }
+        }
         self.get_with_exact_headers(url, &hdrs).await
     }
 
@@ -646,6 +656,13 @@ impl HttpClient {
     ) -> Result<Response, NetError> {
         let mut hdrs = headers::nav_headers_fetch(&self.profile, url, origin);
         merge_headers(&mut hdrs, extra_headers);
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                if self.has_accept_ch(host).await {
+                    headers::splice_high_entropy_fetch(&mut hdrs, &self.profile);
+                }
+            }
+        }
         self.post_bytes_with_exact_headers(url, body, &hdrs).await
     }
 

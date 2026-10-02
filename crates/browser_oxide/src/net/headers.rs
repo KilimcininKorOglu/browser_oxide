@@ -226,6 +226,8 @@ pub fn chrome_headers_reload(
 /// fingerprinting layers key on.
 ///
 /// Differences from navigation headers:
+///   - `sec-ch-ua*` block FIRST (same as nav — Chrome never sends
+///     `user-agent` first on the wire; JA4H fingerprints key on order)
 ///   - `accept: */*` (not text/html...)
 ///   - NO `upgrade-insecure-requests`
 ///   - `sec-fetch-dest: empty` (not `document`)
@@ -241,9 +243,7 @@ pub fn chrome_headers_fetch(
 ) -> Vec<(String, String)> {
     let mut headers = Vec::with_capacity(12);
 
-    headers.push(("user-agent".to_string(), profile.user_agent.clone()));
-    headers.push(("accept".to_string(), "*/*".to_string()));
-
+    // sec-ch-ua block FIRST, exactly like navigation (Chrome wire order).
     let sec_ch_ua = build_sec_ch_ua(profile);
     headers.push(("sec-ch-ua".to_string(), sec_ch_ua));
     // sec-ch-ua-mobile is a LOW-entropy hint sent on EVERY request (nav AND
@@ -254,7 +254,7 @@ pub fn chrome_headers_fetch(
     // hydration and produced an empty/thin body).
     // Mirror the nav path: derive from device_class. (High-entropy hints like
     // sec-ch-ua-model are correctly NOT sent on fetch unless the origin
-    // persisted Accept-CH, so we don't add them here.)
+    // persisted Accept-CH — see splice_high_entropy_fetch.)
     let is_mobile = matches!(
         profile.device_class,
         DeviceClass::MobileAndroid | DeviceClass::MobileIOS
@@ -267,6 +267,9 @@ pub fn chrome_headers_fetch(
         "sec-ch-ua-platform".to_string(),
         format!("\"{}\"", profile.os_name),
     ));
+
+    headers.push(("user-agent".to_string(), profile.user_agent.clone()));
+    headers.push(("accept".to_string(), "*/*".to_string()));
 
     // Compute sec-fetch-site from target vs origin.
     let site = match origin {
@@ -342,6 +345,107 @@ pub fn chrome_headers_with_accept_ch(profile: &StealthProfile) -> Vec<(String, S
     chrome_headers_impl(profile, true)
 }
 
+/// The nine high-entropy Client Hints in Chrome's emission order.
+/// Shared by the nav builder and `splice_high_entropy_fetch` so both
+/// paths emit byte-identical values.
+///
+/// Arch and bitness MUST come from profile fields, not be derived
+/// from `platform`. `navigator.platform` is "MacIntel" on both
+/// Intel Macs (arch=x86) and Apple Silicon Macs (arch=arm) — a
+/// legacy fossil. Real Chrome on M3 reports `Sec-CH-UA-Arch: arm`
+/// while keeping `navigator.platform: MacIntel`. Deriving from
+/// platform here would emit "x86" and contradict the JS-side
+/// `navigator.userAgentData.getHighEntropyValues({hints:['architecture']})`
+/// which reads `profile.cpu_architecture` directly — fingerprinting
+/// scripts cross-check these and reject on mismatch.
+fn high_entropy_hints(profile: &StealthProfile) -> Vec<(String, String)> {
+    let is_mobile = matches!(
+        profile.device_class,
+        DeviceClass::MobileAndroid | DeviceClass::MobileIOS
+    );
+    vec![
+        (
+            "sec-ch-ua-arch".to_string(),
+            format!("\"{}\"", profile.cpu_architecture),
+        ),
+        (
+            "sec-ch-ua-bitness".to_string(),
+            format!("\"{}\"", profile.cpu_bitness),
+        ),
+        (
+            "sec-ch-ua-full-version-list".to_string(),
+            build_sec_ch_ua_full_version_list(profile),
+        ),
+        // sec-ch-ua-full-version (singular) is deprecated in favor of
+        // -full-version-list, but some servers still list it in
+        // critical-ch. Send it for compatibility — Chrome 147 still emits
+        // it when servers ask. Confirmed against live server responses.
+        (
+            "sec-ch-ua-full-version".to_string(),
+            format!("\"{}\"", profile.browser_version),
+        ),
+        // sec-ch-ua-model: empty on desktop, real model name on mobile.
+        // Profile field `ua_model` is the source of truth — desktop presets
+        // leave it empty; Pixel/Galaxy presets set it to "Pixel 9 Pro" etc.
+        (
+            "sec-ch-ua-model".to_string(),
+            format!("\"{}\"", profile.ua_model),
+        ),
+        (
+            "sec-ch-ua-platform-version".to_string(),
+            format!(
+                "\"{}\"",
+                chrome_platform_version(&profile.os_name, &profile.os_version)
+            ),
+        ),
+        (
+            "sec-ch-ua-wow64".to_string(),
+            if profile.ua_wow64 { "?1" } else { "?0" }.to_string(),
+        ),
+        // sec-ch-ua-form-factors: Chrome 130+ added this hint. "Mobile"
+        // on phones, "Desktop" on PC. Lacks for older Chrome but landing
+        // it for Chrome 147+ is correct.
+        (
+            "sec-ch-ua-form-factors".to_string(),
+            if is_mobile {
+                "\"Mobile\""
+            } else {
+                "\"Desktop\""
+            }
+            .to_string(),
+        ),
+        // sec-ch-device-memory — some servers demand it via accept-ch.
+        // Per the W3 Device Memory spec
+        // (https://www.w3.org/TR/device-memory/) the value MUST be one of
+        // {0.25, 0.5, 1, 2, 4, 8}. Chrome's GetApproximateDeviceMemory
+        // (third_party/blink/renderer/core/frame/navigator_device_memory.cc)
+        // rounds the OS's reported RAM DOWN to the largest spec value ≤
+        // the reported amount (so 16 GB → 8; 6 GB → 4; 0.7 GB → 0.5).
+        // Sending an unquantized value (e.g. "6" or "16") is a tell.
+        (
+            "sec-ch-device-memory".to_string(),
+            format!("{}", quantize_device_memory(profile.device_memory as f64)),
+        ),
+    ]
+}
+
+/// Splice high-entropy Client Hints into a fetch/XHR header set, right
+/// after `sec-ch-ua-platform` (Chrome's position). Call ONLY when the
+/// target origin previously advertised `Accept-CH` — real Chrome omits
+/// these on fetch otherwise, and the nav path already gates on the
+/// same per-origin state. Without this, an upgraded iframe GET carries
+/// the hints while the same-origin challenge POST does not — a
+/// within-session contradiction edge layers read as automation.
+pub fn splice_high_entropy_fetch(headers: &mut Vec<(String, String)>, profile: &StealthProfile) {
+    let pos = headers
+        .iter()
+        .position(|(k, _)| k == "sec-ch-ua-platform")
+        .map(|i| i + 1)
+        .unwrap_or(headers.len());
+    let hints = high_entropy_hints(profile);
+    headers.splice(pos..pos, hints);
+}
+
 fn chrome_headers_impl(
     profile: &StealthProfile,
     include_high_entropy: bool,
@@ -367,80 +471,7 @@ fn chrome_headers_impl(
     ));
 
     if include_high_entropy {
-        // High-entropy hints. Order matches Chrome 147's actual emission
-        // order observed via tls.peet.ws + browserleaks.com captures.
-        //
-        // Arch and bitness MUST come from profile fields, not be derived
-        // from `platform`. `navigator.platform` is "MacIntel" on both
-        // Intel Macs (arch=x86) and Apple Silicon Macs (arch=arm) — a
-        // legacy fossil. Real Chrome on M3 reports `Sec-CH-UA-Arch: arm`
-        // while keeping `navigator.platform: MacIntel`. Deriving from
-        // platform here would emit "x86" and contradict the JS-side
-        // `navigator.userAgentData.getHighEntropyValues({hints:['architecture']})`
-        // which reads `profile.cpu_architecture` directly — fingerprinting
-        // scripts cross-check these and reject on mismatch.
-        headers.push((
-            "sec-ch-ua-arch".to_string(),
-            format!("\"{}\"", profile.cpu_architecture),
-        ));
-        headers.push((
-            "sec-ch-ua-bitness".to_string(),
-            format!("\"{}\"", profile.cpu_bitness),
-        ));
-        headers.push((
-            "sec-ch-ua-full-version-list".to_string(),
-            build_sec_ch_ua_full_version_list(profile),
-        ));
-        // sec-ch-ua-full-version (singular) is deprecated in favor of
-        // -full-version-list, but some servers still list it in
-        // critical-ch. Send it for compatibility — Chrome 147 still emits
-        // it when servers ask. Confirmed against live server responses.
-        headers.push((
-            "sec-ch-ua-full-version".to_string(),
-            format!("\"{}\"", profile.browser_version),
-        ));
-        // sec-ch-ua-model: empty on desktop, real model name on mobile.
-        // Profile field `ua_model` is the source of truth — desktop presets
-        // leave it empty; Pixel/Galaxy presets set it to "Pixel 9 Pro" etc.
-        headers.push((
-            "sec-ch-ua-model".to_string(),
-            format!("\"{}\"", profile.ua_model),
-        ));
-        headers.push((
-            "sec-ch-ua-platform-version".to_string(),
-            format!(
-                "\"{}\"",
-                chrome_platform_version(&profile.os_name, &profile.os_version)
-            ),
-        ));
-        headers.push((
-            "sec-ch-ua-wow64".to_string(),
-            if profile.ua_wow64 { "?1" } else { "?0" }.to_string(),
-        ));
-        // sec-ch-ua-form-factors: Chrome 130+ added this hint. "Mobile"
-        // on phones, "Desktop" on PC. Lacks for older Chrome but landing
-        // it for Chrome 147+ is correct.
-        headers.push((
-            "sec-ch-ua-form-factors".to_string(),
-            if is_mobile {
-                "\"Mobile\""
-            } else {
-                "\"Desktop\""
-            }
-            .to_string(),
-        ));
-        // sec-ch-device-memory — some servers demand it via accept-ch.
-        // Per the W3 Device Memory spec
-        // (https://www.w3.org/TR/device-memory/) the value MUST be one of
-        // {0.25, 0.5, 1, 2, 4, 8}. Chrome's GetApproximateDeviceMemory
-        // (third_party/blink/renderer/core/frame/navigator_device_memory.cc)
-        // rounds the OS's reported RAM DOWN to the largest spec value ≤
-        // the reported amount (so 16 GB → 8; 6 GB → 4; 0.7 GB → 0.5).
-        // Sending an unquantized value (e.g. "6" or "16") is a tell.
-        headers.push((
-            "sec-ch-device-memory".to_string(),
-            format!("{}", quantize_device_memory(profile.device_memory as f64)),
-        ));
+        headers.extend(high_entropy_hints(profile));
     }
 
     // 4. upgrade-insecure-requests
@@ -974,6 +1005,71 @@ pub fn is_cross_origin_isolated(policy: &DocumentPolicy) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fetch_headers_send_client_hints_before_user_agent() {
+        // JA4H-relevant: real Chrome sends sec-ch-ua* before user-agent
+        // on fetch/XHR too (never user-agent first). A fetch arriving
+        // with user-agent first is a header-order tell.
+        let profile = crate::stealth::presets::chrome_153_macos();
+        let hdrs = chrome_headers_fetch(
+            &profile,
+            "https://example.com/api",
+            Some("https://example.com"),
+        );
+        let names: Vec<&str> = hdrs.iter().map(|(k, _)| k.as_str()).collect();
+        let ua_pos = names.iter().position(|&n| n == "sec-ch-ua").unwrap();
+        let mobile_pos = names.iter().position(|&n| n == "sec-ch-ua-mobile").unwrap();
+        let platform_pos = names
+            .iter()
+            .position(|&n| n == "sec-ch-ua-platform")
+            .unwrap();
+        let agent_pos = names.iter().position(|&n| n == "user-agent").unwrap();
+        assert_eq!((ua_pos, mobile_pos, platform_pos), (0, 1, 2));
+        assert!(
+            agent_pos > platform_pos,
+            "user-agent must follow the sec-ch-ua block, got order {names:?}"
+        );
+    }
+
+    #[test]
+    fn splice_high_entropy_fetch_matches_nav_values() {
+        // An upgraded origin's fetch/XHR must carry byte-identical
+        // high-entropy hints to the nav path, spliced after platform.
+        let profile = crate::stealth::presets::chrome_153_macos();
+        let mut fetch = chrome_headers_fetch(
+            &profile,
+            "https://example.com/api",
+            Some("https://example.com"),
+        );
+        assert!(!fetch.iter().any(|(k, _)| k == "sec-ch-ua-arch"));
+        splice_high_entropy_fetch(&mut fetch, &profile);
+        let nav = chrome_headers_with_accept_ch(&profile);
+        for key in [
+            "sec-ch-ua-arch",
+            "sec-ch-ua-bitness",
+            "sec-ch-ua-full-version-list",
+            "sec-ch-ua-full-version",
+            "sec-ch-ua-model",
+            "sec-ch-ua-platform-version",
+            "sec-ch-ua-wow64",
+            "sec-ch-ua-form-factors",
+            "sec-ch-device-memory",
+        ] {
+            let fv = fetch.iter().find(|(k, _)| k == key).unwrap_or_else(|| {
+                panic!("spliced fetch must carry {key}");
+            });
+            let nv = nav.iter().find(|(k, _)| k == key).unwrap();
+            assert_eq!(fv.1, nv.1, "{key} must agree between fetch and nav");
+        }
+        let names: Vec<&str> = fetch.iter().map(|(k, _)| k.as_str()).collect();
+        let platform_pos = names
+            .iter()
+            .position(|&n| n == "sec-ch-ua-platform")
+            .unwrap();
+        let arch_pos = names.iter().position(|&n| n == "sec-ch-ua-arch").unwrap();
+        assert_eq!(arch_pos, platform_pos + 1);
+    }
 
     #[test]
     fn accept_language_single() {
