@@ -252,3 +252,41 @@ async fn a_detached_element_has_an_empty_computed_style() {
         .unwrap();
     assert_eq!(attached, "true|block|rgb(0, 0, 0)");
 }
+
+/// `PublicKeyCredential.getClientCapabilities()` is a detection surface, not a
+/// convenience: the `extension:*` block is what a site reads to decide which
+/// WebAuthn extensions it may offer, and `conditionalCreate` gates the whole
+/// conditional-mediation branch. Measured on Chrome 154 (macOS) — the engine
+/// reported `conditionalCreate: false` and none of the fourteen extensions.
+#[tokio::test]
+async fn webauthn_client_capabilities_match_chrome() {
+    let mut page = Page::from_html_with_url(
+        &html(""),
+        "https://site.example/",
+        Some(browser_oxide::stealth::presets::chrome_153_macos()),
+    )
+    .await
+    .unwrap();
+    page.evaluate_async(
+        "globalThis.__caps = null;\
+         PublicKeyCredential.getClientCapabilities()\
+           .then((c) => { globalThis.__caps = c; })\
+           .catch((e) => { globalThis.__caps = 'ERR ' + e.name; });",
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .ok();
+    let got = page
+        .evaluate(
+            "globalThis.__caps ? JSON.stringify(Object.keys(globalThis.__caps).sort()) : String(globalThis.__caps)",
+        )
+        .unwrap();
+    let want = r#"["conditionalCreate","conditionalGet","extension:appid","extension:appidExclude","extension:cmtgKey","extension:credBlob","extension:credProps","extension:credentialProtectionPolicy","extension:crossDeviceFallbackUrl","extension:enforceCredentialProtectionPolicy","extension:getCredBlob","extension:hmacCreateSecret","extension:largeBlob","extension:minPinLength","extension:payment","extension:prf","hybridTransport","immediateGet","passkeyPlatformAuthenticator","relatedOrigins","signalAllAcceptedCredentials","signalCurrentUserDetails","signalUnknownCredential","userVerifyingPlatformAuthenticator"]"#;
+    assert_eq!(got, want);
+
+    // Chrome reports two extensions as unimplemented.
+    let off = page
+        .evaluate("JSON.stringify([globalThis.__caps['extension:cmtgKey'], globalThis.__caps['extension:crossDeviceFallbackUrl']])")
+        .unwrap();
+    assert_eq!(off, "[false,false]");
+}
