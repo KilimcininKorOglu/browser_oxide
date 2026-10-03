@@ -3017,8 +3017,9 @@
     }
 
     function _makeRule(d, sheet) {
-        const rule = Object.create((d.rule_type === 1 ? CSSStyleRule : CSSRule).prototype);
-        _ruleStates.set(rule, { d, sheet, style: null });
+        const proto = _RULE_PROTO_BY_TYPE[d.rule_type] || CSSRule;
+        const rule = Object.create(proto.prototype);
+        _ruleStates.set(rule, { d, sheet, style: null, sub: null });
         return rule;
     }
 
@@ -3034,6 +3035,29 @@
         get cssText() { return _ruleState(this).d.css_text; }
         get parentStyleSheet() { return _ruleState(this).sheet; }
         get parentRule() { _ruleState(this); return null; }
+        // The grouping mixin: present on every rule, empty unless the rule
+        // holds nested rules.
+        get cssRules() {
+            const st = _ruleState(this);
+            if (!st.sub) {
+                st.sub = new CSSRuleList(_cssomKey);
+                _fillRuleList(st.sub, _subRuleDescriptions(st), this);
+            }
+            return st.sub;
+        }
+    }
+
+    // Nested rules of a rule: a keyframes rule's steps, nothing for the rest.
+    function _subRuleDescriptions(st) {
+        const steps = st.d.keyframes;
+        if (!steps || !steps.length) return [];
+        return steps.map((k) => ({
+            selector_text: k.key_text,
+            css_text: k.css_text,
+            rule_type: 8,
+            declarations: k.declarations,
+            keyframes: [],
+        }));
     }
 
     class CSSStyleRule extends CSSRule {
@@ -3045,21 +3069,201 @@
         }
     }
 
-    // A read-only declaration block for a rule's `style`.
-    function _ruleStyle(cssText) {
-        const body = cssText.slice(cssText.indexOf("{") + 1, cssText.lastIndexOf("}")).trim();
-        const values = {};
+    // Chrome's rule classes: a keyframes rule carries its name and its steps,
+    // a step carries the key selector and a style block, and EVERY rule answers
+    // `cssRules` because the interface is a mixin (CSSGroupingRule). A sheet of
+    // only `@keyframes` — a challenge widget's stylesheet — is unreadable
+    // without this: a walk that meets `undefined` stops there.
+
+
+    class CSSKeyframesRule extends CSSRule {
+        get name() {
+            const m = /^@(?:-?(?:webkit-)?keyframes)\s+("[^"]*"|'[^']*'|[^\s{]+)/i.exec(_ruleState(this).d.css_text);
+            if (!m) return "";
+            const raw = m[1];
+            return /^["']/.test(raw) ? raw.slice(1, -1) : raw;
+        }
+    }
+
+    class CSSKeyframeRule extends CSSRule {
+        get keyText() { return _ruleState(this).d.selector_text; }
+        get style() {
+            const st = _ruleState(this);
+            if (!st.style) {
+                const decls = st.d.declarations || [];
+                st.style = _ruleStyle("x{" + decls.map(([n, v]) => n + ":" + v).join(";") + "}");
+            }
+            return st.style;
+        }
+    }
+
+    Object.defineProperty(CSSKeyframeRule.prototype, Symbol.toStringTag,
+        { value: "CSSKeyframeRule", configurable: true });
+    Object.defineProperty(CSSKeyframesRule.prototype, Symbol.toStringTag,
+        { value: "CSSKeyframesRule", configurable: true });
+    globalThis.CSSKeyframeRule = CSSKeyframeRule;
+    globalThis.CSSKeyframesRule = CSSKeyframesRule;
+
+    const _RULE_PROTO_BY_TYPE = {
+        1: CSSStyleRule,
+        7: CSSKeyframesRule,
+        8: CSSKeyframeRule,
+    };
+
+    // The longhands a shorthand stands for, and how many. Chrome counts the
+    // EXPANDED set: `body { margin: 0 }` is one declaration written and four
+    // longhands held, so `style.length` is 4. Only the side-based shorthands
+    // are tabulated; anything else is its own longhand, which is what Chrome
+    // does too for a property it cannot expand.
+    const _SHORTHAND_FANOUT = {
+        margin: ["margin-top", "margin-right", "margin-bottom", "margin-left"],
+        padding: ["padding-top", "padding-right", "padding-bottom", "padding-left"],
+        "border-width": ["border-top-width", "border-right-width", "border-bottom-width", "border-left-width"],
+        "border-style": ["border-top-style", "border-right-style", "border-bottom-style", "border-left-style"],
+        "border-color": ["border-top-color", "border-right-color", "border-bottom-color", "border-left-color"],
+        inset: ["top", "right", "bottom", "left"],
+        "scroll-margin": ["scroll-margin-top", "scroll-margin-right", "scroll-margin-bottom", "scroll-margin-left"],
+        "scroll-padding": ["scroll-padding-top", "scroll-padding-right", "scroll-padding-bottom", "scroll-padding-left"],
+    };
+
+    // `_ruleStyle`'s declarations, as written: property → value.
+    function _declaredValues(cssText) {
+        const open = cssText.indexOf("{");
+        const body = (open < 0 ? cssText : cssText.slice(open + 1, cssText.lastIndexOf("}")))
+            .trim();
+        const values = new Map();
         for (const part of body.split(";")) {
             const colon = part.indexOf(":");
-            if (colon > 0) values[part.slice(0, colon).trim()] = part.slice(colon + 1).trim();
+            if (colon <= 0) continue;
+            const name = part.slice(0, colon).trim().toLowerCase();
+            if (name) values.set(name, part.slice(colon + 1).trim());
         }
-        const style = { cssText: body, length: Object.keys(values).length };
-        style.getPropertyValue = (name) => values[String(name)] || "";
-        for (const [name, value] of Object.entries(values)) {
-            style[name] = value;
-            style[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
+        return values;
+    }
+
+    // Every name a computed declaration enumerates, reused so a declared one
+    // has the same key set: 739 measured on Chrome for `body { margin: 0 }`,
+    // plus one numeric key per longhand held.
+    // The named properties a declaration enumerates. The computed declaration's
+    // key list carries numeric entries as well, and a declared one must not:
+    // Chrome answers 739 names for `body { margin: 0 }` plus exactly one key
+    // per longhand held, so the indices are added by the caller instead.
+    const _declaredNames = () => {
+        const cs = globalThis.getComputedStyle;
+        if (typeof cs !== 'function') return null;
+        try {
+            return Object.keys(cs(document.documentElement)).filter((n) => !/^\d+$/.test(n));
+        } catch (_) {
+            return null;
         }
-        return style;
+    };
+
+    // The reverse of the fan-out table, in camelCase, for shorthand reads.
+    const _SHORTHAND_READS = (() => {
+        const m = new Map();
+        for (const [shorthand, longs] of Object.entries(_SHORTHAND_FANOUT)) {
+            m.set(shorthand, longs);
+            m.set(shorthand.replace(/-([a-z])/g, (_, c) => c.toUpperCase()), longs);
+        }
+        return m;
+    })();
+
+    // A zero LENGTH keeps its unit in Chrome's serialization — `margin: 0`
+    // reads back `0px` — while a zero number or keyword does not. Measured on
+    // Chrome 154: `top`, `width`, `flex-basis`, `gap`, `text-indent`,
+    // `letter-spacing` and every margin/padding/border-width/inset side take
+    // `px`; `opacity`, `line-height`, `z-index`, `order`, `flex-grow` and
+    // `stroke-width` stay `0`.
+    const _LENGTH_PROPERTY = new RegExp(
+        "^(top|right|bottom|left|inset(-.*)?|width|height|min-(width|height|block-size|inline-size)" +
+        "|max-(width|height|block-size|inline-size)|flex-basis|gap|row-gap|column-gap" +
+        "|margin(-.*)?|padding(-.*)?|scroll-margin(-.*)?|scroll-padding(-.*)?" +
+        "|border(-[a-z]+)*-width|border-width|outline-offset|outline-width|border-spacing|size" +
+        "|text-indent|letter-spacing|word-spacing|tab-size)$"
+    );
+    const _withUnit = (name, value) =>
+        (_LENGTH_PROPERTY.test(name) && /^0(\.0+)?$/.test(value))
+            ? value.replace(/^0(\.0+)?$/, "0px")
+            : value;
+
+    // A read-only declaration block for a rule's `style`.
+    //
+    // Chrome's is a CSSStyleDeclaration, and that is observable: enumerating it
+    // answers 739 named keys plus one per longhand, where a hand-rolled object
+    // of just the declared names answers a handful. A probe that walks a
+    // stylesheet collects exactly this, so the shape is the measurement.
+    function _ruleStyle(cssText) {
+        const declared = _declaredValues(cssText);
+        const longhands = [];
+        for (const [name, value] of declared) {
+            const fan = _SHORTHAND_FANOUT[name];
+            if (!fan) { longhands.push([name, value]); continue; }
+            for (const longhand of fan) longhands.push([longhand, value]);
+        }
+        const values = new Map(longhands);
+        for (const [n, v] of longhands) values.set(n, _withUnit(n, v));
+        // Chrome serializes the shorthand as written, not expanded.
+        const cssTextOut = [...declared.entries()]
+            .map(([n, v]) => `${n}: ${_withUnit(n, v)};`)
+            .join(" ");
+        const names = _declaredNames();
+        const target = {};
+        if (names) for (const n of names) target[n] = "";
+        for (let i = 0; i < longhands.length; i++) {
+            const [name, value] = longhands[i];
+            const camel = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            // Assigning a name the enumeration does not carry would add a key,
+            // and the key set is the measurement.
+            if (Object.prototype.hasOwnProperty.call(target, camel)) {
+                target[camel] = _withUnit(name, value);
+            }
+            target[String(i)] = name;
+        }
+        const api = Object.create(globalThis.CSSStyleDeclaration
+            ? globalThis.CSSStyleDeclaration.prototype
+            : Object.prototype);
+        Object.assign(api, target);
+        // A shorthand the rule did not write still reads as the longhands it
+        // stands for, and Chrome collapses equal sides: `padding: 1px` on all
+        // four is one value, not four.
+        // An undeclared longhand reads as its initial value, and a zero length
+        // initial carries its unit in Chrome too: `margin` is `0px`, not `0`.
+        const initialOf = (longhand) => (_LENGTH_PROPERTY.test(longhand) ? "0px" : "0");
+        const compose = (longs) => {
+            const parts = longs.map((l) => values.get(l) || initialOf(l));
+            return parts.every((p) => p === parts[0]) ? parts[0] : parts.join(" ");
+        };
+        for (const [shorthand, longs] of _SHORTHAND_READS) {
+            if (!Object.prototype.hasOwnProperty.call(target, shorthand)) continue;
+            Object.defineProperty(api, shorthand, {
+                get: () => compose(longs),
+                enumerable: true,
+                configurable: true,
+            });
+        }
+        Object.defineProperties(api, {
+            length: { value: longhands.length, enumerable: false, configurable: true },
+            cssText: { value: cssTextOut, enumerable: false, configurable: true },
+            item: {
+                value: function (i) { return longhands[i >>> 0] ? longhands[i >>> 0][0] : ""; },
+                enumerable: false, configurable: true,
+            },
+            getPropertyValue: {
+                value: function (n) {
+                    const key = String(n);
+                    const direct = values.get(key.toLowerCase());
+                    if (direct !== undefined) return direct;
+                    const longs = _SHORTHAND_READS.get(key);
+                    if (!longs) return "";
+                    const parts = longs.map((l) => values.get(l) || (_LENGTH_PROPERTY.test(l) ? "0px" : "0"));
+                    return parts.every((p) => p === parts[0]) ? parts[0] : parts.join(" ");
+                },
+                enumerable: false, configurable: true,
+            },
+            getPropertyPriority: { value: function () { return ""; }, enumerable: false, configurable: true },
+            [Symbol.toStringTag]: { value: "CSSStyleDeclaration", configurable: true },
+        });
+        return api;
     }
 
     // The sheet a <style> element owns while it is in the document.
