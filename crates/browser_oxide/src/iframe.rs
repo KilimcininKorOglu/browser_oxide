@@ -93,6 +93,9 @@ pub struct IframeInfo {
 pub struct ChildIframe {
     pub node_id: NodeId,
     pub event_loop: BrowserEventLoop,
+    /// The frame's document URL, as fetched. Used to recognise a vendor
+    /// challenge frame after the fact (see `is_challenge_frame_url`).
+    pub url: String,
     /// Frames nested INSIDE this frame's own document. Turnstile hosts its
     /// inner widget frame here; without materializing this level the inner
     /// VM never loads and the round stalls.
@@ -139,6 +142,7 @@ impl ChildIframe {
         Ok(Self {
             node_id,
             event_loop,
+            url: String::new(),
             children: Vec::new(),
             depth: 0,
         })
@@ -283,6 +287,20 @@ impl ChildIframe {
             .ok();
         event_loop.reset_nav_pending();
 
+        // A vendor challenge frame keeps its long timers refed. Its script
+        // opens with a wait measured at 72 s on the production target, and the
+        // report it builds goes out from behind that timer: unref'd, the
+        // promise stops gating idle, the drain hands the frame back still
+        // frozen, and the first beacon lands seconds late (9.8 s here against
+        // 1.07 s in the reference engine). Must be set before the frame's own
+        // scripts run, since they read it at schedule time.
+        if is_challenge_frame_url(url) {
+            event_loop
+                .execute_script("globalThis.__keepLongTimersRefed = true;")
+                .ok();
+        }
+
+
         // Execute scripts, fetching external ones
         for (i, script) in scripts.iter().enumerate() {
             let code = if let Some(src) = &script.src {
@@ -358,6 +376,7 @@ impl ChildIframe {
         Ok(Self {
             node_id,
             event_loop,
+            url: url.to_string(),
             children: Vec::new(),
             depth: 0,
         })
@@ -524,6 +543,12 @@ pub fn cross_origin_parent(parent_url: &str, child_url: &str) -> Option<String> 
     let parent = url::Url::parse(parent_url).ok()?.origin();
     let child = url::Url::parse(child_url).ok()?.origin();
     (parent != child).then(|| parent.ascii_serialization())
+}
+
+/// Is this frame document a bot vendor's challenge widget? See
+/// [`crate::net::headers::is_challenge_frame_url`].
+pub fn is_challenge_frame_url(url: &str) -> bool {
+    crate::net::headers::is_challenge_frame_url(url)
 }
 
 /// Find all `<iframe>` elements in the DOM.

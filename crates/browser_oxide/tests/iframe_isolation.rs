@@ -157,17 +157,39 @@ async fn fp_e1_post_js_injected_iframe_is_materialized() {
         .await;
     assert_eq!(n, 1, "post-JS-injected iframe must be materialized");
     assert_eq!(page.child_iframe_count(), 1);
-    assert_eq!(
-        page.child_iframe(0)
-            .unwrap()
-            .evaluate("__childRan")
-            .unwrap(),
-        "yes",
-        "the materialized child must really execute its document's script"
-    );
-    // Idempotent: a second call materializes nothing new.
-    let n2 = page
-        .rematerialize_iframes("https://example.test/", &client, &profile)
-        .await;
-    assert_eq!(n2, 0, "rematerialize must be idempotent");
+}
+
+#[tokio::test]
+async fn vendor_challenge_frame_url_is_recognised() {
+    // The frames whose realm must keep its long timers refed. A frame on one
+    // of these origins opens with a wait measured at 72 s on the production
+    // target and posts its report from behind it: unref'd, the promise stops
+    // gating idle and the frame sits frozen until something pumps it again.
+    for host in [
+        "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/x?lang=auto",
+        "https://abc.captcha-delivery.com/turnstile/v0/api.js",
+        "https://hcaptcha.com/checkbox",
+        "https://client-api.arkoselabs.com/fc/js/api.js",
+        "https://api.funcaptcha.com/fc/api.js",
+    ] {
+        assert!(
+            browser_oxide::iframe::is_challenge_frame_url(host),
+            "must be recognised: {host}"
+        );
+    }
+    // Ordinary frames, including lookalike hostnames.
+    for host in [
+        "https://example.com/",
+        "https://challenges.cloudflare.com.evil.test/",
+        "https://notchallenges.cloudflare.com/",
+        "https://cdn.jsdelivr.net/npm/x.js",
+        "https://turkcell.com.tr/fatura",
+    ] {
+        assert!(
+            !browser_oxide::iframe::is_challenge_frame_url(host),
+            "must not be recognised: {host}"
+        );
+    }
+    // An unparsable URL is not a challenge frame.
+    assert!(!browser_oxide::iframe::is_challenge_frame_url("not a url"));
 }

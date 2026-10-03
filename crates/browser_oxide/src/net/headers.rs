@@ -279,6 +279,26 @@ pub fn chrome_headers_frame(
     hdrs
 }
 
+/// Is this frame document one of the bot vendors' challenge widgets?
+///
+/// A frame on one of these origins runs a script that opens with a long wait
+/// and posts its report from behind a timer, so its realm has to stay refed
+/// (see `__keepLongTimersRefed`). The check is on the URL's host, because the
+/// frame's own markup is the vendor's and looks nothing like the interstitial
+/// documents the page-level check matches.
+pub fn is_challenge_frame_url(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    host == "challenges.cloudflare.com"
+        || host.ends_with(".captcha-delivery.com")
+        || host.ends_with(".recaptcha.net")
+        || host.contains("hcaptcha")
+        || host.contains("arkoselabs")
+        || host.contains("funcaptcha")
+}
+
 /// The `sec-fetch-site` value for a subframe: how the child's origin relates
 /// to the parent's.
 ///

@@ -2466,8 +2466,27 @@ impl Page {
             // installed above provides the hard kill for analytics loops that never
             // reach idle on their own — once V8 is terminated, run_event_loop()
             // returns and the drain exits naturally.
-            if let Err(e) = page.event_loop().run_until_idle(drain_budget).await {
-                tracing::warn!(error = %e, "navigate event loop error");
+            const NAV_SLICE: Duration = Duration::from_millis(250);
+            let slice_deadline = std::time::Instant::now() + drain_budget;
+            loop {
+                let remaining = slice_deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let slice = remaining.min(NAV_SLICE);
+                let idle = match page.event_loop().run_until_idle(slice).await {
+                    Ok(reason) => reason == crate::event_loop::IdleReason::AllWorkDone,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "navigate event loop error");
+                        break;
+                    }
+                };
+                let pumped = page
+                    .pump_frames_ctx(slice, Some(&client), Some(&profile))
+                    .await;
+                if idle && pumped == 0 {
+                    break;
+                }
             }
 
             // If the watcher fired (or if we reached idle naturally), ensure
@@ -3548,6 +3567,72 @@ impl Page {
         .await
     }
 
+    /// Build every `<iframe>` in the current DOM that is not already in
+    /// `children`, appending the new ones. Idempotent: a second call only
+    /// picks up frames inserted since the first.
+    async fn materialize_new_frames(
+        event_loop: &mut crate::event_loop::BrowserEventLoop,
+        children: &mut Vec<iframe::ChildIframe>,
+        url: &str,
+        client: &crate::net::HttpClient,
+        profile: &crate::stealth::StealthProfile,
+    ) -> usize {
+        let iframes = {
+            let dom_ref = event_loop.runtime_mut().inner();
+            let state = dom_ref.op_state();
+            let state = state.borrow();
+            let dom_state = state.borrow::<crate::js_runtime::state::DomState>();
+            iframe::find_iframes(&dom_state.dom)
+        };
+        let before = children.len();
+        for info in &iframes {
+            if children.iter().any(|c| c.node_id == info.node_id) {
+                continue;
+            }
+            if let Some(srcdoc) = &info.srcdoc {
+                match iframe::ChildIframe::from_srcdoc(info.node_id, srcdoc, profile).await {
+                    Ok(child) => children.push(child),
+                    Err(e) => tracing::warn!(error = %e, "iframe srcdoc error"),
+                }
+            } else if let Some(src) = &info.src {
+                if src.starts_with("javascript:") {
+                    // javascript:; or similar — create a blank frame so it
+                    // can be written to.
+                    match iframe::ChildIframe::from_srcdoc(
+                        info.node_id,
+                        "<!DOCTYPE html><html><body></body></html>",
+                        profile,
+                    )
+                    .await
+                    {
+                        Ok(child) => children.push(child),
+                        Err(e) => tracing::warn!(error = %e, "iframe javascript blank error"),
+                    }
+                } else if !src.is_empty() {
+                    if let Some(full_src) = Self::resolve_url(url, src) {
+                        let parent_origin = iframe::cross_origin_parent(url, &full_src);
+                        match iframe::ChildIframe::from_url(
+                            info.node_id,
+                            &full_src,
+                            client,
+                            Some(profile),
+                            parent_origin.as_deref(),
+                            Some(url),
+                        )
+                        .await
+                        {
+                            Ok(child) => children.push(child),
+                            Err(e) => {
+                                tracing::warn!(src = %full_src, error = %e, "iframe src error")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        children.len() - before
+    }
+
     async fn build_page_with_scripts_init_and_storage(
         html: &str,
         url: &str,
@@ -4041,7 +4126,14 @@ impl Page {
             || html.contains("sec-if-cpt-container")
             || html.contains("sec-cpt-if")
             || crate::classify::is_managed_challenge_doc(html);
-        if doc_is_challenge {
+        // A child frame on a challenge origin gets the same treatment, and it
+        // matters more there: the widget's own script opens with a long wait
+        // (measured 72 s on the production target) and its first beacon goes
+        // out behind that timer. Without the flag the promise is unref'd, the
+        // drain reads the realm as idle, and the frame sits frozen until the
+        // caller pumps it again — which is how the first report ended up 9.8 s
+        // late against 1.07 s in the reference engine.
+        if doc_is_challenge || crate::iframe::is_challenge_frame_url(url) {
             let _ = event_loop.execute_script("globalThis.__keepLongTimersRefed = true;");
         }
 
@@ -4244,8 +4336,66 @@ impl Page {
         // cookie. Cutting this below ~5 s causes those chains to never
         // complete and the outer loop returns the challenge stub as the
         // "rendered" page.
-        if let Err(e) = event_loop.run_until_idle(Duration::from_secs(8)).await {
-            tracing::warn!(error = %e, "Event loop error during run");
+        // Drain, in slices, materializing frames as the page creates them.
+        //
+        // A real browser starts a frame's document request the moment the
+        // element is inserted — in parallel with everything else. Draining
+        // the whole budget first and fetching frames afterwards delays that
+        // request by the entire drain: measured on a widget page, the frame's
+        // document went out 12.3 s after the page started instead of ~0.16 s,
+        // and the server sees the widget arrive twelve seconds late.
+        //
+        // The budget is unchanged and so is the idle semantics —
+        // `run_until_idle` returns as soon as the loop reports no work, and
+        // slicing returns exactly when the single call would have.
+        const DRAIN_SLICE: std::time::Duration = std::time::Duration::from_millis(250);
+        // The budget bounds how long the BUILD phase waits on the page's own
+        // scripts. Once a vendor challenge frame exists the caller's drain
+        // takes over, and that frame keeps long timers refed — a 72 s wait
+        // would otherwise pin this loop for its whole life and the caller
+        // would never get a page back to pump the frame with.
+        let mut drain_deadline = std::time::Instant::now() + Duration::from_secs(8);
+        let mut children: Vec<iframe::ChildIframe> = Vec::new();
+        let mut has_vendor_frame = false;
+        loop {
+            let remaining = drain_deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match event_loop.run_until_idle(remaining.min(DRAIN_SLICE)).await {
+                Ok(crate::event_loop::IdleReason::AllWorkDone) => break,
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, "Event loop error during run");
+                    break;
+                }
+            }
+            if Self::materialize_new_frames(&mut event_loop, &mut children, url, client, profile)
+                .await
+                > 0
+            {
+                // Shorten the budget in flight: the frame's own realm is
+                // where the rest of this round happens, and it cannot run
+                // until the caller has the page back.
+                if !has_vendor_frame
+                    && children
+                        .iter()
+                        .any(|c| iframe::is_challenge_frame_url(&c.url))
+                {
+                    has_vendor_frame = true;
+                    drain_deadline = std::time::Instant::now() + Duration::from_millis(1500);
+                }
+            }
+            // A frame's scripts run only when its realm is drained, so give
+            // every frame the rest of this slice. Without this the frame a
+            // page created 200 ms ago is still frozen when the drain ends.
+            let child_budget = drain_deadline.saturating_duration_since(std::time::Instant::now());
+            for child in children.iter_mut() {
+                if child_budget.is_zero() {
+                    break;
+                }
+                let _ = child.event_loop.run_until_idle(child_budget).await;
+            }
         }
         mark!("build-phase run_until_idle");
 
@@ -4309,56 +4459,10 @@ impl Page {
             }
         }
 
-        // Process iframes (srcdoc and src)
-        let mut children = Vec::new();
-        let iframes = {
-            let dom_ref = event_loop.runtime_mut().inner();
-            let state = dom_ref.op_state();
-            let state = state.borrow();
-            let dom_state = state.borrow::<crate::js_runtime::state::DomState>();
-            iframe::find_iframes(&dom_state.dom)
-        };
-        for info in &iframes {
-            if let Some(srcdoc) = &info.srcdoc {
-                match iframe::ChildIframe::from_srcdoc(info.node_id, srcdoc, profile).await {
-                    Ok(child) => children.push(child),
-                    Err(e) => tracing::warn!(error = %e, "iframe srcdoc error"),
-                }
-            } else if let Some(src) = &info.src {
-                if !src.is_empty() && !src.starts_with("javascript:") {
-                    if let Some(full_src) = Self::resolve_url(url, src) {
-                        let parent_origin = iframe::cross_origin_parent(url, &full_src);
-                        match iframe::ChildIframe::from_url(
-                            info.node_id,
-                            &full_src,
-                            client,
-                            Some(profile),
-                            parent_origin.as_deref(),
-                            Some(url),
-                        )
-                        .await
-                        {
-                            Ok(child) => children.push(child),
-                            Err(e) => {
-                                tracing::warn!(src = %full_src, error = %e, "iframe src error")
-                            }
-                        }
-                    }
-                } else if src.starts_with("javascript:") {
-                    // javascript:; or similar — create a blank frame so it can be written to
-                    match iframe::ChildIframe::from_srcdoc(
-                        info.node_id,
-                        "<!DOCTYPE html><html><body></body></html>",
-                        profile,
-                    )
-                    .await
-                    {
-                        Ok(child) => children.push(child),
-                        Err(e) => tracing::warn!(error = %e, "iframe javascript blank error"),
-                    }
-                }
-            }
-        }
+        // Any frame inserted during the final slice (and every frame that was
+        // already there) is picked up here; `materialize_new_frames` skips
+        // the node ids it has built, so this only adds what is new.
+        Self::materialize_new_frames(&mut event_loop, &mut children, url, client, profile).await;
 
         // Cancel the build-phase watcher's terminate so the runtime is
         // usable for the drain phase (and downstream execute_script calls).
