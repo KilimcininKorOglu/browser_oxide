@@ -478,6 +478,50 @@ impl Drop for Page {
     }
 }
 
+/// Drain the parent realm's queued `postMessage` traffic into the child realms
+/// it was addressed to. Returns how many messages were delivered.
+///
+/// This cannot wait for the caller's pump. A widget hands its frame its whole
+/// configuration this way, and the frame's script does nothing until that
+/// message lands — so a frame born while the top-level navigation is still
+/// running sits frozen for the rest of it. Measured on the production target,
+/// the navigation ran 3.7 s past the frame's birth and the frame's first
+/// beacon waited for exactly that: the widget's messages were already sitting
+/// in the outbox, and the 1 Hz heartbeat the parent posts afterwards is what
+/// finally woke the frame up.
+fn route_parent_to_children(
+    event_loop: &mut BrowserEventLoop,
+    children: &mut [iframe::ChildIframe],
+) -> usize {
+    let queued = event_loop
+        .execute_script(DRAIN_TO_CHILDREN_JS)
+        .unwrap_or_default();
+    let mut delivered = 0usize;
+    for msg in iframe::parse_frame_messages(&queued) {
+        // Chrome drops a message posted before the frame loads.
+        let Some(child) = children
+            .iter_mut()
+            .find(|c| Some(c.node_id.to_raw()) == msg.node)
+        else {
+            continue;
+        };
+        let js = format!(
+            "globalThis[Symbol.for('__ox_frames')].deliverFromParent({}, {})",
+            deno_core::serde_json::Value::String(msg.data),
+            deno_core::serde_json::Value::String(msg.origin)
+        );
+        match child.evaluate(&js) {
+            Ok(_) => delivered += 1,
+            Err(e) => tracing::warn!(error = %e, "parent->child message delivery failed"),
+        }
+    }
+    delivered
+}
+
+/// Take everything the parent realm has queued for its frames. Draining empties
+/// the outbox, so every caller has to drain on its own turn or lose the batch.
+const DRAIN_TO_CHILDREN_JS: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b ? b.drainToChildren() : '[]'; })()";
+
 impl Page {
     /// Simulate a user switching to another tab and then coming back.
     /// This defeats macro-behavioral heuristics that flag sessions
@@ -869,6 +913,10 @@ impl Page {
                 }
             }
         }
+        // Same handoff the navigation build does: whatever the page queued for
+        // its frames while its own scripts ran goes out now, not on the
+        // caller's first pump.
+        route_parent_to_children(&mut event_loop, &mut children);
 
         Ok(Self {
             event_loop,
@@ -1006,7 +1054,6 @@ impl Page {
         profile: Option<&crate::stealth::StealthProfile>,
     ) -> usize {
         const TO_PARENT: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b && b.drainToParent ? b.drainToParent() : '[]'; })()";
-        const TO_CHILDREN: &str = "(() => { const b = globalThis[Symbol.for('__ox_frames')]; return b ? b.drainToChildren() : '[]'; })()";
         let mut delivered = 0usize;
         for child in self.children.iter_mut() {
             if let Err(e) = child.event_loop.run_until_idle(budget).await {
@@ -1018,16 +1065,8 @@ impl Page {
             delivered += nested;
             // A nested realm asked for a frame load — materialize it.
             let nested_reqs = crate::js_runtime::extensions::dom_ext::take_nested_frame_requests();
-            if !nested_reqs.is_empty() {
-                eprintln!("[NFR-DRAIN] {} requests", nested_reqs.len());
-            }
             for (self_id, iframe_id, src) in nested_reqs {
                 if self_id != child.node_id.to_raw() {
-                    eprintln!(
-                        "[NFR] MISMATCH self={} want={}",
-                        child.node_id.to_raw(),
-                        self_id
-                    );
                     continue;
                 }
                 let (Some(client), Some(profile)) = (client, profile) else {
@@ -1079,28 +1118,7 @@ impl Page {
                 }
             }
         }
-        let queued = self
-            .event_loop
-            .execute_script(TO_CHILDREN)
-            .unwrap_or_default();
-        for msg in iframe::parse_frame_messages(&queued) {
-            let Some(child) = self
-                .children
-                .iter_mut()
-                .find(|c| Some(c.node_id.to_raw()) == msg.node)
-            else {
-                continue; // Chrome drops a message posted before the frame loads.
-            };
-            let js = format!(
-                "globalThis[Symbol.for('__ox_frames')].deliverFromParent({}, {})",
-                serde_json::Value::String(msg.data),
-                serde_json::Value::String(msg.origin)
-            );
-            match child.evaluate(&js) {
-                Ok(_) => delivered += 1,
-                Err(e) => tracing::warn!(error = %e, "parent->child message delivery failed"),
-            }
-        }
+        delivered += route_parent_to_children(&mut self.event_loop, &mut self.children);
         delivered
     }
 
@@ -4396,6 +4414,11 @@ impl Page {
                 }
                 let _ = child.event_loop.run_until_idle(child_budget).await;
             }
+            // Hand each frame whatever the page posted to it during this slice.
+            // A frame's realm is a separate event loop, so a message the page
+            // queued stays in the parent's outbox until someone drains it, and
+            // the frame's script waits on that message before doing anything.
+            route_parent_to_children(&mut event_loop, &mut children);
         }
         mark!("build-phase run_until_idle");
 
@@ -4463,6 +4486,11 @@ impl Page {
         // already there) is picked up here; `materialize_new_frames` skips
         // the node ids it has built, so this only adds what is new.
         Self::materialize_new_frames(&mut event_loop, &mut children, url, client, profile).await;
+        // The drain loop above leaves early the moment the page goes idle,
+        // which is before the frame that its own scripts just created exists.
+        // Its messages were queued during the script phase, so route them now:
+        // without this they wait for the caller's first pump.
+        route_parent_to_children(&mut event_loop, &mut children);
 
         // Cancel the build-phase watcher's terminate so the runtime is
         // usable for the drain phase (and downstream execute_script calls).
