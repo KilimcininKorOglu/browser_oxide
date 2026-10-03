@@ -130,3 +130,35 @@ async fn a_single_declaration_still_lists_every_name() {
     // `top: 0` is a length, so it reads back with its unit.
     assert_eq!(got, "740|1|top|0px|0px");
 }
+
+/// `CSSStyleDeclaration.prototype` is an enumeration surface. The interface is
+/// installed as a stub, which left the prototype holding nothing but
+/// `constructor` — so anything learning what an engine supports by listing the
+/// prototype saw an empty answer where Chrome 154 shows ten members. Pinned
+/// here because a stub is easy to reintroduce silently.
+#[tokio::test]
+async fn the_css_style_declaration_interface_is_present() {
+    let mut page = sheet_page().await;
+    let got = page
+        .evaluate(
+            r#"(() => {
+                const P = CSSStyleDeclaration.prototype;
+                const names = Object.getOwnPropertyNames(P)
+                    .filter((n) => !n.startsWith('__ox'))
+                    .sort();
+                const kinds = names.map((n) => {
+                    const d = Object.getOwnPropertyDescriptor(P, n);
+                    return n + ':' + (d.get ? 'acc' : 'fn' + (d.value ? d.value.length : '?'));
+                });
+                return names.length + '|' + kinds.join(',') + '|' +
+                    Object.prototype.toString.call(getComputedStyle(document.body));
+            })()"#,
+        )
+        .unwrap();
+    assert_eq!(
+        got,
+        "10|constructor:fn0,cssFloat:acc,cssText:acc,getPropertyPriority:fn1,\
+getPropertyValue:fn1,item:fn1,length:acc,parentRule:acc,removeProperty:fn1,\
+setProperty:fn2|[object CSSStyleDeclaration]"
+    );
+}

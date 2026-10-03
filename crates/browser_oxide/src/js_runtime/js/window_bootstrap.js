@@ -3937,6 +3937,43 @@
     }).cancelIdleCallback;
     _maskFunction(globalThis.cancelIdleCallback, 'cancelIdleCallback');
 
+    // `CSSStyleDeclaration.prototype` is an enumeration surface of its own.
+    // `interfaces_bootstrap.js` installs the interface as a stub, which leaves
+    // the prototype holding nothing but `constructor`, and code that learns what
+    // an engine supports by listing the prototype sees an empty one:
+    // `Object.getOwnPropertyNames(CSSStyleDeclaration.prototype)` answered
+    // `["constructor"]` here against ten names in Chrome 154. The members below
+    // are Chrome's, with Chrome's shapes — `cssText`, `length`, `parentRule`
+    // and `cssFloat` are accessors, the rest are methods of the stated arity.
+    //
+    // The computed-style proxy answers these on itself and shadows them, and a
+    // declared declaration (`rule.style`) installs its own; this is the floor
+    // that makes the interface itself look like a CSS declaration.
+    (() => {
+        const CSD = globalThis.CSSStyleDeclaration;
+        if (!CSD || !CSD.prototype || CSD.prototype.__oxInterfaceFilled) return;
+        const proto = CSD.prototype;
+        const accessor = (name, get, set) => Object.defineProperty(proto, name, {
+            get, set, enumerable: true, configurable: true,
+        });
+        accessor('cssText', function () { return ''; }, function () { /* read-only here */ });
+        accessor('length', function () { return 0; }, undefined);
+        accessor('parentRule', function () { return null; }, undefined);
+        accessor('cssFloat', function () { return ''; }, function () { /* read-only here */ });
+        const method = (name, arity, fn) => {
+            const f = function () { return fn.apply(this, arguments); };
+            Object.defineProperty(f, 'name', { value: name, configurable: true });
+            Object.defineProperty(f, 'length', { value: arity, configurable: true });
+            Object.defineProperty(proto, name, { value: f, writable: true, enumerable: true, configurable: true });
+        };
+        method('getPropertyPriority', 1, function () { return ''; });
+        method('getPropertyValue', 1, function () { return ''; });
+        method('item', 1, function () { return ''; });
+        method('removeProperty', 1, function () { return ''; });
+        method('setProperty', 2, function () { /* read-only here */ });
+        Object.defineProperty(proto, '__oxInterfaceFilled', { value: true, configurable: true });
+    })();
+
     // getComputedStyle — reads inline style from actual element, falls back to CSS defaults.
     // CAPTURE _getNodeId at bootstrap time: cleanup_bootstrap.js deletes
     // __browser_oxide before page scripts run, so per-call lookup degrades to
