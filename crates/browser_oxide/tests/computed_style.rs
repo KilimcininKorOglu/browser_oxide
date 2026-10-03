@@ -189,3 +189,66 @@ async fn multiple_rules_last_wins_same_specificity() {
         "rgb(0, 0, 255)"
     );
 }
+
+/// `getComputedStyle` takes an `Element`. Chrome throws a `TypeError` for a
+/// text node, a comment, a Document or a DocumentFragment — measured on Chrome
+/// 154 — and a probe that walks a subtree calling it on every node sees the
+/// difference immediately: handed a declaration instead of an exception it
+/// reports the subtree as fully measurable.
+#[tokio::test]
+async fn non_element_arguments_throw_a_type_error() {
+    let mut page = Page::from_html(&html(""), None::<browser_oxide::stealth::StealthProfile>)
+        .await
+        .unwrap();
+    let each = r#"
+        (function (expr) {
+            try { getComputedStyle(eval(expr)); return "ok"; }
+            catch (e) { return e.name; }
+        })"#;
+    for (expr, want) in [
+        ("document.createTextNode('x')", "TypeError"),
+        ("document.createComment('c')", "TypeError"),
+        ("document", "TypeError"),
+        ("document.createDocumentFragment()", "TypeError"),
+        ("document.body", "ok"),
+    ] {
+        let got = page.evaluate(&format!("{each}({expr})")).unwrap();
+        assert_eq!(got, want, "getComputedStyle({expr})");
+    }
+}
+
+/// An element that is not in a document has no computed style. Chrome answers
+/// an empty declaration: `length` 0, every read "", and the numeric keys gone
+/// from the enumeration — 739 named keys against 1223 attached, a difference of
+/// exactly the length (measured on Chrome 154).
+#[tokio::test]
+async fn a_detached_element_has_an_empty_computed_style() {
+    let mut page = Page::from_html(
+        &html(r#"<div id="in"></div>"#),
+        None::<browser_oxide::stealth::StealthProfile>,
+    )
+    .await
+    .unwrap();
+    let got = page
+        .evaluate(
+            r#"(() => {
+                const cs = getComputedStyle(document.createElement('div'));
+                return [cs.length, cs.item(0), cs.display, cs.color,
+                        cs.getPropertyValue('color'),
+                        Object.keys(cs).length].join('|');
+            })()"#,
+        )
+        .unwrap();
+    assert_eq!(got, "0|||||739", "a detached element reads as empty");
+
+    // Attached, the same call answers a full declaration.
+    let attached = page
+        .evaluate(
+            r#"(() => {
+                const cs = getComputedStyle(document.getElementById('in'));
+                return [cs.length > 0, cs.display, cs.color].join('|');
+            })()"#,
+        )
+        .unwrap();
+    assert_eq!(attached, "true|block|rgb(0, 0, 0)");
+}

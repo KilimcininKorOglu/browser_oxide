@@ -610,16 +610,38 @@
     PublicKeyCredential.getClientCapabilities = ({
         getClientCapabilities() {
             const uvpa = _p("has_platform_authenticator", "false") === "true";
+            // Key set and values captured from Chrome 154 on macOS. The
+            // `extension:*` block is what a vendor reads to decide which
+            // WebAuthn extensions it may offer, and two of them are off:
+            // `cmtgKey` (the community multi-device key extension, which
+            // Chrome does not implement) and `crossDeviceFallbackUrl`. Every
+            // other extension Chrome reports is on, and `immediateGet` rides
+            // along with the conditional-mediation ones.
             return Promise.resolve({
-                conditionalCreate: false,
+                conditionalCreate: true,
                 conditionalGet: true,
                 hybridTransport: true,
+                immediateGet: true,
                 passkeyPlatformAuthenticator: uvpa,
                 userVerifyingPlatformAuthenticator: uvpa,
                 relatedOrigins: true,
                 signalAllAcceptedCredentials: true,
                 signalCurrentUserDetails: true,
                 signalUnknownCredential: true,
+                'extension:appid': true,
+                'extension:appidExclude': true,
+                'extension:cmtgKey': false,
+                'extension:credBlob': true,
+                'extension:credProps': true,
+                'extension:credentialProtectionPolicy': true,
+                'extension:crossDeviceFallbackUrl': false,
+                'extension:enforceCredentialProtectionPolicy': true,
+                'extension:getCredBlob': true,
+                'extension:hmacCreateSecret': true,
+                'extension:largeBlob': true,
+                'extension:minPinLength': true,
+                'extension:payment': true,
+                'extension:prf': true,
             });
         }
     }).getClientCapabilities;
@@ -3926,7 +3948,23 @@
         : (() => 0);
     globalThis.getComputedStyle = ({
         getComputedStyle(element, pseudoElt) {
-            if (!element) return null;
+            // Chrome takes an `Element`, not a node. A text node, a comment,
+            // a Document or a DocumentFragment is a TypeError, and returning
+            // a declaration for one instead is not a harmless extra: a probe
+            // that walks a subtree and calls this on every node gets a full
+            // property list where Chrome would have thrown, and then reports
+            // the subtree as fully measurable.
+            if (!(element instanceof Element)) {
+                throw new __oxT.TypeError(
+                    "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'."
+                );
+            }
+            // An element that is not in a document has no computed style:
+            // Chrome hands back an empty declaration (length 0), not the
+            // property set every supported property would report. The
+            // declaration is built the same way and only the enumeration is
+            // empty, so every read still answers the way Chrome does.
+            const detached = !element.isConnected;
             const isPseudo = typeof pseudoElt === "string" && pseudoElt.includes("::");
 // Chrome's getComputedStyle enumeration order, captured from a real
 // Chrome 148: the computed declaration enumerates ALL supported property
@@ -3962,6 +4000,7 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
             get(target, prop) {
                 if (prop === "getPropertyValue") {
                     return (name) => {
+                        if (detached) return "";
                         let kebab = String(name).replace(/[A-Z]/g, m => "-" + m.toLowerCase());
                         // WebKit-prefixed IDL names start lowercase (webkitTextFillColor)
                         // but the CSS property carries a leading dash.
@@ -3972,7 +4011,7 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
                     };
                 }
                 if (prop === "item") {
-                    return (i) => CHROME_COMPUTED_STYLE_PROPS[i] || "";
+                    return (i) => (detached ? "" : CHROME_COMPUTED_STYLE_PROPS[i] || "");
                 }
                 if (prop === "getPropertyPriority") {
                     return () => "";
@@ -3981,14 +4020,17 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
                     return () => {}; // read-only
                 }
                 if (prop === "length") {
-                    return CHROME_COMPUTED_STYLE_PROPS.length;
+                    return detached ? 0 : CHROME_COMPUTED_STYLE_PROPS.length;
                 }
                 if (prop === Symbol.iterator) {
                     let idx = 0;
-                    return () => ({ done: idx >= CHROME_COMPUTED_STYLE_PROPS.length, value: CHROME_COMPUTED_STYLE_PROPS[idx++] });
+                    return () => ({ done: idx >= CHROME_COMPUTED_STYLE_PROPS.length, value: detached ? "" : CHROME_COMPUTED_STYLE_PROPS[idx++] });
                 }
                 if (prop === Symbol.toStringTag) return "CSSStyleDeclaration";
                 if (typeof prop === "string") {
+                    // A detached element reads as an empty declaration: Chrome
+                    // answers "" for every property, named or indexed.
+                    if (detached) return "";
                     if (/^\d+$/.test(prop)) {
                         return CHROME_COMPUTED_STYLE_PROPS[parseInt(prop, 10)];
                     }
@@ -4005,8 +4047,14 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
             // target's (none), and the 30KB field collapses to two chars.
             ownKeys() {
                 const keys = [];
-                for (let i = 0; i < CHROME_COMPUTED_STYLE_PROPS.length; i++) {
-                    keys.push(String(i));
+                // A detached element keeps the named properties but loses the
+                // numeric ones, which is exactly why its `length` reads 0:
+                // measured on Chrome, 1223 keys attached against 739 detached,
+                // a difference of 484 — the length.
+                if (!detached) {
+                    for (let i = 0; i < CHROME_COMPUTED_STYLE_PROPS.length; i++) {
+                        keys.push(String(i));
+                    }
                 }
                 // Indexed names, then every name Chrome enumerates: the
                 // longhands plus the shorthands, ASCII-sorted as one list.
@@ -4017,11 +4065,12 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
             getOwnPropertyDescriptor(target, prop) {
                 if (prop === "length") {
                     return {
-                        value: CHROME_COMPUTED_STYLE_PROPS.length,
+                        value: detached ? 0 : CHROME_COMPUTED_STYLE_PROPS.length,
                         writable: false, enumerable: false, configurable: true,
                     };
                 }
                 if (typeof prop === "string" && /^\d+$/.test(prop)) {
+                    if (detached) return undefined;
                     const name = CHROME_COMPUTED_STYLE_PROPS[parseInt(prop, 10)];
                     if (name === undefined) return undefined;
                     return {
@@ -4030,9 +4079,11 @@ const CHROME_COMPUTED_SHORTHANDS = JSON.parse(
                     };
                 }
                 if (typeof prop === "string") {
-                    const v = _isComputedShorthand(prop)
-                        ? _resolveShorthand(prop)
-                        : _resolveComputed(prop);
+                    const v = detached
+                        ? ""
+                        : (_isComputedShorthand(prop)
+                            ? _resolveShorthand(prop)
+                            : _resolveComputed(prop));
                     return {
                         value: v === null ? null : v,
                         writable: false, enumerable: true, configurable: true,
