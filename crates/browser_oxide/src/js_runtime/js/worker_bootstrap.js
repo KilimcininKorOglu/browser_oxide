@@ -286,7 +286,15 @@
     // Prime the pump every 5ms. In a later pass this can be driven by the
     // event loop directly instead of setInterval. Capture the id so
     // self.close() can clear it (see above).
-    _pumpId = setInterval(drainOnce, 5);
+    // Unref'd so it never holds the worker's event loop open, and not a
+    // zero-delay chain: an always-rescheduling timer starves every other task
+    // the worker queued. A parent post wakes the thread directly, so the
+    // interval only has to catch what arrives between posts.
+    const _oxPump = () => {
+        try { _oxPumpTimer && _oxPumpTimer.unref && _oxPumpTimer.unref(); } catch (_e) {}
+        drainOnce();
+    };
+    const _oxPumpTimer = setInterval(_oxPump, 5);
 
     // --- importScripts: classic-worker synchronous script loader ---
     self.importScripts = function importScripts(...urls) {

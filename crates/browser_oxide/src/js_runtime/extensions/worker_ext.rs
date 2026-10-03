@@ -190,6 +190,9 @@ struct WorkerSlot {
     /// polling. Drives the W5b-deep fix: SPA pages stop pinning the
     /// V8 event loop with a 5ms setInterval.
     notify_parent: Arc<Notify>,
+    /// Woken by `op_worker_post_to_worker` so this thread turns its loop
+    /// right away instead of waiting for its next cadence step.
+    notify_worker: Arc<Notify>,
 }
 
 fn worker_registry() -> &'static Mutex<HashMap<u32, WorkerSlot>> {
@@ -263,6 +266,7 @@ pub fn op_worker_spawn(
     let (to_parent_tx, to_parent_rx) = std::sync::mpsc::channel::<String>();
     let terminate = Arc::new(AtomicBool::new(false));
     let notify_parent = Arc::new(Notify::new());
+    let notify_worker = Arc::new(Notify::new());
     let worker_id = NEXT_WORKER_ID.fetch_add(1, Ordering::Relaxed);
     // op_worker_spawn previously logged only on failure, so a missing
     // spawn and a silent spawn were indistinguishable when diagnosing a
@@ -287,6 +291,7 @@ pub fn op_worker_spawn(
                 from_worker: to_parent_rx,
                 terminate: terminate.clone(),
                 notify_parent: notify_parent.clone(),
+                notify_worker: notify_worker.clone(),
             },
         );
     }
@@ -380,16 +385,25 @@ pub fn op_worker_spawn(
                 // cadence lets us observe both parent messages and terminate
                 // signals.
                 while !terminate.load(Ordering::Acquire) {
+                    // Wake on a parent message as well as on the cadence, so
+                    // delivery does not depend on where the thread happens to
+                    // be in its cycle. The cadence itself is short because the
+                    // worker's own pump now runs on a zero-delay timer.
+                    let tick = tokio::select! {
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(2)) => None,
+                        _ = notify_worker.notified() => Some(()),
+                    };
                     let fut = Box::pin(
                         runtime.run_event_loop(deno_core::PollEventLoopOptions::default()),
                     );
-                    let tick =
-                        tokio::time::timeout(std::time::Duration::from_millis(25), fut).await;
-                    match tick {
+                    match tokio::time::timeout(std::time::Duration::from_millis(25), fut).await {
                         Ok(Ok(())) => {
-                            // All pending work done — yield briefly and check
-                            // again for incoming parent messages / terminate.
-                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                            if tick.is_some() {
+                                // Woken by a parent message: turn the loop
+                                // again straight away so the pump sees it.
+                                continue;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
                         }
                         Ok(Err(e)) => {
                             tracing::warn!(worker_id = worker_id, error = %e, "worker event loop error");
@@ -424,6 +438,7 @@ pub fn op_worker_post_to_worker(#[smi] worker_id: i32, #[string] data: String) {
     let reg = worker_registry().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(slot) = reg.get(&(worker_id as u32)) {
         let _ = slot.to_worker.send(data);
+        slot.notify_worker.notify_one();
     }
 }
 

@@ -5,6 +5,67 @@
 use browser_oxide::js_runtime::BrowserJsRuntime;
 use std::time::Duration;
 
+/// A message must reach a worker and come back well inside the 30 ms the old
+/// polling cadence allowed for it (25 ms tick + 5 ms sleep between turns).
+///
+/// The challenge widget posts into a worker and waits on the reply, so the
+/// round-trip latency is observable from the page — and a worker whose whole
+/// job is to answer one message looked silent for a whole tick without the
+/// wake-up. Measured on that page: first reply 33 ms before, 16 ms after.
+#[test]
+fn worker_message_round_trip_is_prompt() {
+    let code = r#"
+        const src = `
+            self.onmessage = function(e) {
+                self.postMessage('r:' + e.data);
+            };
+        `;
+        const blob = new Blob([src], { type: 'text/javascript' });
+        const w = new Worker(URL.createObjectURL(blob));
+        const t0 = performance.now();
+        window.__lat = -1;
+        w.onmessage = function(e) {
+            window.__lat = performance.now() - t0;
+            w.terminate();
+        };
+        w.postMessage(1);
+    "#;
+    let dom = browser_oxide::html_parser::parse_html(
+        "<html><head></head><body><div id=\"out\"></div></body></html>",
+    );
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let local = tokio::task::LocalSet::new();
+    let latency: String = local.block_on(&rt, async move {
+        let mut runtime = BrowserJsRuntime::new(dom);
+        runtime.execute_script(code, None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_millis(4000);
+        loop {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            let remaining = deadline - std::time::Instant::now();
+            let tick = remaining.min(Duration::from_millis(20));
+            let fut = Box::pin(runtime.run_event_loop());
+            let _ = tokio::time::timeout(tick, fut).await;
+            if let Ok(val) = runtime.execute_script("String(window.__lat)", None) {
+                if !val.is_empty() && val != "-1" {
+                    return val;
+                }
+            }
+        }
+        "-1".to_string()
+    });
+    let ms: f64 = latency.parse().unwrap_or(-1.0);
+    assert!(
+        (0.0..30.0).contains(&ms),
+        "worker round-trip was {latency} ms; a parent post has to wake the \
+         worker rather than wait for its poll tick"
+    );
+}
+
 fn drive_runtime(code: &str, wait_ms: u64) -> String {
     let dom = browser_oxide::html_parser::parse_html(
         "<html><head></head><body><div id=\"out\"></div></body></html>",

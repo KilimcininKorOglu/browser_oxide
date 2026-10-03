@@ -300,7 +300,6 @@ impl ChildIframe {
                 .ok();
         }
 
-
         // Execute scripts, fetching external ones
         for (i, script) in scripts.iter().enumerate() {
             let code = if let Some(src) = &script.src {
