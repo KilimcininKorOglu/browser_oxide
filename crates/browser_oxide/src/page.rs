@@ -2485,8 +2485,24 @@ impl Page {
             // reach idle on their own — once V8 is terminated, run_event_loop()
             // returns and the drain exits naturally.
             const NAV_SLICE: Duration = Duration::from_millis(250);
-            let slice_deadline = std::time::Instant::now() + drain_budget;
+            let mut slice_deadline = std::time::Instant::now() + drain_budget;
             loop {
+                let remaining = slice_deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                // A vendor challenge frame's realm is where the rest of this
+                // round happens, and the caller pumps frames itself as soon as
+                // it has the page back. Its long timers keep this document from
+                // ever reporting idle, so without this the loop spends its whole
+                // budget here: measured 8 s on the production target, with the
+                // page's own analytics timers as the only thing left to run.
+                if (0..page.child_iframe_count()).any(|i| {
+                    page.child_iframe(i)
+                        .is_some_and(|c| iframe::is_challenge_frame_url(&c.url))
+                }) {
+                    slice_deadline = std::time::Instant::now() + Duration::from_millis(1500);
+                }
                 let remaining = slice_deadline.saturating_duration_since(std::time::Instant::now());
                 if remaining.is_zero() {
                     break;
