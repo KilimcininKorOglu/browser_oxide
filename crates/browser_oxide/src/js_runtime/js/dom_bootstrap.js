@@ -135,7 +135,19 @@
     let _onNodeInsertedDepth = 0;
     const _MAX_NODE_INSERT_DEPTH = 64;
 
-    function _onNodeInserted(child, sync = true) {
+    // `sync` asks for the inserted <script src> to be fetched AND executed
+    // before this call returns. Only the parser does that: Chrome loads a
+    // script inserted by `appendChild`/`insertBefore`/`replaceChild`
+    // asynchronously, so the inserting script runs on before the new code
+    // does. `document.write` is the one caller that needs the blocking form,
+    // because there the write really is mid-parse.
+    //
+    // The blocking form holds the whole thread for the duration of the HTTP
+    // round trip — the fetch runs on its own runtime and the calling V8 frame
+    // stays on the stack. On the production target two tracker scripts cost
+    // 900 ms of that (gtm.js 424 ms, fbevents.js 475 ms) on a page whose
+    // widget was still waiting to be configured.
+    function _onNodeInserted(child, sync = false) {
         if (!child) return;
         if (_onNodeInsertedDepth >= _MAX_NODE_INSERT_DEPTH) {
             // Bail — log once and skip. This breaks document.write recursion
@@ -191,7 +203,7 @@
         _maskFunction(DOMRect, 'DOMRect');
     }
 
-    function _onNodeInsertedInner(child, sync = true) {
+    function _onNodeInsertedInner(child, sync = false) {
         // 1. Dynamic script loading
         const childTag = (child.tagName || child.nodeName || "").toLowerCase();
         // Frame indices: window[0..n] exist only while frames do (Chrome
@@ -2692,7 +2704,9 @@
             if (Array.isArray(newIds)) {
                 for (const id of newIds) {
                     const node = _wrapNode(id);
-                    if (node) _onNodeInserted(node, true); // Always sync for document.write
+                    // document.write is parser-blocking: the written script
+                    // has run by the time write() returns.
+                    if (node) _onNodeInserted(node, true);
                 }
             }
         }
